@@ -15,3 +15,5 @@
 package gamepad
 
 var MotorMagnitude = motorMagnitude
+
+var MotorAmplitude = motorAmplitude

@@ -65,3 +65,53 @@ func TestMotorMagnitude(t *testing.T) {
 		}
 	}
 }
+
+func TestMotorAmplitude(t *testing.T) {
+	tests := []struct {
+		in   float64
+		want int
+	}{
+		{
+			in:   math.NaN(),
+			want: 0,
+		},
+		{
+			in:   math.Inf(-1),
+			want: 0,
+		},
+		{
+			in:   -1,
+			want: 0,
+		},
+		{
+			in:   0,
+			want: 0,
+		},
+		{
+			// A positive magnitude must not be rounded to 0, which stops vibrating.
+			in:   0.0001,
+			want: 1,
+		},
+		{
+			in:   0.5,
+			want: 127,
+		},
+		{
+			in:   1,
+			want: 255,
+		},
+		{
+			in:   2,
+			want: 255,
+		},
+		{
+			in:   math.Inf(1),
+			want: 255,
+		},
+	}
+	for _, test := range tests {
+		if got := gamepad.MotorAmplitude(test.in); got != test.want {
+			t.Errorf("gamepad.MotorAmplitude(%v): got: %d, want: %d", test.in, got, test.want)
+		}
+	}
+}

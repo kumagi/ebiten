@@ -70,7 +70,14 @@ type VibrateGamepadOptions struct {
 
 // VibrateGamepad vibrates the specified gamepad with the specified options.
 //
-// VibrateGamepad does nothing on Android so far.
+// On Android, VibrateGamepad works only when the API Level is 31 or newer, and does nothing otherwise.
+//
+// On Android, this line is required in the manifest setting to use VibrateGamepad:
+//
+//	<uses-permission android:name="android.permission.VIBRATE"/>
+//
+// On Android, a gamepad with a single motor cannot vibrate its motors separately, so StrongMagnitude
+// and WeakMagnitude are mixed in that case.
 //
 // On Windows, VibrateGamepad works only for XInput gamepads (e.g. Xbox controllers).
 // VibrateGamepad does nothing for DirectInput gamepads.

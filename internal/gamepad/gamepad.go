@@ -464,3 +464,19 @@ func motorMagnitude(magnitude float64) uint16 {
 	}
 	return uint16(magnitude * 0xffff)
 }
+
+// motorAmplitude converts a magnitude in the range 0 to 1 to a vibration amplitude in the range 0 to
+// 255. Out-of-range values are clamped and NaN is treated as 0.
+//
+// A positive magnitude never becomes 0, which means that a vibration is canceled.
+func motorAmplitude(magnitude float64) int {
+	// Converting an out-of-range or NaN value to int is implementation-defined,
+	// so such values must be rejected before the conversion.
+	if !(magnitude > 0) {
+		return 0
+	}
+	if magnitude > 1 {
+		return 255
+	}
+	return max(int(magnitude*255), 1)
+}
