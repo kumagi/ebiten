@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"sync"
 	"syscall/js"
 	"time"
 )
@@ -308,11 +309,17 @@ func (d *dir) ReadDir(count int) ([]fs.DirEntry, error) {
 		names := map[string]struct{}{}
 		for _, dirEntry := range d.dirEntries {
 			ch := make(chan struct{})
+			var once sync.Once
+			closeCh := func() {
+				once.Do(func() {
+					close(ch)
+				})
+			}
 			var rec js.Func
 			cb := js.FuncOf(func(this js.Value, args []js.Value) any {
 				entries := args[0]
 				if entries.Length() == 0 {
-					close(ch)
+					closeCh()
 					return nil
 				}
 				for i := 0; i < entries.Length(); i++ {
@@ -336,10 +343,18 @@ func (d *dir) ReadDir(count int) ([]fs.DirEntry, error) {
 				return nil
 			})
 			defer cb.Release()
+			errCb := js.FuncOf(func(this js.Value, args []js.Value) any {
+				// readEntries can invoke the error callback instead of the success one,
+				// e.g. when a directory becomes unreadable. Close the channel so that the
+				// caller does not hang forever.
+				closeCh()
+				return nil
+			})
+			defer errCb.Release()
 
 			reader := dirEntry.Call("createReader")
 			rec = js.FuncOf(func(this js.Value, args []js.Value) any {
-				reader.Call("readEntries", cb)
+				reader.Call("readEntries", cb, errCb)
 				return nil
 			})
 			defer rec.Release()
