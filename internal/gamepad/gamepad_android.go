@@ -108,5 +108,21 @@ func (g *nativeGamepadImpl) hatState(hat int) int {
 }
 
 func (g *nativeGamepadImpl) vibrate(duration time.Duration, strongMagnitude float64, weakMagnitude float64) {
-	// TODO: Implement this (#1452)
+	if strongMagnitude <= 0 && weakMagnitude <= 0 {
+		// A zero amplitude cancels the vibration, so the duration doesn't matter here.
+		vibrateAndroidGamepad(g.androidDeviceID, 0, 0, 0)
+		return
+	}
+
+	if duration <= 0 {
+		return
+	}
+
+	// VibrationEffect.createOneShot, which is used to vibrate a gamepad, requires a positive duration.
+	ms := duration.Milliseconds()
+	if ms < 1 {
+		ms = 1
+	}
+
+	vibrateAndroidGamepad(g.androidDeviceID, ms, motorAmplitude(strongMagnitude), motorAmplitude(weakMagnitude))
 }

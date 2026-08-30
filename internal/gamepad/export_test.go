@@ -16,6 +16,8 @@ package gamepad
 
 var MotorMagnitude = motorMagnitude
 
+var MotorAmplitude = motorAmplitude
+
 // nativeGamepadForTest is a gamepad backend whose reports a test supplies. Its axes and buttons
 // reuse the virtual backend, and it adds the hats that a virtual gamepad never has.
 type nativeGamepadForTest struct {
