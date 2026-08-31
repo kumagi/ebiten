@@ -180,3 +180,119 @@ func Fragment(dstPos vec4, src0Pos vec2, color vec4) vec4 {
 		})
 	}
 }
+
+func TestImageDrawTrianglesWithStencilBufferOnDisposedDestination(t *testing.T) {
+	src := ebiten.NewImage(3, 3)
+	src.Fill(color.White)
+
+	shader, err := ebiten.NewShader([]byte(`//kage:unit pixels
+
+package main
+
+func Fragment(dstPos vec4, src0Pos vec2, color vec4) vec4 {
+	return color
+}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	vs := []ebiten.Vertex{{DstX: 0, DstY: 0}, {DstX: 2, DstY: 0}, {DstX: 0, DstY: 2}}
+	is := []uint32{0, 1, 2}
+
+	for _, tc := range []struct {
+		name string
+		draw func(dst *ebiten.Image)
+	}{
+		{
+			name: "FillRule",
+			draw: func(dst *ebiten.Image) {
+				dst.DrawTriangles32(vs, is, src, &ebiten.DrawTrianglesOptions{FillRule: ebiten.FillRuleNonZero})
+			},
+		},
+		{
+			name: "AntiAlias",
+			draw: func(dst *ebiten.Image) {
+				dst.DrawTriangles32(vs, is, src, &ebiten.DrawTrianglesOptions{AntiAlias: true})
+			},
+		},
+		{
+			name: "ShaderFillRule",
+			draw: func(dst *ebiten.Image) {
+				dst.DrawTrianglesShader32(vs, is, shader, &ebiten.DrawTrianglesShaderOptions{FillRule: ebiten.FillRuleNonZero})
+			},
+		},
+		{
+			name: "ShaderAntiAlias",
+			draw: func(dst *ebiten.Image) {
+				dst.DrawTrianglesShader32(vs, is, shader, &ebiten.DrawTrianglesShaderOptions{AntiAlias: true})
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dst := ebiten.NewImage(3, 3)
+			dst.Dispose()
+			// This must not panic.
+			tc.draw(dst)
+		})
+	}
+}
+
+func TestImageDrawTrianglesWithStencilBufferWithEmptyIndices(t *testing.T) {
+	src := ebiten.NewImage(3, 3)
+	src.Fill(color.White)
+
+	shader, err := ebiten.NewShader([]byte(`//kage:unit pixels
+
+package main
+
+func Fragment(dstPos vec4, src0Pos vec2, color vec4) vec4 {
+	return color
+}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		draw func(dst *ebiten.Image)
+	}{
+		{
+			name: "FillRule",
+			draw: func(dst *ebiten.Image) {
+				dst.DrawTriangles32(nil, nil, src, &ebiten.DrawTrianglesOptions{
+					FillRule:      ebiten.FillRuleNonZero,
+					CompositeMode: ebiten.CompositeModeCustom,
+					Blend:         ebiten.BlendCopy,
+				})
+			},
+		},
+		{
+			name: "ShaderFillRule",
+			draw: func(dst *ebiten.Image) {
+				dst.DrawTrianglesShader32(nil, nil, shader, &ebiten.DrawTrianglesShaderOptions{
+					FillRule:      ebiten.FillRuleNonZero,
+					CompositeMode: ebiten.CompositeModeCustom,
+					Blend:         ebiten.BlendCopy,
+				})
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const size = 3
+			red := color.RGBA{0xff, 0, 0, 0xff}
+			dst := ebiten.NewImage(size, size)
+			dst.Fill(red)
+			tc.draw(dst)
+
+			for j := range size {
+				for i := range size {
+					if got := dst.At(i, j).(color.RGBA); got != red {
+						t.Errorf("pixel (%d, %d): got %v, want %v", i, j, got, red)
+					}
+				}
+			}
+		})
+	}
+}
