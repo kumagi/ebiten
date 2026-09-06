@@ -99,7 +99,7 @@
 //
 // `EBITENGINE_VM_ENDPOINT` environment variable specifies the endpoint URL of a virtualization host,
 // like unix:///path/to/socket or tcp://host:port. If this is set, the game runs as a virtualization
-// guest of that host instead of opening a window. This is valid only when the build tag 'ebitenginevm'
+// guest of that host instead of opening a window. This is valid only when the build tag 'ebitenginevmguest'
 // is specified. This works only on desktops. See also RunGameOptions.VMGuestEndpoint.
 //
 // The endpoint addresses one guest session. The variable is removed from the game's environment at
@@ -115,11 +115,11 @@
 //
 // `ebitenginesinglethread` disables Ebitengine's thread safety to unlock maximum performance. If you use this you will have
 // to manage threads yourself. Functions like `SetWindowSize` will no longer be concurrent-safe with this build tag.
-// They must be called from the main thread or the same goroutine as the given game's callback functions like Update
+// They must be called from the main thread or the same goroutine as the given game's callback functions like Update.
 // `ebitenginesinglethread` works only with desktops and consoles.
 // `ebitenginesinglethread` was deprecated as of v2.7. Use RunGameOptions.SingleThread instead.
 //
-// `ebitenginevm` allows the environment variable `EBITENGINE_VM_ENDPOINT` to run the game as a
+// `ebitenginevmguest` allows the environment variable `EBITENGINE_VM_ENDPOINT` to run the game as a
 // virtualization guest. This works only on desktops.
 //
 // `microsoftgdk` is for Microsoft GDK (e.g. Xbox).

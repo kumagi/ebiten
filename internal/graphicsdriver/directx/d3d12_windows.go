@@ -1525,7 +1525,7 @@ func (i *_ID3D12Device) CreateDescriptorHeap(desc *_D3D12_DESCRIPTOR_HEAP_DESC) 
 
 func (i *_ID3D12Device) CreateDepthStencilView(pResource *_ID3D12Resource, pDesc *_D3D12_DEPTH_STENCIL_VIEW_DESC, destDescriptor _D3D12_CPU_DESCRIPTOR_HANDLE) {
 	if pDesc != nil {
-		panic("directx: D3D12_DEPTH_STENCIL_VIEW_DESC is not implemented yet (especially for 32bit machine)")
+		panic("directx: D3D12_DEPTH_STENCIL_VIEW_DESC with a non-nil desc is not implemented")
 	}
 	_, _, _ = syscall.Syscall6(i.vtbl.CreateDepthStencilView, 4, uintptr(unsafe.Pointer(i)),
 		uintptr(unsafe.Pointer(pResource)), uintptr(unsafe.Pointer(pDesc)), destDescriptor.ptr,
@@ -1656,6 +1656,11 @@ func (i *_ID3D12Device) QueryInterface(riid *windows.GUID) (unsafe.Pointer, erro
 		return nil, fmt.Errorf("directx: ID3D12Device::QueryInterface failed: %w", handleError(windows.Handle(uint32(r))))
 	}
 	return v, nil
+}
+
+func (i *_ID3D12Device) Release() uint32 {
+	r, _, _ := syscall.Syscall(i.vtbl.Release, 1, uintptr(unsafe.Pointer(i)), 0, 0)
+	return uint32(r)
 }
 
 func (i *_ID3D12Device) WaitFrameEventX(typ _D3D12XBOX_FRAME_EVENT_TYPE, timeOutInMs uint32, pAncillaryWaitList *_D3D12XBOX_WAIT_FRAME_OBJECT_LIST, flags _D3D12XBOX_WAIT_FRAME_EVENT_FLAGS, pToken *_D3D12XBOX_FRAME_PIPELINE_TOKEN) error {

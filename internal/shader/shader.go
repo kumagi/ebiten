@@ -353,7 +353,7 @@ func (cs *compileState) parse(f *ast.File) {
 		return
 	}
 
-	// Set attribute and varying veraibles.
+	// Set attribute and varying variables.
 	for _, p := range vertexInParams {
 		cs.ir.Attributes = append(cs.ir.Attributes, p.typ)
 	}
@@ -628,10 +628,11 @@ func (s *compileState) parseVariable(block *block, fname string, vs *ast.ValueSp
 					if ok {
 						inittypes = ts
 					}
-					if len(ts) != len(vs.Names) {
-						s.addError(vs.Pos(), "the numbers of lhs and rhs don't match")
-						continue
-					}
+				}
+
+				if len(initexprs) != len(vs.Names) || len(inittypes) != len(vs.Names) {
+					s.addError(vs.Pos(), "the numbers of lhs and rhs don't match")
+					return nil, nil, nil, false
 				}
 			}
 
