@@ -129,7 +129,16 @@ type userInterfaceImpl struct {
 }
 
 func (u *UserInterface) SetForeground(foreground bool) error {
-	u.foreground.Store(foreground)
+	func() {
+		u.mu.Lock()
+		defer u.mu.Unlock()
+		u.foreground.Store(foreground)
+		if !foreground {
+			u.inputState.releaseAllButtons(u.inputState.nextInputTime())
+			u.touches = u.touches[:0]
+			u.touchIDs.nextTouches()
+		}
+	}()
 	clock.SetDurationSuspended(!foreground)
 
 	if foreground {
@@ -204,7 +213,7 @@ func (u *UserInterface) update() error {
 	sw, sh := u.screenSize(w, h, s)
 	if err := u.context.updateFrame(u.graphicsDriver, w, h, sw, sh, s, u, true); err != nil {
 		// Abort read-backs while the render thread is still serving this frame.
-		atlas.Terminate()
+		atlas.AbortReadPixels()
 		return err
 	}
 	return nil

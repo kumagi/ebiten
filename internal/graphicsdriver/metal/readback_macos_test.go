@@ -63,8 +63,14 @@ func TestReadPixelsAsync(t *testing.T) {
 			t.Fatal(err)
 		}
 		args := []graphicsdriver.PixelsArgs{
-			{Pixels: make([]byte, 3*5*4), Region: image.Rect(2, 3, 5, 8)},
-			{Pixels: make([]byte, 17*11*4), Region: region},
+			{
+				Pixels: make([]byte, 3*5*4),
+				Region: image.Rect(2, 3, 5, 8),
+			},
+			{
+				Pixels: make([]byte, 17*11*4),
+				Region: region,
+			},
 		}
 		if _, err := i.ReadPixelsAsync([]graphicsdriver.PixelsArgs{{Pixels: make([]byte, 1), Region: region}}); err == nil {
 			t.Fatal("invalid length accepted")
@@ -76,48 +82,40 @@ func TestReadPixelsAsync(t *testing.T) {
 		if _, ok := result.(*readback); !ok {
 			t.Fatal("not a native Metal read-back")
 		}
-		// Overwrite on the same queue and dispose before completion is observed.
 		if err := i.WritePixels([]graphicsdriver.PixelsArgs{{Pixels: make([]byte, len(original)), Region: region}}); err != nil {
 			t.Fatal(err)
 		}
 		i.Dispose()
 		if discard {
-			result.Discard()
+			result.Dispose()
 			continue
 		}
 		deadline := time.Now().Add(5 * time.Second)
 		for {
 			done, err := result.Poll()
 			if err != nil {
-				result.Discard()
+				result.Dispose()
 				t.Fatal(err)
 			}
 			if done {
 				break
 			}
 			if time.Now().After(deadline) {
-				result.Discard()
+				result.Dispose()
 				t.Fatal("read-back did not complete without a frame flush")
 			}
 			time.Sleep(time.Millisecond)
 		}
-		if err := result.Copy(args); err != nil {
-			result.Discard()
-			t.Fatal(err)
-		}
-		result.Discard()
+		result.Dispose()
 		for _, arg := range args {
 			if !bytes.Equal(arg.Pixels, bytes.Repeat([]byte{123, 45, 67, 255}, arg.Region.Dx()*arg.Region.Dy())) {
-				t.Fatalf("incorrect capture for %v", arg.Region)
+				t.Errorf("incorrect capture for %v", arg.Region)
 			}
 		}
 	}
 	r := &readback{commandBuffer: mtl.CommandBuffer{}}
 	if done, err := r.Poll(); !done || err != nil {
-		t.Fatalf("empty read-back: %v, %v", done, err)
+		t.Errorf("empty read-back: %v, %v", done, err)
 	}
-	if err := r.Copy(nil); err != nil {
-		t.Fatal(err)
-	}
-	r.Discard()
+	r.Dispose()
 }

@@ -1187,7 +1187,11 @@ func _EnumDisplayDevicesW(device string, iDevNum uint32, dwFlags uint32) (_DISPL
 	return displayDevice, true
 }
 
-func _EnumDisplayMonitors(hdc _HDC, lprcClip *_RECT, lpfnEnum uintptr, dwData _LPARAM) error {
+func _EnumDisplayMonitors(hdc _HDC, lprcClip *_RECT, lpfnEnum uintptr, dwData unsafe.Pointer) error {
+	// dwData is an unsafe.Pointer rather than an _LPARAM, and is converted to uintptr only in Call's arguments.
+	// Call is marked //go:uintptrescapes, so the compiler moves dwData's referent to the heap and keeps it
+	// alive until Call returns. An _LPARAM is just an integer to the compiler, so its referent could stay on
+	// the stack, move when a callback grows the stack, and reach the next callback as a stale address.
 	r, _, e := procEnumDisplayMonitors.Call(uintptr(hdc), uintptr(unsafe.Pointer(lprcClip)), uintptr(lpfnEnum), uintptr(dwData))
 	if int32(r) == 0 && !errors.Is(e, windows.ERROR_SUCCESS) {
 		return fmt.Errorf("glfw: EnumDisplayMonitors failed: %w", e)
@@ -1605,7 +1609,7 @@ func _SetCursorPos(x, y int32) error {
 
 func _SetFocus(hWnd windows.HWND) (windows.HWND, error) {
 	r, _, e := procSetFocus.Call(uintptr(hWnd))
-	if windows.HWND(r) == 0 {
+	if windows.HWND(r) == 0 && !errors.Is(e, windows.ERROR_SUCCESS) {
 		return 0, fmt.Errorf("glfw: SetFocus failed: %w", e)
 	}
 	return windows.HWND(r), nil
@@ -1711,8 +1715,8 @@ func _SwapBuffers(unnamedParam1 _HDC) error {
 	return nil
 }
 
-func _SystemParametersInfoW(uiAction uint32, uiParam uint32, pvParam uintptr, fWinIni uint32) error {
-	r, _, e := procSystemParametersInfoW.Call(uintptr(uiAction), uintptr(uiParam), pvParam, uintptr(fWinIni))
+func _SystemParametersInfoW(uiAction uint32, uiParam uint32, pvParam unsafe.Pointer, fWinIni uint32) error {
+	r, _, e := procSystemParametersInfoW.Call(uintptr(uiAction), uintptr(uiParam), uintptr(pvParam), uintptr(fWinIni))
 	if int32(r) == 0 && !errors.Is(e, windows.ERROR_SUCCESS) {
 		return fmt.Errorf("glfw: SystemParametersInfoW failed: %w", e)
 	}

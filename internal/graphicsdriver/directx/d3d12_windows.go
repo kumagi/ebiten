@@ -40,6 +40,7 @@ const (
 	_D3D12_MIN_DEPTH                         = 0.0
 	_D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION    = 16384
 	_D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES = 0xffffffff
+	_D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT  = 512
 	_D3D12XBOX_DEFAULT_SIZE_BYTES            = 0xffffffff
 )
 
@@ -776,7 +777,7 @@ type _D3D12_TEX2D_SRV struct {
 	ResourceMinLODClamp float32
 }
 
-type _D3D12_TEXTURE_COPY_LOCATION_PlacedFootPrint struct {
+type _D3D12_TEXTURE_COPY_LOCATION_PlacedFootprint struct {
 	_               structs.HostLayout
 	pResource       *_ID3D12Resource
 	Type            _D3D12_TEXTURE_COPY_TYPE
@@ -787,6 +788,7 @@ type _D3D12_TEXTURE_COPY_LOCATION_SubresourceIndex struct {
 	_                structs.HostLayout
 	pResource        *_ID3D12Resource
 	Type             _D3D12_TEXTURE_COPY_TYPE
+	_                [unsafe.Sizeof(uintptr(0)) - unsafe.Sizeof(uint32(0))]byte
 	SubresourceIndex uint32
 	_                [unsafe.Sizeof(_D3D12_PLACED_SUBRESOURCE_FOOTPRINT{}) - unsafe.Sizeof(uint32(0))]byte // A padding for union
 }
@@ -975,12 +977,6 @@ type _D3D12_DESCRIPTOR_HEAP_DESC struct {
 	NodeMask       uint32
 }
 
-type _D3D12_PLACED_SUBRESOURCE_FOOTPRINT struct {
-	_         structs.HostLayout
-	Offset    uint64
-	Footprint _D3D12_SUBRESOURCE_FOOTPRINT
-}
-
 type _D3D12_RENDER_TARGET_BLEND_DESC struct {
 	_                     structs.HostLayout
 	BlendEnable           _BOOL
@@ -1000,20 +996,6 @@ type _D3D12_RENDER_TARGET_VIEW_DESC struct {
 	Format        _DXGI_FORMAT
 	ViewDimension _D3D12_RTV_DIMENSION
 	_             [4]uint32 // Union: D3D12_TEX2D_ARRAY_RTV is the biggest
-}
-
-type _D3D12_SAMPLER_DESC struct {
-	_              structs.HostLayout
-	Filter         _D3D12_FILTER
-	AddressU       _D3D12_TEXTURE_ADDRESS_MODE
-	AddressV       _D3D12_TEXTURE_ADDRESS_MODE
-	AddressW       _D3D12_TEXTURE_ADDRESS_MODE
-	MipLODBias     float32
-	MaxAnisotropy  uint32
-	ComparisonFunc _D3D12_COMPARISON_FUNC
-	BorderColor    [4]float32
-	MinLOD         float32
-	MaxLOD         float32
 }
 
 type _D3D12_SUBRESOURCE_FOOTPRINT struct {
@@ -1169,10 +1151,6 @@ type _ID3D12Debug_Vtbl struct {
 	EnableDebugLayer uintptr
 }
 
-func (i *_ID3D12Debug) As(debug **_ID3D12Debug3) {
-	*debug = (*_ID3D12Debug3)(unsafe.Pointer(i))
-}
-
 func (i *_ID3D12Debug) EnableDebugLayer() {
 	_, _, _ = syscall.Syscall(i.vtbl.EnableDebugLayer, 1, uintptr(unsafe.Pointer(i)), 0, 0)
 }
@@ -1199,10 +1177,6 @@ type _ID3D12Debug3_Vtbl struct {
 	SetGPUBasedValidationFlags                  uintptr
 }
 
-func (i *_ID3D12Debug3) SetEnableGPUBasedValidation(enable bool) {
-	_, _, _ = syscall.Syscall(i.vtbl.SetEnableGPUBasedValidation, 2, uintptr(unsafe.Pointer(i)), boolToUintptr(enable), 0)
-}
-
 type _ID3D12DebugCommandList struct {
 	_    structs.HostLayout
 	vtbl *_ID3D12DebugCommandList_Vtbl
@@ -1219,20 +1193,12 @@ type _ID3D12DebugCommandList_Vtbl struct {
 	GetFeatureMask      uintptr
 }
 
-func (i *_ID3D12DebugCommandList) SetFeatureMask(mask _D3D12_DEBUG_FEATURE) error {
-	r, _, _ := syscall.Syscall(i.vtbl.SetFeatureMask, 2, uintptr(unsafe.Pointer(i)), uintptr(mask), 0)
-	if uint32(r) != uint32(windows.S_OK) {
-		return fmt.Errorf("directx: ID3D12DebugCommandList::SetFeatureMask failed: %w", handleError(windows.Handle(uint32(r))))
-	}
-	return nil
-}
-
 type _ID3D12DescriptorHeap struct {
 	_    structs.HostLayout
-	vtbl *_ID3D12DescriptrHeap_Vtbl
+	vtbl *_ID3D12DescriptorHeap_Vtbl
 }
 
-type _ID3D12DescriptrHeap_Vtbl struct {
+type _ID3D12DescriptorHeap_Vtbl struct {
 	_              structs.HostLayout
 	QueryInterface uintptr
 	AddRef         uintptr
@@ -1537,12 +1503,6 @@ func (i *_ID3D12Device) CreateRootSignature(nodeMask uint32, pBlobWithRootSignat
 	return signature, nil
 }
 
-func (i *_ID3D12Device) CreateSampler(pDesc *_D3D12_SAMPLER_DESC, destDescriptor _D3D12_CPU_DESCRIPTOR_HANDLE) {
-	_, _, _ = syscall.Syscall(i.vtbl.CreateSampler, 3, uintptr(unsafe.Pointer(i)),
-		uintptr(unsafe.Pointer(pDesc)), destDescriptor.ptr)
-	runtime.KeepAlive(pDesc)
-}
-
 func (i *_ID3D12Device) CreateShaderResourceView(pResource *_ID3D12Resource, pDesc *_D3D12_SHADER_RESOURCE_VIEW_DESC, destDescriptor _D3D12_CPU_DESCRIPTOR_HANDLE) {
 	_, _, _ = syscall.Syscall6(i.vtbl.CreateShaderResourceView, 4, uintptr(unsafe.Pointer(i)),
 		uintptr(unsafe.Pointer(pResource)), uintptr(unsafe.Pointer(pDesc)), destDescriptor.ptr,
@@ -1747,22 +1707,6 @@ type _ID3D12GraphicsCommandList_Vtbl struct {
 	ExecuteIndirect                    uintptr
 }
 
-func (i *_ID3D12GraphicsCommandList) ClearRenderTargetView(pRenderTargetView _D3D12_CPU_DESCRIPTOR_HANDLE, colorRGBA [4]float32, rects []_D3D12_RECT) {
-	if microsoftgdk.IsXbox() {
-		_ID3D12GraphicsCommandList_ClearRenderTargetView(i, pRenderTargetView, colorRGBA, rects)
-	} else {
-		var pRects *_D3D12_RECT
-		if len(rects) > 0 {
-			pRects = &rects[0]
-		}
-		_, _, _ = syscall.Syscall6(i.vtbl.ClearRenderTargetView, 5, uintptr(unsafe.Pointer(i)),
-			pRenderTargetView.ptr, uintptr(unsafe.Pointer(&colorRGBA[0])), uintptr(len(rects)), uintptr(unsafe.Pointer(pRects)),
-			0)
-	}
-	runtime.KeepAlive(pRenderTargetView)
-	runtime.KeepAlive(rects)
-}
-
 func (i *_ID3D12GraphicsCommandList) Close() error {
 	var r uintptr
 	if microsoftgdk.IsXbox() {
@@ -1776,7 +1720,7 @@ func (i *_ID3D12GraphicsCommandList) Close() error {
 	return nil
 }
 
-func (i *_ID3D12GraphicsCommandList) CopyTextureRegion_PlacedFootPrint_SubresourceIndex(pDst *_D3D12_TEXTURE_COPY_LOCATION_PlacedFootPrint, dstX uint32, dstY uint32, dstZ uint32, pSrc *_D3D12_TEXTURE_COPY_LOCATION_SubresourceIndex, pSrcBox *_D3D12_BOX) {
+func (i *_ID3D12GraphicsCommandList) CopyTextureRegion_PlacedFootprint_SubresourceIndex(pDst *_D3D12_TEXTURE_COPY_LOCATION_PlacedFootprint, dstX uint32, dstY uint32, dstZ uint32, pSrc *_D3D12_TEXTURE_COPY_LOCATION_SubresourceIndex, pSrcBox *_D3D12_BOX) {
 	if microsoftgdk.IsXbox() {
 		_ID3D12GraphicsCommandList_CopyTextureRegion(i, unsafe.Pointer(pDst), dstX, dstY, dstZ, unsafe.Pointer(pSrc), pSrcBox)
 	} else {
@@ -1790,7 +1734,7 @@ func (i *_ID3D12GraphicsCommandList) CopyTextureRegion_PlacedFootPrint_Subresour
 	runtime.KeepAlive(pSrcBox)
 }
 
-func (i *_ID3D12GraphicsCommandList) CopyTextureRegion_SubresourceIndex_PlacedFootPrint(pDst *_D3D12_TEXTURE_COPY_LOCATION_SubresourceIndex, dstX uint32, dstY uint32, dstZ uint32, pSrc *_D3D12_TEXTURE_COPY_LOCATION_PlacedFootPrint, pSrcBox *_D3D12_BOX) {
+func (i *_ID3D12GraphicsCommandList) CopyTextureRegion_SubresourceIndex_PlacedFootprint(pDst *_D3D12_TEXTURE_COPY_LOCATION_SubresourceIndex, dstX uint32, dstY uint32, dstZ uint32, pSrc *_D3D12_TEXTURE_COPY_LOCATION_PlacedFootprint, pSrcBox *_D3D12_BOX) {
 	if microsoftgdk.IsXbox() {
 		_ID3D12GraphicsCommandList_CopyTextureRegion(i, unsafe.Pointer(pDst), dstX, dstY, dstZ, unsafe.Pointer(pSrc), pSrcBox)
 	} else {
@@ -2078,9 +2022,4 @@ type _ID3D12RootSignature_Vtbl struct {
 	SetPrivateDataInterface uintptr
 	SetName                 uintptr
 	GetDevice               uintptr
-}
-
-func (i *_ID3D12RootSignature) Release() uint32 {
-	r, _, _ := syscall.Syscall(i.vtbl.Release, 1, uintptr(unsafe.Pointer(i)), 0, 0)
-	return uint32(r)
 }

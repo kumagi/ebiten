@@ -18,7 +18,6 @@ package metal
 
 import (
 	"fmt"
-	"image"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal/mtl"
@@ -29,9 +28,10 @@ var _ graphicsdriver.AsyncPixelsReader = (*Image)(nil)
 type readback struct {
 	commandBuffer mtl.CommandBuffer
 	textures      []mtl.Texture
-	regions       []image.Rectangle
+	args          []graphicsdriver.PixelsArgs
 }
 
+// ReadPixelsAsync records texture copies and submits them without waiting for the GPU.
 func (i *Image) ReadPixelsAsync(args []graphicsdriver.PixelsArgs) (graphicsdriver.PixelsReadback, error) {
 	// Validate everything before recording commands or allocating resources.
 	for _, arg := range args {
@@ -39,7 +39,7 @@ func (i *Image) ReadPixelsAsync(args []graphicsdriver.PixelsArgs) (graphicsdrive
 			return nil, fmt.Errorf("metal: len(Pixels) must be %d but %d at ReadPixelsAsync", want, got)
 		}
 	}
-	r := &readback{}
+	r := &readback{args: args}
 	if len(args) == 0 {
 		return r, nil
 	}
@@ -52,11 +52,10 @@ func (i *Image) ReadPixelsAsync(args []graphicsdriver.PixelsArgs) (graphicsdrive
 	r.commandBuffer.Retain()
 	bce, err := g.cb.BlitCommandEncoder()
 	if err != nil {
-		r.Discard()
+		r.Dispose()
 		return nil, fmt.Errorf("metal: cb.BlitCommandEncoder failed: %w", err)
 	}
 	for _, arg := range args {
-		r.regions = append(r.regions, arg.Region)
 		if arg.Region.Empty() {
 			r.textures = append(r.textures, mtl.Texture{})
 			continue
@@ -66,12 +65,13 @@ func (i *Image) ReadPixelsAsync(args []graphicsdriver.PixelsArgs) (graphicsdrive
 		texture, err := g.view.getMTLDevice().NewTextureWithDescriptor(mtl.TextureDescriptor{
 			TextureType: mtl.TextureType2D,
 			PixelFormat: mtl.PixelFormatRGBA8UNorm,
-			Width:       arg.Region.Dx(), Height: arg.Region.Dy(),
+			Width:       arg.Region.Dx(),
+			Height:      arg.Region.Dy(),
 			StorageMode: mtl.StorageModeManaged,
 		})
 		if err != nil {
 			bce.EndEncoding()
-			r.Discard()
+			r.Dispose()
 			return nil, fmt.Errorf("metal: device.NewTextureWithDescriptor failed: %w", err)
 		}
 		r.textures = append(r.textures, texture)
@@ -87,41 +87,34 @@ func (i *Image) ReadPixelsAsync(args []graphicsdriver.PixelsArgs) (graphicsdrive
 	return r, nil
 }
 
+// Poll copies the captured pixels after the command buffer completes.
 func (r *readback) Poll() (bool, error) {
 	if r.commandBuffer == (mtl.CommandBuffer{}) {
 		return true, nil
 	}
 	switch r.commandBuffer.Status() {
 	case mtl.CommandBufferStatusCompleted:
-		return true, nil
+		// Copy below only after Metal has synchronized the managed textures.
 	case mtl.CommandBufferStatusError:
-		return false, fmt.Errorf("metal: asynchronous pixel read-back command buffer failed")
+		return true, fmt.Errorf("metal: asynchronous pixel read-back command buffer failed")
 	default:
 		return false, nil
 	}
-}
-
-func (r *readback) Copy(args []graphicsdriver.PixelsArgs) error {
-	if len(args) != len(r.regions) {
-		return fmt.Errorf("metal: pixel read-back argument count changed")
-	}
-	for n, arg := range args {
-		if arg.Region != r.regions[n] {
-			return fmt.Errorf("metal: pixel read-back region changed")
-		}
+	for n, arg := range r.args {
 		if arg.Region.Empty() {
 			continue
 		}
 		if err := r.textures[n].GetBytes(arg.Pixels, 4*arg.Region.Dx(), mtl.Region{
 			Size: mtl.Size{Width: arg.Region.Dx(), Height: arg.Region.Dy(), Depth: 1},
 		}, 0); err != nil {
-			return err
+			return true, err
 		}
 	}
-	return nil
+	return true, nil
 }
 
-func (r *readback) Discard() {
+// Dispose releases the staging textures and command buffer.
+func (r *readback) Dispose() {
 	// Metal command buffers retain encoded resources until execution finishes,
 	// including when a pending read-back is discarded during shutdown.
 	for _, texture := range r.textures {
@@ -130,6 +123,7 @@ func (r *readback) Discard() {
 		}
 	}
 	r.textures = nil
+	r.args = nil
 	if r.commandBuffer != (mtl.CommandBuffer{}) {
 		r.commandBuffer.Release()
 		r.commandBuffer = mtl.CommandBuffer{}

@@ -39,7 +39,7 @@ func (g *game) Update() error {
 		g.pixels = make([]byte, 16)
 		g.result = sub.ReadPixelsAsync(g.pixels)
 		sub.Fill(color.White)
-		g.image.Dispose()
+		g.image.Deallocate()
 		return nil
 	}
 	select {
@@ -60,8 +60,14 @@ func (g *game) Update() error {
 		return nil
 	}
 }
-func (*game) Draw(*ebiten.Image)         {}
-func (*game) Layout(int, int) (int, int) { return 16, 16 }
+
+func (*game) Draw(*ebiten.Image) {
+}
+
+func (*game) Layout(int, int) (int, int) {
+	return 16, 16
+}
+
 func main() {
 	ebiten.SetWindowVisible(false)
 	g := &game{}

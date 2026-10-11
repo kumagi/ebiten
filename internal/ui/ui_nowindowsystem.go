@@ -176,7 +176,10 @@ func (b *noWindowSystemBackend) initOnMainThread(options *RunOptions) (err error
 
 func (b *noWindowSystemBackend) loopGame() (err error) {
 	defer func() {
-		atlas.Terminate()
+		atlas.AbortReadPixels()
+		if graphicsErr := graphicscommand.TerminateGraphicsDriverState(b.graphicsDriver); graphicsErr != nil {
+			err = errors.Join(err, graphicsErr)
+		}
 		closeErr := thread.CallWithArgAndResult(b.mainThread, func(b *noWindowSystemBackend) error {
 			defer b.setTerminated()
 			return b.closeOnMainThread()

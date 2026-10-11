@@ -17,7 +17,6 @@ package graphicscommand
 import (
 	"fmt"
 	"image"
-	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -188,28 +187,6 @@ func (c *drawTrianglesCommand) CanMergeWithDrawTrianglesCommand(dst *Image, srcs
 	return true
 }
 
-var (
-	posInf32 = float32(math.Inf(1))
-	negInf32 = float32(math.Inf(-1))
-)
-
-func dstRegionFromVertices(vertices []float32) (minX, minY, maxX, maxY float32) {
-	minX = posInf32
-	minY = posInf32
-	maxX = negInf32
-	maxY = negInf32
-
-	for i := 0; i < len(vertices); i += graphics.VertexFloatCount {
-		x := vertices[i]
-		y := vertices[i+1]
-		minX = min(minX, x)
-		minY = min(minY, y)
-		maxX = max(maxX, x)
-		maxY = max(maxY, y)
-	}
-	return
-}
-
 // writePixelsCommand represents a command to replace pixels of an image.
 type writePixelsCommand struct {
 	dst  *Image
@@ -376,6 +353,17 @@ func (c *newShaderCommand) NeedsSync() bool {
 // InitializeGraphicsDriverState initializes the current graphics driver state.
 func InitializeGraphicsDriverState(graphicsDriver graphicsdriver.Graphics) error {
 	return runOnRenderThread(graphicsdriver.Graphics.Initialize, graphicsDriver)
+}
+
+// TerminateGraphicsDriverState releases the graphics driver's rendering state.
+func TerminateGraphicsDriverState(graphicsDriver graphicsdriver.Graphics) error {
+	// Wait for queued graphics calls even when the driver has no termination operation.
+	return runOnRenderThread(func(g graphicsdriver.Graphics) error {
+		if t, ok := g.(interface{ Terminate() error }); ok {
+			return t.Terminate()
+		}
+		return nil
+	}, graphicsDriver)
 }
 
 // ResetGraphicsDriverState resets the current graphics driver state.

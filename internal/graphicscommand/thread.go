@@ -44,9 +44,9 @@ func runOnRenderThreadAsync[A any](f func(A), arg A) {
 	thread.CallAsync(theRenderThread, f, arg)
 }
 
-func Terminate() {
-	// Drain queued render-thread work and abort submitted and unsubmitted read-backs.
-	// The caller must hold the atlas backend mutex to prevent concurrent command recording.
-	// This is necessary especially for GLFW. glfw.Terminate will remove the context and any graphics calls after that will be invalidated.
-	theCommandQueueManager.stopReadPixels(errReadPixelsAborted)
+// AbortReadPixels completes pending and queued pixel read-backs with an error.
+// Their results have been delivered when AbortReadPixels returns.
+// The caller must hold the atlas backend mutex.
+func AbortReadPixels() {
+	theCommandQueueManager.abortReadPixels(errReadPixelsAborted)
 }

@@ -67,7 +67,7 @@ type Image struct {
 	// so the map must be protected by a mutex.
 	subImageCacheM sync.Mutex
 
-	// atime is the last access time.
+	// atime is the last access tick.
 	// atime needs to be an atomic value since a sub-image atime can be accessed from its original image.
 	atime atomic.Int64
 
@@ -106,7 +106,7 @@ func (i *Image) copyCheck() {
 }
 
 func (i *Image) updateAccessTime() {
-	i.atime.Store(int64(DurationTime()))
+	i.atime.Store(Tick())
 }
 
 // Size returns the size of the image.
@@ -1213,9 +1213,8 @@ func (i *Image) SubImage(r image.Rectangle) image.Image {
 	if tick := Tick(); i.subImageGCLastTick < tick {
 		i.subImageGCLastTick = tick
 
-		now := DurationTime()
 		for _, img := range i.subImageCache {
-			if Duration(img.atime.Load()) < now-DurationSecond {
+			if img.atime.Load() < tick-60 {
 				delete(i.subImageCache, img.bounds)
 			}
 		}
@@ -1323,10 +1322,11 @@ func (i *Image) ReadPixels(pixels []byte) {
 // It captures drawing operations preceding the call and excludes subsequent operations.
 // The call returns without waiting for the GPU.
 //
-// The returned buffered channel receives exactly one value: nil on success, or an error on
-// failure, including when the game exits. The channel is not closed. Ignoring it does not block
-// completion. pixels must not be accessed or reused until the result is received; its contents
-// are unspecified on error. The image may be drawn to or disposed while the read is pending.
+// The returned channel is closed when the read finishes, including when the game exits.
+// On failure, an error is sent before closing; on success, no value is sent.
+// Ignoring the channel does not block completion. pixels must not be accessed or reused until
+// a receive from the channel completes. The buffer contents are unspecified on error.
+// The image may be drawn to or deallocated while the read is pending.
 //
 // Results progress as the game loop runs. Do not block Update or Draw waiting for a result.
 // Drivers without asynchronous read-back support read synchronously on the rendering thread.
@@ -1774,6 +1774,7 @@ var currentCallbackToken atomic.Int64
 
 func init() {
 	imagebridge.Set(imagebridge.Bridge[*Image]{
+		IsRunGameEnded: isRunGameEnded,
 		OriginalImage: func(img *Image) *Image {
 			if img.isSubImage() {
 				return img.original
@@ -1824,6 +1825,13 @@ var theTmpUsageCallbackSlicePool = sync.Pool{
 func (i *Image) invokeUsageCallbacks() {
 	if i.isSubImage() {
 		i.original.invokeUsageCallbacks()
+		return
+	}
+
+	i.usageCallbacksMu.Lock()
+	n := len(i.usageCallbacks)
+	i.usageCallbacksMu.Unlock()
+	if n == 0 {
 		return
 	}
 

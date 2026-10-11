@@ -16,6 +16,7 @@ package convert_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -1201,5 +1202,74 @@ func TestResamplingShortBufferEOF(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Error("resampled audio changed after a short read with a source error")
+	}
+}
+
+func TestResamplingNonSeeker(t *testing.T) {
+	for _, depth := range []int{2, 4} {
+		t.Run(fmt.Sprintf("depth%d", depth), func(t *testing.T) {
+			const from = 48000
+			const to = 1
+			data := make([]byte, 2*from*2*depth)
+			r := convert.NewResampling(bytes.NewBuffer(data), int64(len(data)), from, to, depth)
+			for _, whence := range []int{io.SeekStart, io.SeekCurrent, io.SeekEnd} {
+				if _, err := r.Seek(0, whence); !errors.Is(err, errors.ErrUnsupported) {
+					t.Errorf("Seek(0, %d): got %v, want errors.ErrUnsupported", whence, err)
+				}
+			}
+			buf := make([]byte, 2*depth)
+			if _, err := io.ReadFull(r, buf); err != nil {
+				t.Fatal(err)
+			}
+			// The next output frame requires skipping source frames at this sample rate.
+			if _, err := r.Read(buf); !errors.Is(err, errors.ErrUnsupported) {
+				t.Errorf("Read requiring a source seek: got %v, want errors.ErrUnsupported", err)
+			}
+		})
+	}
+}
+
+func TestResamplingFloat32Headroom(t *testing.T) {
+	for _, rates := range []struct{ from, to int }{
+		{
+			from: 44100,
+			to:   48000,
+		},
+		{
+			from: 48000,
+			to:   44100,
+		},
+	} {
+		resample := func(amplitude float32) []byte {
+			source := make([]byte, 64*8)
+			for i := range 64 {
+				binary.LittleEndian.PutUint32(source[i*8:], math.Float32bits(amplitude))
+				binary.LittleEndian.PutUint32(source[i*8+4:], math.Float32bits(-amplitude))
+			}
+			result, err := io.ReadAll(convert.NewResampling(bytes.NewReader(source), int64(len(source)), rates.from, rates.to, 4))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return result
+		}
+		quiet, loud := resample(0.25), resample(1.5)
+		if len(loud) < 8 {
+			t.Error("resampling produced no stereo samples")
+			continue
+		}
+		if got := math.Float32frombits(binary.LittleEndian.Uint32(loud)); math.Abs(float64(got-1.5)) > 1e-6 {
+			t.Errorf("first sample: got %v, want 1.5", got)
+		}
+		if len(quiet) != len(loud) {
+			t.Fatal("output lengths differ")
+		}
+		for i := 0; i < len(loud); i += 4 {
+			got := math.Float32frombits(binary.LittleEndian.Uint32(loud[i:]))
+			want := 6 * math.Float32frombits(binary.LittleEndian.Uint32(quiet[i:]))
+			if math.Abs(float64(got-want)) > 1e-6 {
+				t.Errorf("%d to %d, sample %d: got %v, want %v", rates.from, rates.to, i/4, got, want)
+				break
+			}
+		}
 	}
 }

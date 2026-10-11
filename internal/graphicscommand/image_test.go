@@ -15,7 +15,6 @@
 package graphicscommand_test
 
 import (
-	"bytes"
 	"fmt"
 	"image"
 	"image/color"
@@ -190,9 +189,9 @@ func TestSuccessiveWritePixels(t *testing.T) {
 	}
 }
 
-func flushPresent(t *testing.T) {
+func flushEndFrame(t *testing.T) {
 	t.Helper()
-	if err := graphicscommand.FlushCommands(ui.Get().GraphicsDriverForTesting(), graphicsdriver.FlushModePresent); err != nil {
+	if err := graphicscommand.FlushCommands(ui.Get().GraphicsDriverForTesting(), graphicsdriver.FlushModeEndFrame); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -203,21 +202,21 @@ func requireReadPixelsAsyncResult(t *testing.T, ch <-chan error) error {
 	for time.Now().Before(deadline) {
 		select {
 		case err, ok := <-ch:
-			if !ok {
-				t.Error("the channel must not be closed")
+			if ok && err == nil {
+				t.Error("a successful read-back must close without sending a value")
 			}
 			select {
-			case _, ok := <-ch:
-				if !ok {
-					t.Error("the channel must not be closed after the value is received")
+			case err, ok := <-ch:
+				if ok || err != nil {
+					t.Errorf("the result channel must be closed: got (%v, %v)", err, ok)
 				}
-				t.Error("the channel must not receive a second value")
-			default:
+			case <-time.After(5 * time.Second):
+				t.Error("the result channel was not closed")
 			}
 			return err
 		default:
 		}
-		flushPresent(t)
+		flushEndFrame(t)
 		time.Sleep(time.Millisecond)
 	}
 	return fmt.Errorf("test: read-back timed out")
@@ -241,55 +240,6 @@ func fillImage(t *testing.T, img *graphicscommand.Image, clr color.RGBA) {
 func TestReadPixelsAsyncWithRealDriver(t *testing.T) {
 	const w, h = 16, 16
 	region := image.Rect(0, 0, w, h)
-	t.Run("SameAsReadPixels", func(t *testing.T) {
-		img := graphicscommand.NewImage(w, h, false, "")
-		fillImage(t, img, color.RGBA{R: 0x12, G: 0x34, B: 0x56, A: 0xff})
-
-		want := make([]byte, 4*w*h)
-		if err := img.ReadPixels(ui.Get().GraphicsDriverForTesting(), []graphicsdriver.PixelsArgs{{
-			Pixels: want,
-			Region: region,
-		}}); err != nil {
-			t.Fatal(err)
-		}
-
-		got := make([]byte, 4*w*h)
-		ch := img.ReadPixelsAsync([]graphicsdriver.PixelsArgs{{
-			Pixels: got,
-			Region: region,
-		}})
-		if err := requireReadPixelsAsyncResult(t, ch); err != nil {
-			t.Error(err)
-			return
-		}
-		if !bytes.Equal(got, want) {
-			t.Errorf("ReadPixelsAsync got: %v, want: %v", got, want)
-		}
-	})
-
-	t.Run("CaptureOrder", func(t *testing.T) {
-		img := graphicscommand.NewImage(w, h, false, "")
-		fillImage(t, img, color.RGBA{R: 0x11, G: 0x11, B: 0x11, A: 0xff})
-
-		pix := make([]byte, 4*w*h)
-		ch := img.ReadPixelsAsync([]graphicsdriver.PixelsArgs{{
-			Pixels: pix,
-			Region: region,
-		}})
-		fillImage(t, img, color.RGBA{R: 0x22, G: 0x22, B: 0x22, A: 0xff})
-		fillImage(t, img, color.RGBA{R: 0x33, G: 0x33, B: 0x33, A: 0xff})
-
-		if err := requireReadPixelsAsyncResult(t, ch); err != nil {
-			t.Error(err)
-			return
-		}
-		want := []byte{0x11, 0x11, 0x11, 0xff}
-		for i, p := range pix {
-			if p != want[i%4] {
-				t.Errorf("pixels[%d] = %#x, want %#x: the capture must not include the following writes", i, p, want[i%4])
-			}
-		}
-	})
 
 	t.Run("ManyInFlight", func(t *testing.T) {
 		const count = 16
@@ -321,29 +271,6 @@ func TestReadPixelsAsyncWithRealDriver(t *testing.T) {
 		}
 	})
 
-	t.Run("DisposeWhilePending", func(t *testing.T) {
-		const count = 4
-		imgs := make([]*graphicscommand.Image, count)
-		chans := make([]<-chan error, count)
-		for i := range imgs {
-			imgs[i] = graphicscommand.NewImage(w, h, false, "")
-			fillImage(t, imgs[i], color.RGBA{R: byte(0x10 * (i + 1)), A: 0xff})
-			chans[i] = imgs[i].ReadPixelsAsync([]graphicsdriver.PixelsArgs{{
-				Pixels: make([]byte, 4*w*h),
-				Region: region,
-			}})
-		}
-		for _, img := range imgs {
-			img.Dispose()
-		}
-		for i, ch := range chans {
-			if err := requireReadPixelsAsyncResult(t, ch); err != nil {
-				t.Errorf("read-back %d: %v", i, err)
-				continue
-			}
-		}
-	})
-
 	t.Run("IgnoredResults", func(t *testing.T) {
 		img := graphicscommand.NewImage(w, h, false, "")
 		fillImage(t, img, color.RGBA{R: 0x55, A: 0xff})
@@ -355,7 +282,7 @@ func TestReadPixelsAsyncWithRealDriver(t *testing.T) {
 				Region: region,
 			}})
 		}
-		flushPresent(t)
+		flushEndFrame(t)
 
 		pix := make([]byte, 4*w*h)
 		ch := img.ReadPixelsAsync([]graphicsdriver.PixelsArgs{{

@@ -17,6 +17,7 @@
 package file_test
 
 import (
+	"errors"
 	"io/fs"
 	"path/filepath"
 	"slices"
@@ -27,7 +28,7 @@ import (
 )
 
 func TestFSReadDir(t *testing.T) {
-	vfs := newVirtualFS(t, []string{"testdata/foo.txt", "testdata/dir"})
+	vfs := newVirtualFS(t, []string{filepath.Join("testdata", "foo.txt"), filepath.Join("testdata", "dir")})
 
 	rootEnts, err := fs.ReadDir(vfs, ".")
 	if err != nil {
@@ -81,7 +82,7 @@ func TestFSReadDir(t *testing.T) {
 }
 
 func TestFSReadFile(t *testing.T) {
-	vfs := newVirtualFS(t, []string{"testdata/foo.txt", "testdata/dir"})
+	vfs := newVirtualFS(t, []string{filepath.Join("testdata", "foo.txt"), filepath.Join("testdata", "dir")})
 
 	content, err := fs.ReadFile(vfs, "foo.txt")
 	if err != nil {
@@ -138,7 +139,7 @@ func dirEntryNames(t *testing.T, vfs fs.FS, name string) []string {
 }
 
 func TestFSSameBaseNames(t *testing.T) {
-	vfs := newVirtualFS(t, []string{"testdata/foo.txt", "testdata/dir/foo.txt"})
+	vfs := newVirtualFS(t, []string{filepath.Join("testdata", "foo.txt"), filepath.Join("testdata", "dir", "foo.txt")})
 
 	// The paths are not in the same directory, so the root directory is their common ancestor directory.
 	if got, want := dirEntryNames(t, vfs, "."), []string{"dir", "foo.txt"}; !slices.Equal(got, want) {
@@ -173,7 +174,7 @@ func TestFSSameBaseNames(t *testing.T) {
 }
 
 func TestFSPathUnderAnotherPath(t *testing.T) {
-	vfs := newVirtualFS(t, []string{"testdata/dir", "testdata/dir/foo.txt"})
+	vfs := newVirtualFS(t, []string{filepath.Join("testdata", "dir"), filepath.Join("testdata", "dir", "foo.txt")})
 
 	if got, want := dirEntryNames(t, vfs, "."), []string{"dir"}; !slices.Equal(got, want) {
 		t.Errorf("names: got: %v, want: %v", got, want)
@@ -186,7 +187,7 @@ func TestFSPathUnderAnotherPath(t *testing.T) {
 }
 
 func TestFSRootDirectoryPath(t *testing.T) {
-	vfs := newVirtualFS(t, []string{string(filepath.Separator), "testdata/foo.txt"})
+	vfs := newVirtualFS(t, []string{string(filepath.Separator), filepath.Join("testdata", "foo.txt")})
 
 	if got, want := dirEntryNames(t, vfs, "."), []string{"foo.txt"}; !slices.Equal(got, want) {
 		t.Errorf("names: got: %v, want: %v", got, want)
@@ -204,7 +205,7 @@ func absPath(t *testing.T, entry any) string {
 }
 
 func TestFSAbsPath(t *testing.T) {
-	vfs := newVirtualFS(t, []string{"testdata/foo.txt", "testdata/dir/foo.txt"})
+	vfs := newVirtualFS(t, []string{filepath.Join("testdata", "foo.txt"), filepath.Join("testdata", "dir", "foo.txt")})
 
 	base, err := filepath.Abs("testdata")
 	if err != nil {
@@ -247,5 +248,30 @@ func TestFSAbsPath(t *testing.T) {
 	}()
 	if got, want := absPath(t, f), filepath.Join(base, "dir", "foo.txt"); got != want {
 		t.Errorf("AbsPath(): got: %s, want: %s", got, want)
+	}
+}
+
+func TestFSDirectoryReadError(t *testing.T) {
+	vfs := newVirtualFS(t, []string{filepath.Join("testdata", "foo.txt"), filepath.Join("testdata", "dir", "foo.txt")})
+	for _, name := range []string{".", "dir"} {
+		f, err := vfs.Open(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = f.Read(make([]byte, 1))
+		if closeErr := f.Close(); closeErr != nil {
+			t.Fatal(closeErr)
+		}
+		var pathErr *fs.PathError
+		if !errors.As(err, &pathErr) {
+			t.Errorf("%s: got error %v, want *fs.PathError", name, err)
+			continue
+		}
+		if got, want := pathErr.Path, name; got != want {
+			t.Errorf("Path: got %q, want %q", got, want)
+		}
+		if got, want := pathErr.Op, "read"; got != want {
+			t.Errorf("Op: got %q, want %q", got, want)
+		}
 	}
 }

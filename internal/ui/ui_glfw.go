@@ -1450,7 +1450,10 @@ func (u *glfwBackend) terminateGLFW() error {
 
 func (u *glfwBackend) loopGame() (err error) {
 	defer func() {
-		atlas.Terminate()
+		atlas.AbortReadPixels()
+		if contextErr := graphicscommand.TerminateGraphicsDriverState(u.graphicsDriver); contextErr != nil {
+			err = errors.Join(err, contextErr)
+		}
 		if glfwErr := thread.CallWithArgAndResult(u.mainThread, (*glfwBackend).terminateGLFW, u); glfwErr != nil {
 			err = errors.Join(err, glfwErr)
 		}
@@ -1654,6 +1657,9 @@ func (u *glfwBackend) updateWindowSizeLimits() error {
 	m, err := u.currentMonitor()
 	if err != nil {
 		return err
+	}
+	if m == nil {
+		return nil
 	}
 	minw, minh, maxw, maxh := u.desktopWindow.getWindowSizeLimitsInDIP()
 
@@ -1875,6 +1881,14 @@ func (u *glfwBackend) setFullscreen(fullscreen bool) error {
 	}
 
 	// Exit the fullscreen.
+	m, err := u.currentMonitor()
+	if err != nil {
+		return err
+	}
+	if m == nil {
+		return nil
+	}
+
 	if err := u.updateWindowSizeLimits(); err != nil {
 		return err
 	}
@@ -1883,10 +1897,6 @@ func (u *glfwBackend) setFullscreen(fullscreen bool) error {
 	restoreSize := u.windowToRestore.size
 	restoreMonitor := u.windowToRestore.monitor
 
-	m, err := u.currentMonitor()
-	if err != nil {
-		return err
-	}
 	ww, wh := windowSizeToRestore(restoreSize.X, restoreSize.Y, restoreMonitor, u.windowWidthInDIP, u.windowHeightInDIP, m)
 	if u.isNativeFullscreenAvailable() {
 		if err := u.setNativeFullscreen(false); err != nil {
