@@ -1,0 +1,52 @@
+name: Focused patch regressions
+
+on:
+  push:
+    branches: [codex/patch-regression-ci-20261023]
+
+jobs:
+  regression:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            sha: 78969c3bd92f02daf8570aa951e31603b410a08f
+            test: TestGameControllerButtonsWithHats
+            source: internal/gamepad/gamepad_gc_darwin.go
+          - os: windows-latest
+            sha: 1c9ca00289078b2ddb665e2c2ec163d363016809
+            test: TestDesktopGamepadVibrateAfterClose
+            source: internal/gamepad/gamepad_desktop_windows.go
+    name: ${{ matrix.test }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.27.x
+      - name: Verify exact commit and fixed regression
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ matrix.sha }}"
+          go test -count=1 -v -run '^${{ matrix.test }}$' ./internal/gamepad
+      - name: Verify original implementation fails the same regression
+        run: |
+          git show '8bd8907280917c06ae43c63c2f12f0eb46ab575e:${{ matrix.source }}' > '${{ matrix.source }}'
+          set +e
+          go test -count=1 -v -run '^${{ matrix.test }}$' ./internal/gamepad > base-regression.log 2>&1
+          result=$?
+          set -e
+          cat base-regression.log
+          test "$result" -ne 0
+          grep -q -- '--- FAIL: ${{ matrix.test }}' base-regression.log
+      - name: Restore and recheck exact commit
+        run: |
+          git restore '${{ matrix.source }}'
+          test "$(git rev-parse HEAD)" = "${{ matrix.sha }}"
+          go test -count=1 -v -run '^${{ matrix.test }}$' ./internal/gamepad
