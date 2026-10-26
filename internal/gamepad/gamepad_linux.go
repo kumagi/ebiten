@@ -599,7 +599,11 @@ func (g *nativeGamepadImpl) update(gamepad *gamepads) (err error) {
 	const numReadEvents = 64
 	var buf [numReadEvents * inputEventSize]byte
 
-	for {
+	// Bound the work per update, as a device can keep producing events while they are read.
+	// Pending events are read on later updates.
+	const maxReadsPerUpdate = 16
+
+	for range maxReadsPerUpdate {
 		n, err := unix.Read(g.fdPlus1-1, buf[:])
 		if err != nil {
 			// EINTR means no event was read; retry at the next update.
