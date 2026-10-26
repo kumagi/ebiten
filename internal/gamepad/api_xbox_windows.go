@@ -123,6 +123,10 @@ type _GameInputRumbleParams struct {
 }
 
 func _GameInputCreate() (*_IGameInput, error) {
+	// Resolve the procedure first so missing DLLs or symbols return an error.
+	if err := procGameInputCreate.Find(); err != nil {
+		return nil, fmt.Errorf("gamepad: resolving GameInputCreate failed: %w", err)
+	}
 	var gameInput *_IGameInput
 	r, _, _ := procGameInputCreate.Call(uintptr(unsafe.Pointer(&gameInput)))
 	if uint32(r) != uint32(windows.S_OK) {
