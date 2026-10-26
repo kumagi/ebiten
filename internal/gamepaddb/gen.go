@@ -72,6 +72,10 @@ package gamepaddb
 
 import (
 	_ "embed"
+{{- if .SkipOnXbox}}
+
+	"github.com/hajimehoshi/ebiten/v2/internal/microsoftgdk"
+{{- end}}
 )
 
 //go:embed gamecontrollerdb_{{.FileNameSuffix}}.txt
@@ -90,6 +94,12 @@ var additionalGLFWGamepads = []byte(` + "`" + `
 {{end}}
 
 func init() {
+{{- if .SkipOnXbox}}
+	// GDK builds can also use the desktop backend on Windows PCs.
+	if microsoftgdk.IsXbox() {
+		return
+	}
+{{end}}
 	if err := Update(controllerBytes_{{.FileNameSuffix}}); err != nil {
 		panic(err)
 	}{{if .HasGLFWGamepads}}
@@ -114,13 +124,14 @@ func run() error {
 		filenameSuffix   string
 		buildConstraints string
 		hasGLFWGamepads  bool
+		skipOnXbox       bool
 	}
 
 	platforms := map[string]gamePadPlatform{
 		"Windows": {
-			filenameSuffix:   "windows",
-			buildConstraints: "//go:build !microsoftgdk",
-			hasGLFWGamepads:  true,
+			filenameSuffix:  "windows",
+			hasGLFWGamepads: true,
+			skipOnXbox:      true,
 		},
 		"Mac OS X": {
 			filenameSuffix: "iokit_darwin",
@@ -172,12 +183,14 @@ func run() error {
 			BuildConstraints string
 			FileNameSuffix   string
 			HasGLFWGamepads  bool
+			SkipOnXbox       bool
 		}{
 			License:          license,
 			DoNotEdit:        doNotEdit,
 			BuildConstraints: platform.buildConstraints,
 			FileNameSuffix:   platform.filenameSuffix,
 			HasGLFWGamepads:  platform.hasGLFWGamepads,
+			SkipOnXbox:       platform.skipOnXbox,
 		}); err != nil {
 			return err
 		}

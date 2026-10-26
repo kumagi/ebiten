@@ -17,12 +17,12 @@
 // The embedded database is adapted from SDL_GameControllerDB.
 // See the SDL_GameControllerDB section in THIRD_PARTY_LICENSES.md for its license.
 
-//go:build !microsoftgdk
-
 package gamepaddb
 
 import (
 	_ "embed"
+
+	"github.com/hajimehoshi/ebiten/v2/internal/microsoftgdk"
 )
 
 //go:embed gamecontrollerdb_windows.txt
@@ -39,6 +39,11 @@ var additionalGLFWGamepads = []byte(`
 `)
 
 func init() {
+	// GDK builds can also use the desktop backend on Windows PCs.
+	if microsoftgdk.IsXbox() {
+		return
+	}
+
 	if err := Update(controllerBytes_windows); err != nil {
 		panic(err)
 	}
