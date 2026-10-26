@@ -123,9 +123,9 @@ func (p *GuestAudioStream) Position() time.Duration {
 	return time.Duration(position)
 }
 
-// StartTick returns the guest's [ebiten.Tick] during the tick the stream started, i.e. the guest's
-// Update that first played its player. It is fixed when the stream appears and is unchanged if the source
-// is later sought back and replayed.
+// StartTick returns the guest's [ebiten.Tick] when the host first observed the player playing.
+// Play and Pause calls between control reports are not observable by the host.
+// StartTick is fixed when the stream appears and is unchanged if the source is later sought back and replayed.
 func (p *GuestAudioStream) StartTick() int {
 	return p.startTick
 }

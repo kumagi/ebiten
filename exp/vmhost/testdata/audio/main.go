@@ -58,6 +58,7 @@ func (flatReader) Read(p []byte) (int, error) {
 }
 
 type game struct {
+	ctx   *audio.Context
 	ticks int
 	ramp  *audio.Player
 	flat  *audio.Player
@@ -66,6 +67,14 @@ type game struct {
 func (g *game) Update() error {
 	g.ticks++
 	switch g.ticks {
+	case 1:
+		var err error
+		g.ramp, err = g.ctx.NewPlayerF32(bytes.NewReader(rampBytes()))
+		if err != nil {
+			return err
+		}
+		g.ramp.Play()
+		g.ramp.Pause()
 	case 3:
 		g.ramp.Play()
 	case 4:
@@ -93,15 +102,11 @@ func (g *game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	ctx := audio.NewContext(sampleRate)
-	ramp, err := ctx.NewPlayerF32(bytes.NewReader(rampBytes()))
-	if err != nil {
-		log.Fatal(err)
-	}
 	flat, err := ctx.NewPlayerF32(flatReader{})
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := ebiten.RunGame(&game{ramp: ramp, flat: flat}); err != nil {
+	if err := ebiten.RunGame(&game{ctx: ctx, flat: flat}); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -77,12 +77,15 @@ func TestAudioForwarding(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Tick past the point where both players start (ramp at tick 3, flat at tick 4). WaitTicks delivers the
+	// Tick past the point where both players remain playing (ramp at tick 3, flat at tick 4). WaitTicks delivers the
 	// ticks' new streams to the handler before returning, so by tick 6 it has been called for each.
 	for tick := 1; tick <= 6; tick++ {
 		guest.AdvanceTicks(1)
 		if !guest.WaitTicks() {
 			t.Fatalf("waiting for tick %d failed: %v", tick, guest.Err())
+		}
+		if tick < 3 && len(streams) != 0 {
+			t.Errorf("tick %d: streams reported before playing control: %d", tick, len(streams))
 		}
 	}
 
@@ -111,9 +114,8 @@ func TestAudioForwarding(t *testing.T) {
 		t.Fatalf("missing a stream: ramp=%v flat=%v", ramp != nil, flat != nil)
 	}
 
-	// Each stream is stamped with the guest tick it started on: the fixture plays the ramp during its 3rd
-	// Update (ebiten.Tick() 2) and the flat source during its 4th (ebiten.Tick() 3). StartTick anchors the
-	// stream to the guest's tick timeline.
+	// Each stream is stamped with its first playing report: the ramp remains playing during its 3rd
+	// Update (ebiten.Tick() 2) and the flat source during its 4th (ebiten.Tick() 3).
 	if ramp.StartTick() != 2 {
 		t.Errorf("ramp.StartTick() = %d; want 2", ramp.StartTick())
 	}

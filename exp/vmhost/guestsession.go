@@ -1833,7 +1833,7 @@ func (g *GuestSession) applyAudioControl(msg *vmprotocol.GuestMessage) {
 }
 
 // updateAudioStreams records the sample rate and each player's playing flag and volume, creating a
-// GuestAudioStream for an unseen ID. It returns the streams created for the handler, none when no
+// GuestAudioStream when an unseen player first plays. It returns the streams created for the handler, none when no
 // handler is registered.
 func (g *GuestSession) updateAudioStreams(msg *vmprotocol.GuestMessage) []*GuestAudioStream {
 	g.audioMu.Lock()
@@ -1853,6 +1853,9 @@ func (g *GuestSession) updateAudioStreams(msg *vmprotocol.GuestMessage) []*Guest
 		}
 		p := g.audioStreams[c.ID]
 		if p == nil {
+			if !c.Playing {
+				continue
+			}
 			p = &GuestAudioStream{
 				session:   g,
 				id:        c.ID,
