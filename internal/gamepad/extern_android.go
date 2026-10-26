@@ -50,11 +50,14 @@ func (g *gamepads) addAndroidGamepad(androidDeviceID int, name, sdlID string, ax
 	}
 
 	gp := g.add(name, sdlID)
+	// The button size has to accept the generic buttons 1-16, which are mapped to the indices 20-35
+	// in mobile/ebitenmobileview/input_android.go.
+	const buttonCount = 36
 	gp.native = &nativeGamepadImpl{
 		androidDeviceID: androidDeviceID,
 		axesReady:       make([]bool, axisCount),
 		axes:            make([]float64, axisCount),
-		buttons:         make([]bool, gamepaddb.SDLControllerButtonMax+1),
+		buttons:         make([]bool, buttonCount),
 		hats:            make([]int, hatCount),
 	}
 }
