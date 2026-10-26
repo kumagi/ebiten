@@ -94,6 +94,11 @@ type Resampling struct {
 	// srcReadEnd is the offset in bytes just past the last byte the source has delivered so far.
 	srcReadEnd int64
 
+	// srcBase is the source's offset in bytes corresponding to this stream's position 0. It is 0
+	// when the source's position is unknown, i.e. when the source is not an io.Seeker or its
+	// position could not be queried.
+	srcBase int64
+
 	from            int
 	to              int
 	bitDepthInBytes int
@@ -116,7 +121,8 @@ type Resampling struct {
 }
 
 // NewResampling returns a stream that converts the sample rate of source.
-// length is the length of source in bytes. A negative length indicates the length is unknown.
+// The current source position becomes the beginning of the resampled stream.
+// length is the length of source from that position in bytes. A negative length indicates the length is unknown.
 func NewResampling(source io.Reader, length int64, from, to int, bitDepthInBytes int) *Resampling {
 	if length < 0 {
 		length = -1
@@ -133,6 +139,11 @@ func NewResampling(source io.Reader, length int64, from, to int, bitDepthInBytes
 		lastReadSrcBlockValid: true,
 		srcBufL:               map[int64][]float64{},
 		srcBufR:               map[int64][]float64{},
+	}
+	if seeker, ok := source.(io.Seeker); ok {
+		if pos, err := seeker.Seek(0, io.SeekCurrent); err == nil {
+			r.srcBase = pos
+		}
 	}
 	return r
 }
@@ -187,7 +198,11 @@ func (r *Resampling) src(i int64) (float64, float64, error) {
 			if !ok {
 				return 0, 0, fmt.Errorf("convert: source must be io.Seeker: %w", errors.ErrUnsupported)
 			}
-			if _, err := seeker.Seek(blockStart, io.SeekStart); err != nil {
+			pos, ok := mathutil.AddForSeek(r.srcBase, blockStart)
+			if !ok {
+				return 0, 0, fmt.Errorf("convert: invalid source seek position")
+			}
+			if _, err := seeker.Seek(pos, io.SeekStart); err != nil {
 				return 0, 0, err
 			}
 		}

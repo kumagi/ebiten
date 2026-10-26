@@ -1273,3 +1273,47 @@ func TestResamplingFloat32Headroom(t *testing.T) {
 		}
 	}
 }
+
+func TestResamplingSourceOrigin(t *testing.T) {
+	for _, depth := range []int{2, 4} {
+		for _, lengthKnown := range []bool{false, true} {
+			t.Run(fmt.Sprintf("depth%d/known%v", depth, lengthKnown), func(t *testing.T) {
+				data := newSoundBytesForFrames(44100, 4096*10, depth)
+				length := int64(-1)
+				if lengthKnown {
+					length = int64(len(data))
+				}
+				want, err := io.ReadAll(convert.NewResampling(bytes.NewReader(data), length, 44100, 48000, depth))
+				if err != nil {
+					t.Fatal(err)
+				}
+				prefix := bytes.Repeat([]byte{0x7f}, 37)
+				source := bytes.NewReader(append(prefix, data...))
+				if _, err := source.Seek(int64(len(prefix)), io.SeekStart); err != nil {
+					t.Fatal(err)
+				}
+				r := convert.NewResampling(source, length, 44100, 48000, depth)
+				got, err := io.ReadAll(r)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(got, want) {
+					t.Error("initial read differs from a zero-origin source")
+				}
+				// Reading ten blocks evicts the first from the four-block cache.
+				for _, offset := range []int64{0, int64(4096 * 3 * depth * 2)} {
+					if _, err := r.Seek(offset, io.SeekStart); err != nil {
+						t.Fatal(err)
+					}
+					got, err := io.ReadAll(r)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !bytes.Equal(got, want[offset:]) {
+						t.Errorf("read after Seek(%d) differs from a zero-origin source", offset)
+					}
+				}
+			})
+		}
+	}
+}
