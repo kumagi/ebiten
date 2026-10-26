@@ -1048,17 +1048,15 @@ func (g *GuestSession) queueTicks(n int) {
 // frame, since the one just requested has yet to render. At most one frame is in flight: requests made
 // before the last is composited by CompositeFrame coalesce into one. A regular termination, a timeout,
 // and any deferred error surface from [GuestSession.Err].
+// A request made before the first tick is remembered, but cannot render until a tick is processed.
 func (g *GuestSession) AdvanceFrame() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.closed || g.err != nil {
 		return
 	}
-	// A frame can only be produced after the first tick.
-	if g.submittedTicks > 0 {
-		g.requestedFrameSeq++
-		g.cond.Broadcast()
-	}
+	g.requestedFrameSeq++
+	g.cond.Broadcast()
 }
 
 // WaitFrame blocks until the frame requested by a preceding [GuestSession.AdvanceFrame] has been

@@ -73,6 +73,34 @@ func TestAsyncTickQueue(t *testing.T) {
 	}
 }
 
+func TestAdvanceFrameBeforeFirstTick(t *testing.T) {
+	guest := startGuest(t, "./testdata/atlas", activateByEnv, "unix")
+	outsideScreen := ebiten.NewImage(128, 128)
+	defer outsideScreen.Deallocate()
+	if err := guest.SetOutsideScreen(outsideScreen); err != nil {
+		t.Fatal(err)
+	}
+
+	guest.AdvanceFrame()
+	guest.AdvanceFrame()
+	if guest.CompositeFrame() {
+		t.Fatal("a frame was rendered before the first tick")
+	}
+	guest.AdvanceTicks(1)
+	if !guest.WaitTicks() {
+		t.Fatalf("WaitTicks failed: %v", guest.Err())
+	}
+	if !guest.WaitFrame() {
+		t.Fatalf("the frame requested before the first tick was lost: %v", guest.Err())
+	}
+	if !guest.CompositeFrame() {
+		t.Fatal("the remembered frame was not composited")
+	}
+	if guest.CompositeFrame() {
+		t.Fatal("coalesced requests produced another frame")
+	}
+}
+
 // TestWaitFrameResolvesToLatestRequest checks that when a completed frame is awaiting compositing and a
 // newer frame is requested, WaitFrame drops the stale frame and resolves to the latest request rather
 // than returning the stale frame.
