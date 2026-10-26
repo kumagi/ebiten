@@ -303,9 +303,6 @@ func (q *commandQueue) flush(graphicsDriver graphicsdriver.Graphics, mode graphi
 		if err != nil {
 			q.abortQueuedReadPixels(err)
 		}
-		if !begun {
-			return
-		}
 
 		// Release the commands explicitly (#1803).
 		// Apparently, the part of a slice between len and cap-1 still holds references.
@@ -326,7 +323,7 @@ func (q *commandQueue) flush(graphicsDriver graphicsdriver.Graphics, mode graphi
 		q.indices = q.indices[:0]
 		q.tmpNumVertexFloats = 0
 
-		if mode != graphicsdriver.FlushModeIntermediate {
+		if !begun || mode != graphicsdriver.FlushModeIntermediate {
 			q.releaseResources()
 		}
 	}()
