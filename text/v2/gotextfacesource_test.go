@@ -16,6 +16,9 @@ package text_test
 
 import (
 	"bytes"
+	"encoding/binary"
+	"fmt"
+	"image"
 	"os"
 	"path/filepath"
 	"sync"
@@ -429,5 +432,94 @@ func TestGlyphImageCacheAfterVariationChange(t *testing.T) {
 	want.ReadPixels(wantPixels)
 	if !bytes.Equal(gotPixels, wantPixels) {
 		t.Error("glyph pixels differ from a fresh face with the same variation")
+	}
+}
+
+func TestDrawWithNegativeLineGap(t *testing.T) {
+	for _, gap := range []int16{0, -5000} {
+		ld, err := opentype.NewLoader(bytes.NewReader(goregular.TTF))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fontTables []opentype.Table
+		for _, tag := range ld.Tables() {
+			content, err := ld.RawTable(tag)
+			if err != nil {
+				t.Fatal(err)
+			}
+			content = bytes.Clone(content)
+			switch tag {
+			case opentype.MustNewTag("hhea"):
+				binary.BigEndian.PutUint16(content[8:], uint16(gap))
+			case opentype.MustNewTag("OS/2"):
+				binary.BigEndian.PutUint16(content[72:], uint16(gap))
+			}
+			fontTables = append(fontTables, opentype.Table{
+				Tag:     tag,
+				Content: content,
+			})
+		}
+		source, err := text.NewGoTextFaceSource(bytes.NewReader(opentype.WriteTTF(fontTables)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			name      string
+			direction text.Direction
+			position  image.Point
+		}{
+			{
+				name:      "horizontal interior",
+				direction: text.DirectionLeftToRight,
+			},
+			{
+				name:      "horizontal edge",
+				direction: text.DirectionLeftToRight,
+				position:  image.Pt(0, 55),
+			},
+			{
+				name:      "vertical interior",
+				direction: text.DirectionTopToBottomAndLeftToRight,
+				position:  image.Pt(2, 0),
+			},
+			{
+				name:      "vertical edge",
+				direction: text.DirectionTopToBottomAndLeftToRight,
+				position:  image.Pt(-5, 0),
+			},
+		} {
+			t.Run(fmt.Sprintf("gap=%d/%s", gap, tc.name), func(t *testing.T) {
+				face := &text.GoTextFace{
+					Source:    source,
+					Size:      24,
+					Direction: tc.direction,
+				}
+				want := ebiten.NewImage(64, 64)
+				defer want.Deallocate()
+				got := ebiten.NewImage(64, 64)
+				defer got.Deallocate()
+				for _, glyph := range text.AppendGlyphs(nil, "F", face, nil) {
+					if glyph.Image == nil {
+						continue
+					}
+					op := &ebiten.DrawImageOptions{}
+					op.GeoM.Translate(glyph.X+float64(tc.position.X), glyph.Y+float64(tc.position.Y))
+					want.DrawImage(glyph.Image, op)
+				}
+				op := &text.DrawOptions{}
+				op.GeoM.Translate(float64(tc.position.X), float64(tc.position.Y))
+				text.Draw(got, "F", face, op)
+				wantPixels := make([]byte, 64*64*4)
+				gotPixels := make([]byte, len(wantPixels))
+				want.ReadPixels(wantPixels)
+				got.ReadPixels(gotPixels)
+				if bytes.Equal(wantPixels, make([]byte, len(wantPixels))) {
+					t.Fatal("unculled reference has no visible pixel")
+				}
+				if !bytes.Equal(gotPixels, wantPixels) {
+					t.Error("Draw differs from unculled glyph rendering")
+				}
+			})
+		}
 	}
 }
