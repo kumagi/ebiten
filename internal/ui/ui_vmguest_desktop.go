@@ -981,6 +981,9 @@ func (h *vmHostClient) MaxImageSize() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	if answer.MaxImageSize <= 0 {
+		return 0, fmt.Errorf("ui: host returned invalid maximum image size %d", answer.MaxImageSize)
+	}
 	return answer.MaxImageSize, nil
 }
 
