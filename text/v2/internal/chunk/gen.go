@@ -29,6 +29,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -84,11 +85,16 @@ func xmain() error {
 // fetchProps downloads the UCD file and groups entries by property
 // name (the second column).
 func fetchProps() (map[string][]entry, error) {
-	resp, err := http.Get(ucdURL)
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	resp, err := client.Get(ucdURL)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GET %s: %s", ucdURL, resp.Status)
 	}
