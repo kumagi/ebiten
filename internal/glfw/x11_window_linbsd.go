@@ -2464,7 +2464,13 @@ func (w *Window) platformSetWindowPos(xpos, ypos int) error {
 
 func (w *Window) platformGetWindowSize() (width, height int, err error) {
 	var attribs _XWindowAttributes
-	xGetWindowAttributes(_glfw.platformWindow.display, w.platform.handle, &attribs)
+	// Trap X errors while querying attributes.
+	grabErrorHandlerX11()
+	status := xGetWindowAttributes(_glfw.platformWindow.display, w.platform.handle, &attribs)
+	releaseErrorHandlerX11()
+	if status == 0 {
+		return 0, 0, inputErrorX11(PlatformError, "X11: Failed to get the window attributes")
+	}
 
 	return int(attribs.Width), int(attribs.Height), nil
 }
@@ -2832,7 +2838,13 @@ func (w *Window) platformWindowIconified() bool {
 
 func (w *Window) platformWindowVisible() bool {
 	var wa _XWindowAttributes
-	xGetWindowAttributes(_glfw.platformWindow.display, w.platform.handle, &wa)
+	// Trap X errors while querying attributes.
+	grabErrorHandlerX11()
+	status := xGetWindowAttributes(_glfw.platformWindow.display, w.platform.handle, &wa)
+	releaseErrorHandlerX11()
+	if status == 0 {
+		return false
+	}
 	return wa.MapState == _IsViewable
 }
 
