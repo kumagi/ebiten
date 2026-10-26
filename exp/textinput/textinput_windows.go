@@ -118,12 +118,12 @@ func (t *textInputImpl) start(bounds image.Rectangle) (err error) {
 	}
 
 	// By default, IME was disabled by setting 0 as the IMM context.
-	// Restore the context once.
+	// Restore once, retaining any initialization failure.
 	t.initOnce.Do(func() {
-		err = ui.Get().RestoreIMMContextOnMainThread()
+		t.err = ui.Get().RestoreIMMContextOnMainThread()
 	})
-	if err != nil {
-		return err
+	if t.err != nil {
+		return t.err
 	}
 
 	if t.immContext != 0 {
