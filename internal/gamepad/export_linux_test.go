@@ -19,6 +19,8 @@ package gamepad
 import (
 	"unsafe"
 
+	"github.com/hajimehoshi/ebiten/v2/internal/gamepaddb"
+
 	"golang.org/x/sys/unix"
 )
 
@@ -108,4 +110,28 @@ func NewLinuxGamepadForTest(t *TouchNode) *Gamepad {
 
 func SDLIDForTesting(bus, vendor, product, version uint16, name string) string {
 	return newSDLID(input_id{bustype: bus, vendor: vendor, product: product, version: version}, name)
+}
+
+func LinuxTriggerValuesForTesting(analog, digital, hat bool) (left, right float64) {
+	g := &nativeGamepadImpl{axisCount_: 2, buttonCount_: 3, hatCount_: 1}
+	for i := range g.keyMap {
+		g.keyMap[i] = -1
+	}
+	for i := range g.absMap {
+		g.absMap[i] = -1
+	}
+	g.keyMap[_BTN_GAMEPAD-_BTN_MISC] = 0
+	if analog {
+		g.absMap[_ABS_Z], g.absMap[_ABS_RZ] = 0, 1
+		g.axes[0], g.axes[1] = -0.5, 0.5
+	}
+	if digital {
+		g.keyMap[_BTN_TL2-_BTN_MISC], g.keyMap[_BTN_TR2-_BTN_MISC] = 1, 2
+	}
+	if hat {
+		g.absMap[_ABS_HAT2X], g.absMap[_ABS_HAT2Y] = 0, 0
+		g.hats[0] = hatDown | hatRight
+	}
+	g.computeStandardLayout(0)
+	return g.standardButtonInOwnMapping(gamepaddb.StandardButtonFrontBottomLeft).Value(), g.standardButtonInOwnMapping(gamepaddb.StandardButtonFrontBottomRight).Value()
 }

@@ -824,17 +824,17 @@ func (g *nativeGamepadImpl) computeStandardLayout(vendor uint16) {
 	if b := g.keyMap[_BTN_TR2-_BTN_MISC]; b >= 0 {
 		g.stdButtonMap[gamepaddb.StandardButtonFrontBottomRight] = buttonMappingInput{g: g, button: b}
 	}
-	if a := g.absMap[_ABS_Z]; a >= 0 {
-		g.stdButtonMap[gamepaddb.StandardButtonFrontBottomLeft] = axisMappingInput{g: g, axis: a}
-	}
-	if a := g.absMap[_ABS_RZ]; a >= 0 {
-		g.stdButtonMap[gamepaddb.StandardButtonFrontBottomRight] = axisMappingInput{g: g, axis: a}
-	}
 	if h := g.absMap[_ABS_HAT2Y]; h >= 0 {
 		g.stdButtonMap[gamepaddb.StandardButtonFrontBottomLeft] = hatMappingInput{g: g, hat: h, direction: hatDown}
 	}
 	if h := g.absMap[_ABS_HAT2X]; h >= 0 {
 		g.stdButtonMap[gamepaddb.StandardButtonFrontBottomRight] = hatMappingInput{g: g, hat: h, direction: hatRight}
+	}
+	if a := g.absMap[_ABS_Z]; a >= 0 {
+		g.stdButtonMap[gamepaddb.StandardButtonFrontBottomLeft] = axisMappingInput{g: g, axis: a}
+	}
+	if a := g.absMap[_ABS_RZ]; a >= 0 {
+		g.stdButtonMap[gamepaddb.StandardButtonFrontBottomRight] = axisMappingInput{g: g, axis: a}
 	}
 
 	// D-pad can be analog or digital. Prefer the digital one.

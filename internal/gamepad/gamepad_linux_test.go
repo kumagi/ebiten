@@ -91,3 +91,25 @@ func TestSDLID(t *testing.T) {
 		}
 	}
 }
+
+func TestLinuxTriggerMappingPreference(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		analog, digital, hat bool
+		wantLeft, wantRight  float64
+	}{
+		{name: "axis and hat", analog: true, hat: true, wantLeft: 0.25, wantRight: 0.75},
+		{name: "all sources", analog: true, digital: true, hat: true, wantLeft: 0.25, wantRight: 0.75},
+		{name: "axis and button", analog: true, digital: true, wantLeft: 0.25, wantRight: 0.75},
+		{name: "hat and button", digital: true, hat: true, wantLeft: 1, wantRight: 1},
+		{name: "hat only", hat: true, wantLeft: 1, wantRight: 1},
+		{name: "button only", digital: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			left, right := gamepad.LinuxTriggerValuesForTesting(tc.analog, tc.digital, tc.hat)
+			if left != tc.wantLeft || right != tc.wantRight {
+				t.Errorf("trigger values = (%v, %v), want (%v, %v)", left, right, tc.wantLeft, tc.wantRight)
+			}
+		})
+	}
+}
