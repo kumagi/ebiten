@@ -15,6 +15,7 @@
 package textinput_test
 
 import (
+	"errors"
 	"slices"
 	"testing"
 
@@ -324,6 +325,71 @@ func TestComposerUpdateFromCallbacks(t *testing.T) {
 			}
 			if calls != 1 {
 				t.Errorf("callback calls = %d, want 1", calls)
+			}
+		})
+	}
+}
+
+func TestComposerErrorWithUserEnding(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		composition   string
+		endedByUser   bool
+		wantCallbacks []string
+	}{
+		{
+			name:          "error alone",
+			composition:   "にほ",
+			wantCallbacks: []string{"composition:"},
+		},
+		{
+			name:          "user ending without preedit",
+			endedByUser:   true,
+			wantCallbacks: []string{"composition:", "end"},
+		},
+		{
+			name:          "user ending with preedit",
+			composition:   "にほ",
+			endedByUser:   true,
+			wantCallbacks: []string{"commit:にほ", "composition:", "end"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := textinput.NewComposerDriver("before", "after")
+			d.Composer.OnNewSession = func() *textinput.SessionOptions { return nil }
+			d.Send(compositionState(tc.composition))
+			if _, err := d.Composer.Update(); err != nil {
+				t.Fatal(err)
+			}
+			var callbacks []string
+			d.Composer.OnCommit = func(c *textinput.Commit) {
+				callbacks = append(callbacks, "commit:"+c.Text())
+			}
+			d.Composer.OnComposition = func(c *textinput.Composition) {
+				callbacks = append(callbacks, "composition:"+c.Text())
+			}
+			d.Composer.OnEndByUser = func() {
+				callbacks = append(callbacks, "end")
+				d.Composer.Confirm()
+			}
+			platformErr := errors.New("platform error")
+			if !d.Send(textinput.TextInputState{Error: platformErr}) {
+				t.Fatal("error was not delivered")
+			}
+			if tc.endedByUser {
+				d.EndByUser()
+			}
+			if _, err := d.Composer.Update(); !errors.Is(err, platformErr) {
+				t.Errorf("Update error = %v, want %v", err, platformErr)
+			}
+			if d.SessionOpen() {
+				t.Error("session remains open after error")
+			}
+			if _, err := d.Composer.Update(); err != nil {
+				t.Errorf("next Update: %v", err)
+			}
+			if !slices.Equal(callbacks, tc.wantCallbacks) {
+				t.Errorf("callbacks = %q, want %q", callbacks, tc.wantCallbacks)
 			}
 		})
 	}

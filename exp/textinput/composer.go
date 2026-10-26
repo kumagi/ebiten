@@ -223,11 +223,7 @@ func (c *Composer) Update() (handled bool, err error) {
 // leaves text inputting in progress, so that Update starts the next session.
 // The session is dropped when it ends or fails.
 func (c *Composer) drain() (handled, next bool, err error) {
-	if err = c.s.drain(); err != nil {
-		c.s = nil
-		c.dispatchEmptyComposition()
-		return false, false, err
-	}
+	err = c.s.drain()
 
 	if c.s.IsCommitted() {
 		s := c.s
@@ -244,7 +240,7 @@ func (c *Composer) drain() (handled, next bool, err error) {
 		return handled, true, nil
 	}
 
-	if c.s.IsClosed() {
+	if err != nil || c.s.IsClosed() {
 		// The user's ending discards no composition: what the user last saw
 		// is committed, as Confirm does.
 		s := c.s
@@ -257,7 +253,7 @@ func (c *Composer) drain() (handled, next bool, err error) {
 		if endedByUser {
 			c.dispatchEndByUser()
 		}
-		return false, false, nil
+		return false, false, err
 	}
 
 	// Active session: composing or idle.
