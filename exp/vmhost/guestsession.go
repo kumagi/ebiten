@@ -996,9 +996,10 @@ func (g *GuestSession) SetOutsideScreen(screen *ebiten.Image) error {
 // AdvanceTicks requests n Updates on the guest. It does not block on the guest: the requests are queued
 // and processed by the session goroutine. n must not be negative; a zero count requests nothing.
 //
-// Before returning it delivers the guest events processed ticks have produced (vibrations, new audio
-// streams, and new text-input sessions) to the [NewGuestSessionOptions] handlers, on the calling
-// goroutine.
+// Before returning it delivers any guest events already queued for handler delivery (vibrations,
+// new audio streams, and new text-input sessions) to the [NewGuestSessionOptions] handlers, on the
+// calling goroutine. It does not wait for the requested ticks to produce their events. Use
+// [GuestSession.WaitTicks] to wait for the requested ticks and deliver their events.
 //
 // A regular termination, a timeout, and any deferred error surface from [GuestSession.Err]; the number
 // of requested-but-unprocessed ticks is reported by [GuestSession.PendingTicks].
