@@ -20,6 +20,32 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/internal/ui"
 )
 
+func TestIsKeyString(t *testing.T) {
+	for _, tt := range []struct {
+		key  string
+		want bool
+	}{
+		{"", true},
+		{"a", true},
+		{"字", true},
+		{"ḍ\u0307", true}, // NFC example from the UI Events key specification.
+		{"q\u0323", true},
+		{"क\u093e", true},  // Mc with a zero combining class.
+		{"a\u034f", false}, // Mn with a zero combining class.
+		{"a\u20dd", false}, // Me with a zero combining class.
+		{"a\ufe0f", false},
+		{"Enter", false},
+		{"ab", false},
+		{"\n", false},
+	} {
+		t.Run(tt.key, func(t *testing.T) {
+			if got := ui.IsKeyStringForTest(tt.key); got != tt.want {
+				t.Errorf("isKeyString(%q): got %t, want %t", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsShortcutChord(t *testing.T) {
 	for _, tt := range []struct {
 		name     string

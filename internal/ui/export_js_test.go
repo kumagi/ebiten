@@ -14,6 +14,8 @@
 
 package ui
 
+var IsKeyStringForTest = isKeyString
+
 func IsShortcutChordForTest(ctrl, alt, meta, altGraph, isApple bool) bool {
 	return isShortcutChord(ctrl, alt, meta, altGraph, isApple)
 }
