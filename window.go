@@ -318,7 +318,7 @@ func IsWindowMinimized() bool {
 // RestoreWindow panics on desktops if the window is neither maximized nor minimized,
 // or if the window is not resizable and is not minimized.
 //
-// RestoreWindow does nothing if the platform is not a desktop.
+// RestoreWindow does nothing if the platform is not a desktop or the game loop has terminated.
 //
 // RestoreWindow is concurrent-safe.
 func RestoreWindow() {

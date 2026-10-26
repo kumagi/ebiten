@@ -422,13 +422,13 @@ func (w *desktopWindow) Minimize() {
 }
 
 func (w *desktopWindow) Restore() {
+	if w.ui.isTerminated() {
+		return
+	}
 	isMaximized := w.IsMaximized()
 	isMinimized := w.IsMinimized()
 	if !isMaximized && !isMinimized {
 		panic("ebiten: RestoreWindow must be called on a maximized or a minimized window")
-	}
-	if w.ui.isTerminated() {
-		return
 	}
 	if !isMinimized && !w.isWindowMaximizable() {
 		return
