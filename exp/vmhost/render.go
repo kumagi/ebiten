@@ -151,6 +151,9 @@ func (f *frameRenderer) renderOne(c vmprotocol.GraphicsCommand) error {
 		if len(c.ShaderSource) == 0 {
 			return fmt.Errorf("vmhost: no shader source forwarded for shader %d", c.ShaderID)
 		}
+		if _, ok := f.shaders[c.ShaderID]; ok {
+			return fmt.Errorf("vmhost: %s reuses the live shader %d", c.Kind, c.ShaderID)
+		}
 		ir, err := graphics.CompileShader(c.ShaderSource)
 		if err != nil {
 			return fmt.Errorf("vmhost: recompiling forwarded shader %d failed: %w", c.ShaderID, err)
