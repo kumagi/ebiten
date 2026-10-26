@@ -105,7 +105,7 @@ type desktopWindow struct {
 
 	windowSizeLimit windowSetting[windowSizeRange]
 
-	iconImages           atomic.Pointer[[]image.Image]
+	iconImages           atomic.Pointer[windowIconImages]
 	windowClosingHandled windowSetting[bool]
 	windowResizingMode   windowSetting[WindowResizingMode]
 
@@ -203,13 +203,39 @@ func (w *desktopWindow) setWindowVisible(visible bool) bool {
 	return w.windowVisible.Store(visible)
 }
 
-func (w *desktopWindow) getIconImages() *[]image.Image {
+type windowIconImages struct {
+	images []image.Image
+	// converted is populated lazily by the game goroutine, since reading an Ebitengine image
+	// requires a running game. It is reused while the icon request remains pending.
+	converted []image.Image
+}
+
+func (imgs *windowIconImages) imagesForGLFW() []image.Image {
+	if imgs.converted != nil {
+		return imgs.converted
+	}
+	converted := make([]image.Image, len(imgs.images))
+	for i, img := range imgs.images {
+		b := img.Bounds()
+		rgba := image.NewRGBA(b)
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			for x := b.Min.X; x < b.Max.X; x++ {
+				rgba.Set(x, y, img.At(x, y))
+			}
+		}
+		converted[i] = rgba
+	}
+	imgs.converted = converted
+	return converted
+}
+
+func (w *desktopWindow) getIconImages() *windowIconImages {
 	return w.iconImages.Load()
 }
 
 // resetIconImages resets the pending icon images.
 // If new icon images are set after imgs is obtained, nothing happens.
-func (w *desktopWindow) resetIconImages(imgs *[]image.Image) {
+func (w *desktopWindow) resetIconImages(imgs *windowIconImages) {
 	w.iconImages.CompareAndSwap(imgs, nil)
 }
 
@@ -219,7 +245,7 @@ func (w *desktopWindow) setIconImages(iconImages []image.Image) {
 	// See the comment in updateIconIfNeeded.
 	newImages := make([]image.Image, len(iconImages))
 	copy(newImages, iconImages)
-	w.iconImages.Store(&newImages)
+	w.iconImages.Store(&windowIconImages{images: newImages})
 }
 
 func (w *desktopWindow) setWindowPositionInDIP(x, y int) bool {

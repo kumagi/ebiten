@@ -22,6 +22,12 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/internal/glfw"
 )
 
+func NewWindowIconImagesForTest(images []image.Image) func() []image.Image {
+	w := &desktopWindow{}
+	w.setIconImages(images)
+	return w.getIconImages().imagesForGLFW
+}
+
 func NewMonitorForTest(boundsInGLFWPixels image.Rectangle, deviceScaleFactor float64) *Monitor {
 	return &Monitor{
 		boundsInGLFWPixels: boundsInGLFWPixels,

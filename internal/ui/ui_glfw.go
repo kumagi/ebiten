@@ -1606,31 +1606,12 @@ func (u *glfwBackend) updateGame() error {
 
 func (u *glfwBackend) updateIconIfNeeded() error {
 	imgs := u.desktopWindow.getIconImages()
-	// A 0-size slice and nil are distinguished here.
-	// A 0-size slice means a user indicates to reset the icon.
-	// On the other hand, nil means a user didn't update the icon state.
+	// A nil request means no update. A request with no images resets the icon.
 	if imgs == nil {
 		return nil
 	}
 
-	var newImgs []image.Image
-	if len(*imgs) > 0 {
-		newImgs = make([]image.Image, len(*imgs))
-	}
-	for i, img := range *imgs {
-		// TODO: If img is not *ebiten.Image, this converting is not necessary.
-		// However, this package cannot refer *ebiten.Image due to the package
-		// dependencies.
-
-		b := img.Bounds()
-		rgba := image.NewRGBA(b)
-		for j := b.Min.Y; j < b.Max.Y; j++ {
-			for i := b.Min.X; i < b.Max.X; i++ {
-				rgba.Set(i, j, img.At(i, j))
-			}
-		}
-		newImgs[i] = rgba
-	}
+	newImgs := imgs.imagesForGLFW()
 
 	// Catch a possible error at 'At' (#2647).
 	if err := u.error(); err != nil {
@@ -1639,7 +1620,7 @@ func (u *glfwBackend) updateIconIfNeeded() error {
 
 	type args struct {
 		u       *glfwBackend
-		imgs    *[]image.Image
+		imgs    *windowIconImages
 		newImgs []image.Image
 	}
 	return thread.CallWithArgAndResult(u.mainThread, func(a args) error {
