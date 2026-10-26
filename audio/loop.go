@@ -21,6 +21,9 @@ import (
 	"math"
 )
 
+// maxZeroReads bounds consecutive empty source reads while collecting a sample.
+const maxZeroReads = 100
+
 // InfiniteLoop represents a looped stream which never ends as long as its source has data to loop.
 type InfiniteLoop struct {
 	src     io.ReadSeeker
@@ -160,6 +163,7 @@ func (i *InfiniteLoop) blendRate(pos int64) float32 {
 //
 // Read returns only whole samples (4 bytes each in the 16-bit integer format, 8 bytes each in the 32-bit float format).
 // For a non-empty buffer shorter than one sample, Read returns [io.ErrShortBuffer], or [io.EOF] once the stream has ended.
+// For larger buffers, Read returns [io.ErrNoProgress] after 100 consecutive source reads return no bytes and no error.
 func (i *InfiniteLoop) Read(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
@@ -248,11 +252,21 @@ func (i *InfiniteLoop) read(b []byte) (int, error) {
 	// reading, as the space left in b can be shorter than a sample.
 	var n int
 	var err error
-	for extralen+n < i.bytesPerSample {
+	zeroReads := 0
+	for extralen+n < min(i.bytesPerSample, len(b)) {
 		var nn int
 		nn, err = i.src.Read(b[extralen+n:])
 		n += nn
-		if err != nil || nn == 0 {
+		if err != nil {
+			break
+		}
+		if nn > 0 {
+			zeroReads = 0
+			continue
+		}
+		zeroReads++
+		if zeroReads >= maxZeroReads {
+			err = io.ErrNoProgress
 			break
 		}
 	}
