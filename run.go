@@ -216,7 +216,8 @@ var Termination = ui.RegularTermination
 // The argument screen represents the final screen. The argument offscreen is an offscreen modified at Draw.
 // If game does not implement FinalScreenDrawer, the default rendering for the final screen is used.
 //
-// game's functions are called on the same goroutine.
+// The game's functions are usually called on the same goroutine.
+// On macOS and Windows, forced frames during window resizing can call them on another goroutine.
 //
 // On browsers, it is strongly recommended to use iframe if you embed an Ebitengine application in your website.
 //
@@ -342,7 +343,8 @@ type RunGameOptions struct {
 // The argument screen represents the final screen. The argument offscreen is an offscreen modified at Draw.
 // If game does not implement FinalScreenDrawer, the default rendering for the final screen is used.
 //
-// game's functions are called on the same goroutine.
+// The game's functions are usually called on the same goroutine.
+// On macOS and Windows, forced frames during window resizing can call them on another goroutine.
 //
 // On browsers, it is strongly recommended to use iframe if you embed an Ebitengine application in your website.
 //
