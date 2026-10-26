@@ -203,6 +203,7 @@ var (
 	inFrame bool
 
 	initOnce  sync.Once
+	initErr   error
 	inited    atomic.Bool
 	suspended atomic.Bool
 
@@ -1004,7 +1005,7 @@ func floorPowerOf2(x int) int {
 	return 1 << (bits.Len(uint(x)) - 1)
 }
 
-func BeginFrame(graphicsDriver graphicsdriver.Graphics) error {
+func BeginFrame(graphicsDriver graphicsdriver.Graphics) (err error) {
 	backendsM.Lock()
 	defer backendsM.Unlock()
 
@@ -1012,12 +1013,17 @@ func BeginFrame(graphicsDriver graphicsdriver.Graphics) error {
 		panic("atlas: inFrame must be false in BeginFrame")
 	}
 
+	// A failed BeginFrame is not followed by EndFrame.
+	defer func() {
+		if err != nil {
+			inFrame = false
+		}
+	}()
 	inFrame = true
 
-	var err error
 	initOnce.Do(func() {
-		err = graphicscommand.InitializeGraphicsDriverState(graphicsDriver)
-		if err != nil {
+		initErr = graphicscommand.InitializeGraphicsDriverState(graphicsDriver)
+		if initErr != nil {
 			return
 		}
 		if len(theBackends) != 0 {
@@ -1036,8 +1042,8 @@ func BeginFrame(graphicsDriver graphicsdriver.Graphics) error {
 		}
 		inited.Store(true)
 	})
-	if err != nil {
-		return err
+	if initErr != nil {
+		return initErr
 	}
 
 	if theGPUResourcesState.startRestoringGPUResourcesIfNeeded() {
