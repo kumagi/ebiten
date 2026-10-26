@@ -48,9 +48,7 @@ func takeScreenshot(screen *Image, transparent bool) error {
 	if err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(os.Stderr, "Saved screenshot: %s\n", dumpedName); err != nil {
-		return err
-	}
+	fmt.Fprintf(os.Stderr, "Saved screenshot: %s\n", dumpedName)
 	return nil
 }
 
@@ -68,9 +66,7 @@ func dumpInternalImages() error {
 	if err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(os.Stderr, "Dumped the internal images at: %s\n", dir); err != nil {
-		return err
-	}
+	fmt.Fprintf(os.Stderr, "Dumped the internal images at: %s\n", dir)
 	return nil
 }
 
