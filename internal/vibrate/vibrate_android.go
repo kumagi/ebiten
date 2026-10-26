@@ -15,6 +15,7 @@
 package vibrate
 
 import (
+	"sync"
 	"time"
 
 	"github.com/ebitengine/gomobile/app"
@@ -351,6 +352,9 @@ cleanup:
 */
 import "C"
 
+// vibrateMu protects vibrateOneShot's cached API level.
+var vibrateMu sync.Mutex
+
 func vibrate(duration time.Duration, magnitude float64) {
 	milliseconds := duration / time.Millisecond
 	if milliseconds <= 0 {
@@ -359,6 +363,8 @@ func vibrate(duration time.Duration, magnitude float64) {
 	amplitude := androidVibrationAmplitude(magnitude)
 	go func() {
 		_ = app.RunOnJVM(func(vm, env, ctx uintptr) error {
+			vibrateMu.Lock()
+			defer vibrateMu.Unlock()
 			// TODO: This might be crash when this is called from init(). How can we detect this?
 			C.vibrateOneShot(C.uintptr_t(vm), C.uintptr_t(env), C.uintptr_t(ctx), C.int64_t(milliseconds), C.int(amplitude))
 			return nil
