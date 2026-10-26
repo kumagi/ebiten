@@ -30,6 +30,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 	"unicode"
@@ -108,7 +109,7 @@ func xmain() error {
 	flagset.StringVar(&buildLdflags, "ldflags", "", "")
 	flagset.StringVar(&buildTarget, "target", "android", "")
 	flagset.StringVar(&buildBundleID, "bundleid", "", "")
-	flagset.StringVar(&buildIOSVersion, "iosversion", "7.0", "")
+	flagset.StringVar(&buildIOSVersion, "iosversion", "13.0", "")
 	flagset.StringVar(&buildTags, "tags", "", "")
 	flagset.IntVar(&buildAndroidAPI, "androidapi", minAndroidAPI, "")
 	flagset.BoolVar(&buildA, "a", false, "")
@@ -128,6 +129,9 @@ func xmain() error {
 	buildTarget, err := osFromBuildTarget(buildTarget)
 	if err != nil {
 		return err
+	}
+	if buildTarget == "darwin" && !isValidIOSVersion(buildIOSVersion) {
+		return fmt.Errorf("invalid iOS version: %s (must be 13.0 or later)", buildIOSVersion)
 	}
 
 	// Add ldflags to suppress linker errors (#932).
@@ -172,6 +176,23 @@ func xmain() error {
 	}
 
 	return doBind(args, &flagset, buildTarget)
+}
+
+func isValidIOSVersion(version string) bool {
+	parts := strings.Split(version, ".")
+	if len(parts) > 3 {
+		return false
+	}
+	for i, part := range parts {
+		if part == "" || strings.Trim(part, "0123456789") != "" {
+			return false
+		}
+		n, err := strconv.Atoi(part)
+		if err != nil || (i == 0 && n < 13) {
+			return false
+		}
+	}
+	return true
 }
 
 func osFromBuildTarget(buildTarget string) (string, error) {

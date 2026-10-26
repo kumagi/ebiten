@@ -78,6 +78,91 @@ func TestJavaPackageName(t *testing.T) {
 	}
 }
 
+func TestIOSVersion(t *testing.T) {
+	testCases := []struct {
+		in  string
+		out bool
+	}{
+		{
+			in:  "12",
+			out: false,
+		},
+		{
+			in:  "12.99",
+			out: false,
+		},
+		{
+			in:  "13",
+			out: true,
+		},
+		{
+			in:  "13.0",
+			out: true,
+		},
+		{
+			in:  "13.0.1",
+			out: true,
+		},
+		{
+			in:  "14.1",
+			out: true,
+		},
+		{
+			in:  "26.0",
+			out: true,
+		},
+		{
+			in:  "",
+			out: false,
+		},
+		{
+			in:  "invalid",
+			out: false,
+		},
+		{
+			in:  "+Inf",
+			out: false,
+		},
+		{
+			in:  "NaN",
+			out: false,
+		},
+		{
+			in:  "+13",
+			out: false,
+		},
+		{
+			in:  "13e1",
+			out: false,
+		},
+		{
+			in:  "13.",
+			out: false,
+		},
+		{
+			in:  "13..0",
+			out: false,
+		},
+		{
+			in:  "13.0.0.1",
+			out: false,
+		},
+		{
+			in:  "13.0 ",
+			out: false,
+		},
+		{
+			in:  "13.999999999999999999999999",
+			out: false,
+		},
+	}
+	for _, tc := range testCases {
+		if got := ebitenmobile.IsValidIOSVersion(tc.in); got != tc.out {
+			t.Errorf("IsValidIOSVersion(%q) = %v; want %v", tc.in, got, tc.out)
+		}
+	}
+}
+
 func TestFrameworkName(t *testing.T) {
 	testCases := []struct {
 		in  string

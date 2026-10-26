@@ -16,5 +16,6 @@ package main
 
 var (
 	FrameworkName          = frameworkName
+	IsValidIOSVersion      = isValidIOSVersion
 	IsValidJavaPackageName = isValidJavaPackageName
 )
