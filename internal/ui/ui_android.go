@@ -35,10 +35,10 @@ static void clearException(JNIEnv* env) {
 //     display.getRealMetrics(displayMetrics);
 //     return displayMetrics.widthPixels, displayMetrics.heightPixels, displayMetrics.density;
 //
-// A failure leaves the default values set at the beginning.
+// Returns whether the metrics were read.
 #cgo noescape displayInfo
 #cgo nocallback displayInfo
-static void displayInfo(int* width, int* height, float* scale, uintptr_t java_vm, uintptr_t jni_env, uintptr_t ctx) {
+static int displayInfo(int* width, int* height, float* scale, uintptr_t java_vm, uintptr_t jni_env, uintptr_t ctx) {
   *width = 0;
   *height = 0;
   *scale = 1;
@@ -54,6 +54,7 @@ static void displayInfo(int* width, int* height, float* scale, uintptr_t java_vm
   jclass android_view_WindowManager = NULL;
   jclass android_view_Display = NULL;
   jclass android_util_DisplayMetrics = NULL;
+  int ok = 0;
   jobject android_context_Context_WINDOW_SERVICE = NULL;
   jobject windowManager = NULL;
   jobject display = NULL;
@@ -158,6 +159,7 @@ static void displayInfo(int* width, int* height, float* scale, uintptr_t java_vm
   *width = (*env)->GetIntField(env, displayMetrics, widthPixelsID);
   *height = (*env)->GetIntField(env, displayMetrics, heightPixelsID);
   *scale = (*env)->GetFloatField(env, displayMetrics, densityID);
+  ok = 1;
 
 cleanup:
   clearException(env);
@@ -172,6 +174,8 @@ cleanup:
   (*env)->DeleteLocalRef(env, android_view_Display);
   (*env)->DeleteLocalRef(env, android_view_WindowManager);
   (*env)->DeleteLocalRef(env, android_content_Context);
+
+  return ok;
 }
 */
 import "C"
@@ -225,11 +229,13 @@ func (u *UserInterface) refreshDisplayInfo() {
 	var cWidth, cHeight C.int
 	var cScale C.float
 	if err := app.RunOnJVM(func(vm, env, ctx uintptr) error {
-		C.displayInfo(&cWidth, &cHeight, &cScale, C.uintptr_t(vm), C.uintptr_t(env), C.uintptr_t(ctx))
+		if C.displayInfo(&cWidth, &cHeight, &cScale, C.uintptr_t(vm), C.uintptr_t(env), C.uintptr_t(ctx)) == 0 {
+			return errors.New("ui: the display info is not available yet")
+		}
 		return nil
 	}); err != nil {
-		// JVM is not ready yet.
-		// TODO: Fix gomobile to detect the error type for this case.
+		// The JVM is not ready yet, or the display info is not available.
+		// TODO: Fix gomobile to detect the error type for the first case.
 		return
 	}
 	theDisplayInfo.Store(&displayInfoValues{
