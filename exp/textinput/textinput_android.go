@@ -71,14 +71,24 @@ func (t *textInputImpl) Start(bounds image.Rectangle, textBeforeCaret, textAfter
 	caret := max(convertByteCountToUTF16Count(textBeforeCaret, len(textBeforeCaret)), 0)
 	generation := t.recordStart(value)
 
-	ch, end := t.events.start()
-
-	if !ui.Get().StartPlatformTextInput(value, caret, caret, bounds, generation) {
+	var ch chan textInputState
+	var end func()
+	if !ui.Get().StartPlatformTextInput(value, caret, caret, bounds, generation, func() {
+		ch, end = t.events.start()
+	}) {
 		// No driver is registered: the view predates text input support.
-		end()
+		t.recordStartFailure()
 		return nil, nil
 	}
 	return ch, end
+}
+
+// recordStartFailure marks a request that did not open a session inactive.
+func (t *textInputImpl) recordStartFailure() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.active = false
 }
 
 // recordStart records value as the next seed and returns its generation. The

@@ -84,12 +84,13 @@ func (u *UserInterface) textInputDriver() TextInputDriver {
 
 // StartPlatformTextInput starts text inputting with the platform driver and
 // reports whether a driver is registered. caretBounds is in the client area's
-// native pixels.
-func (u *UserInterface) StartPlatformTextInput(text string, selectionStartInUTF16, selectionEndInUTF16 int, caretBounds image.Rectangle, generation int) bool {
+// native pixels. beforeStart runs after a driver is found, before it can report states.
+func (u *UserInterface) StartPlatformTextInput(text string, selectionStartInUTF16, selectionEndInUTF16 int, caretBounds image.Rectangle, generation int, beforeStart func()) bool {
 	d := u.textInputDriver()
 	if d == nil {
 		return false
 	}
+	beforeStart()
 	d.StartTextInput(text, selectionStartInUTF16, selectionEndInUTF16, caretBounds.Min.X, caretBounds.Min.Y, caretBounds.Dx(), caretBounds.Dy(), generation)
 	return true
 }
