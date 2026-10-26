@@ -31,6 +31,7 @@ const (
 	_ABS_RX    = 0x03
 	_ABS_RY    = 0x04
 	_ABS_RZ    = 0x05
+	_ABS_BRAKE = 0x0a
 	_ABS_HAT0X = 0x10
 	_ABS_HAT0Y = 0x11
 	_ABS_HAT1X = 0x12

@@ -51,20 +51,7 @@ func classifyEvdev(evBits, keyBits, absBits []byte, props func() ([]byte, error)
 	}
 	if isBitSet(absBits, _ABS_MT_SLOT) && isBitSet(absBits, _ABS_MT_POSITION_X) &&
 		isBitSet(absBits, _ABS_MT_POSITION_Y) && isBitSet(absBits, _ABS_MT_TRACKING_ID) {
-		hasGamepadButton := false
-		for code := _BTN_JOYSTICK; code < _BTN_DIGI; code++ {
-			if isBitSet(keyBits, code) {
-				hasGamepadButton = true
-				break
-			}
-		}
-		for code := _BTN_DPAD_UP; code <= _BTN_DPAD_RIGHT; code++ {
-			if isBitSet(keyBits, code) {
-				hasGamepadButton = true
-				break
-			}
-		}
-		if !hasGamepadButton {
+		if !hasGamepadButton(keyBits) {
 			return evdevKindTouchSurface, nil
 		}
 	}
@@ -75,7 +62,39 @@ func classifyEvdev(evBits, keyBits, absBits []byte, props func() ([]byte, error)
 	if isBitSet(propBits, _INPUT_PROP_ACCELEROMETER) {
 		return evdevKindOther, nil
 	}
+	// Absolute axes alone can also belong to other devices, such as a mouse's resolution axis.
+	if !hasJoystickAxis(absBits) && !hasGamepadButton(keyBits) {
+		return evdevKindOther, nil
+	}
 	return evdevKindGamepad, nil
+}
+
+func hasGamepadButton(keyBits []byte) bool {
+	for code := _BTN_JOYSTICK; code < _BTN_DIGI; code++ {
+		if isBitSet(keyBits, code) {
+			return true
+		}
+	}
+	for code := _BTN_DPAD_UP; code <= _BTN_DPAD_RIGHT; code++ {
+		if isBitSet(keyBits, code) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasJoystickAxis(absBits []byte) bool {
+	for code := _ABS_X; code <= _ABS_BRAKE; code++ {
+		if isBitSet(absBits, code) {
+			return true
+		}
+	}
+	for code := _ABS_HAT0X; code <= _ABS_HAT3Y; code++ {
+		if isBitSet(absBits, code) {
+			return true
+		}
+	}
+	return false
 }
 
 // maxTouchSlots bounds the slots read from a touch surface node, whatever it reports.

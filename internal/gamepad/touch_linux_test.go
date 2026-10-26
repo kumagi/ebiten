@@ -96,6 +96,58 @@ func TestClassifyEvdev(t *testing.T) {
 			want:          gamepad.EvdevKindGamepad,
 			wantPropsRead: true,
 		},
+		{
+			// An absolute axis that is neither a stick axis nor a hat is not a gamepad's.
+			name:          "mouse with a resolution axis",
+			evs:           []int{unix.EV_KEY, unix.EV_ABS},
+			keys:          []int{gamepad.BTN_LEFT},
+			abs:           []int{gamepad.ABS_MISC},
+			want:          gamepad.EvdevKindOther,
+			wantPropsRead: true,
+		},
+		{
+			name:          "axis without buttons",
+			evs:           []int{unix.EV_ABS},
+			abs:           []int{gamepad.ABS_X},
+			want:          gamepad.EvdevKindGamepad,
+			wantPropsRead: true,
+		},
+		{
+			name:          "hat without buttons",
+			evs:           []int{unix.EV_ABS},
+			abs:           []int{gamepad.ABS_HAT0Y},
+			want:          gamepad.EvdevKindGamepad,
+			wantPropsRead: true,
+		},
+		{
+			name:          "gamepad button with other absolute axis",
+			evs:           []int{unix.EV_KEY, unix.EV_ABS},
+			keys:          []int{gamepad.BTN_SOUTH},
+			abs:           []int{gamepad.ABS_MISC},
+			want:          gamepad.EvdevKindGamepad,
+			wantPropsRead: true,
+		},
+		{
+			name:          "throttle without buttons",
+			evs:           []int{unix.EV_ABS},
+			abs:           []int{0x06}, // ABS_THROTTLE
+			want:          gamepad.EvdevKindGamepad,
+			wantPropsRead: true,
+		},
+		{
+			name:          "pressure without gamepad buttons",
+			evs:           []int{unix.EV_ABS},
+			abs:           []int{0x18}, // ABS_PRESSURE
+			want:          gamepad.EvdevKindOther,
+			wantPropsRead: true,
+		},
+		{
+			name:          "reserved axis without gamepad buttons",
+			evs:           []int{unix.EV_ABS},
+			abs:           []int{0x0b},
+			want:          gamepad.EvdevKindOther,
+			wantPropsRead: true,
+		},
 	}
 	for _, test := range tests {
 		got, propsRead, err := gamepad.ClassifyEvdevForTest(test.evs, test.keys, test.abs, test.props, nil)
