@@ -276,6 +276,7 @@ func (u *UserInterface) ensureGLFWInit() error {
 		if _, err := glfw.SetMonitorCallback(func(monitor *glfw.Monitor, event glfw.PeripheralEvent) {
 			if b, ok := u.runningBackend().(*glfwBackend); ok {
 				b.layoutSizeCache.invalidate()
+				b.currentMonitorCache.invalidate()
 			}
 			if err := theMonitors.update(); err != nil {
 				u.setError(err)
@@ -666,6 +667,7 @@ func (u *glfwBackend) registerWindowPosCallback() error {
 	if u.posCallback == nil {
 		u.posCallback = func(_ *glfw.Window, x, y int) {
 			u.layoutSizeCache.invalidate()
+			u.currentMonitorCache.invalidate()
 			f, err := u.isFullscreen()
 			if err != nil {
 				u.setError(err)
@@ -750,6 +752,7 @@ func (u *glfwBackend) registerWindowContentScaleCallback() error {
 	if u.contentScaleCallback == nil {
 		u.contentScaleCallback = func(_ *glfw.Window, _, _ float32) {
 			u.layoutSizeCache.invalidate()
+			u.currentMonitorCache.invalidate()
 		}
 	}
 	_, err := u.window.SetContentScaleCallback(u.contentScaleCallback)
@@ -2200,6 +2203,7 @@ func (u *glfwBackend) setCachedIconified(iconified bool) {
 // invalidateCachedWindowStates must be called on the main thread.
 func (u *glfwBackend) invalidateCachedWindowStates() {
 	u.layoutSizeCache.invalidate()
+	u.currentMonitorCache.invalidate()
 	u.occlusionCache.invalidate()
 	u.focusedCache.invalidate()
 	u.visibleCache.invalidate()
