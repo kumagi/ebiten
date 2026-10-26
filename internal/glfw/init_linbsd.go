@@ -26,7 +26,7 @@ func parseUriList(text string) []string {
 			continue
 		}
 
-		if strings.HasPrefix(line, prefix) {
+		if len(line) >= len(prefix) && strings.EqualFold(line[:len(prefix)], prefix) {
 			line = line[len(prefix):]
 			// TODO: Validate hostname
 			slash := strings.IndexByte(line, '/')

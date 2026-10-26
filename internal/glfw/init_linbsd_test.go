@@ -29,6 +29,21 @@ func TestParseUriList(t *testing.T) {
 			out:  []string{"/home/user/file.txt"},
 		},
 		{
+			name: "uppercase file scheme",
+			in:   "FILE:///path%20with%20spaces/File.txt\r\n",
+			out:  []string{"/path with spaces/File.txt"},
+		},
+		{
+			name: "mixed case file scheme",
+			in:   "FiLe://localhost/Case.txt\r\nfILE://localhost\r\n",
+			out:  []string{"/Case.txt"},
+		},
+		{
+			name: "short file prefix passes through",
+			in:   "fil\r\nfile:/short.txt\r\n",
+			out:  []string{"fil", "file:/short.txt"},
+		},
+		{
 			name: "multiple lines",
 			in:   "file:///a.txt\r\nfile:///b.txt\r\nfile:///c.txt\r\n",
 			out:  []string{"/a.txt", "/b.txt", "/c.txt"},
