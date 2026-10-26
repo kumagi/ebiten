@@ -16,6 +16,8 @@ package file_test
 
 import (
 	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -179,6 +181,25 @@ func TestFSAbsPathSameUNCShare(t *testing.T) {
 	for _, ent := range ents {
 		if got, want := absPath(t, ent), want[ent.Name()]; got != want {
 			t.Errorf("AbsPath() for %s: got: %s, want: %s", ent.Name(), got, want)
+		}
+	}
+}
+
+func TestFSRejectsNativeSeparatorsInDelegatedPaths(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "given")
+	if err := os.MkdirAll(filepath.Join(root, "sub", "nested"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "sub", "nested", "file.txt"), []byte("ok"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	vfs := newVirtualFS(t, []string{root})
+	if _, err := fs.ReadFile(vfs, "given/sub/nested/file.txt"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{`given/sub\nested/file.txt`, `given/sub/nested\file.txt`} {
+		if _, err := fs.ReadFile(vfs, name); err == nil {
+			t.Errorf("ReadFile(%q) accepted a native separator", name)
 		}
 	}
 }

@@ -153,6 +153,11 @@ func (v *VirtualFS) find(name string) (*virtualFSNode, []string) {
 	es := strings.Split(name, "/")
 	for i, e := range es {
 		if n.given {
+			if filepath.Separator != '/' && slices.ContainsFunc(es[i:], func(part string) bool {
+				return strings.ContainsRune(part, filepath.Separator)
+			}) {
+				return nil, nil
+			}
 			return n, es[i:]
 		}
 		idx := slices.IndexFunc(n.children, func(c *virtualFSNode) bool {
