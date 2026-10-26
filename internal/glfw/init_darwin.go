@@ -5,6 +5,7 @@ package glfw
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -50,5 +51,7 @@ func changeToResourcesDirectory() {
 		return
 	}
 
-	_ = os.Chdir(path)
+	if err := os.Chdir(path); err != nil {
+		fmt.Fprintf(os.Stderr, "glfw: failed to change the working directory to %s: %v\n", path, err)
+	}
 }
