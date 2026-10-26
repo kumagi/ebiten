@@ -233,6 +233,8 @@ func (t *textInputImpl) send(text string, startInBytes, endInBytes int, kind com
 		CommitKind:                       kind,
 	})
 	if kind.committed() {
+		// A committed composition needs no subsequent empty update.
+		t.compositing = false
 		t.events.end()
 	}
 }
