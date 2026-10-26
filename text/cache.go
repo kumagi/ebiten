@@ -17,6 +17,7 @@ package text
 import (
 	"image"
 
+	"github.com/hajimehoshi/ebiten/v2"
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
 )
@@ -41,6 +42,11 @@ type faceWithCache struct {
 	f       font.Face
 	metrics font.Metrics
 
+	// atime is the last time this face was used, as an ebiten tick. The
+	// package-global caches hold an entry per face, so an abandoned face must
+	// be collectable.
+	atime int64
+
 	glyphBoundsCache  map[rune]glyphBoundsCacheValue
 	glyphAdvanceCache map[rune]glyphAdvanceCacheValue
 	kernCache         map[kernCacheKey]fixed.Int26_6
@@ -60,18 +66,42 @@ func (f *faceWithCache) Close() error {
 var faceWithCacheCache map[font.Face]*faceWithCache
 
 func faceWithCacheFromFace(face font.Face) *faceWithCache {
+	dropUnusedFaces()
 	if f, ok := faceWithCacheCache[face]; ok {
+		f.atime = ebiten.Tick()
 		return f
 	}
 
 	f := &faceWithCache{
-		f: face,
+		f:     face,
+		atime: ebiten.Tick(),
 	}
 	if faceWithCacheCache == nil {
 		faceWithCacheCache = map[font.Face]*faceWithCache{}
 	}
 	faceWithCacheCache[face] = f
 	return f
+}
+
+var lastFaceCacheCleanupTick int64 = -1
+
+// dropUnusedFaces removes the faces that have not been used for a while, with
+// their cached glyph images. The caches are package-global and keyed by the
+// face, so a face the game stops using would otherwise keep its cached glyph
+// images forever.
+func dropUnusedFaces() {
+	now := ebiten.Tick()
+	if lastFaceCacheCleanupTick == now {
+		return
+	}
+	lastFaceCacheCleanupTick = now
+	for face, fc := range faceWithCacheCache {
+		if fc.atime >= now-60 {
+			continue
+		}
+		delete(glyphImageCache, fc)
+		delete(faceWithCacheCache, face)
+	}
 }
 
 func (f *faceWithCache) Glyph(dot fixed.Point26_6, r rune) (dr image.Rectangle, mask image.Image, maskp image.Point, advance fixed.Int26_6, ok bool) {

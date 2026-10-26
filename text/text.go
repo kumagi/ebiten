@@ -151,8 +151,9 @@ var textM sync.Mutex
 //	            + Draw them onto the destination by `(*ebiten.Image).DrawImage`
 //	CacheGlyphs = Create glyphs by `(*ebiten.Image).WritePixels` and put them into the cache if necessary
 //
-// Be careful that the passed font face is held by this package and is never released.
-// This is a known issue (#498).
+// This package holds font faces in its caches. An entry unused for more than 60 ticks
+// can be removed when a text function checks the caches on a later tick. Cleanup does
+// not close the face. Entries can remain cached while ticks or text calls are stopped.
 //
 // Draw is concurrent-safe.
 func Draw(dst *ebiten.Image, text string, face font.Face, x, y int, clr color.Color) {
@@ -187,8 +188,9 @@ func Draw(dst *ebiten.Image, text string, face font.Face, x, y int, clr color.Co
 //	            + Draw them onto the destination by `(*ebiten.Image).DrawImage`
 //	CacheGlyphs = Create glyphs by `(*ebiten.Image).WritePixels` and put them into the cache if necessary
 //
-// Be careful that the passed font face is held by this package and is never released.
-// This is a known issue (#498).
+// This package holds font faces in its caches. An entry unused for more than 60 ticks
+// can be removed when a text function checks the caches on a later tick. Cleanup does
+// not close the face. Entries can remain cached while ticks or text calls are stopped.
 //
 // DrawWithOptions is concurrent-safe.
 func DrawWithOptions(dst *ebiten.Image, text string, face font.Face, options *ebiten.DrawImageOptions) {
@@ -258,8 +260,9 @@ func DrawWithOptions(dst *ebiten.Image, text string, face font.Face, options *eb
 // face is the font for text rendering.
 // text is the string that's being measured.
 //
-// Be careful that the passed font face is held by this package and is never released.
-// This is a known issue (#498).
+// This package holds font faces in its caches. An entry unused for more than 60 ticks
+// can be removed when a text function checks the caches on a later tick. Cleanup does
+// not close the face. Entries can remain cached while ticks or text calls are stopped.
 //
 // BoundString is concurrent-safe.
 //
