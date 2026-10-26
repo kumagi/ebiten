@@ -63,7 +63,7 @@ func circleVertexCount(r float64) int {
 	if r >= maxCircleVertexCount/math.Pi {
 		return maxCircleVertexCount
 	}
-	return int(math.Ceil(math.Pi * r))
+	return max(3, int(math.Ceil(math.Pi*r)))
 }
 
 var (

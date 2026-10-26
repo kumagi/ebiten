@@ -120,7 +120,7 @@ func TestCircleVertexCount(t *testing.T) {
 		{
 			name:   "small",
 			radius: 0.5,
-			want:   2,
+			want:   3,
 		},
 		{
 			name:   "ordinary",
@@ -856,5 +856,40 @@ func TestDrawingNonFiniteGeometry(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestSmallCircleNonAntiAlias(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		draw func(*ebiten.Image)
+	}{
+		{
+			name: "fill",
+			draw: func(dst *ebiten.Image) {
+				vector.FillCircle(dst, 1.5, 1.5, 0.25, color.White, false)
+			},
+		},
+		{
+			name: "stroke",
+			draw: func(dst *ebiten.Image) {
+				vector.StrokeCircle(dst, 1.25, 1.5, 0.25, 0.25, color.White, false)
+			},
+		},
+		{
+			name: "thick stroke",
+			draw: func(dst *ebiten.Image) {
+				vector.StrokeCircle(dst, 1.5, 1.5, 0.1, 0.4, color.White, false)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dst := ebiten.NewImage(3, 3)
+			defer dst.Deallocate()
+			tc.draw(dst)
+			if got := dst.At(1, 1); got != (color.RGBA{R: 255, G: 255, B: 255, A: 255}) {
+				t.Errorf("center pixel = %v, want white", got)
+			}
+		})
 	}
 }
