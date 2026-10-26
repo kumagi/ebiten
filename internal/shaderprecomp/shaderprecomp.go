@@ -222,6 +222,7 @@ func (r *registry) getPlayStation5Shader(id shaderir.SourceID) (vertexHeader, ve
 	defer r.mu.Unlock()
 
 	s, ok := r.playStation5Shaders[id]
+	ok = ok && s.vertexHeader != nil && s.vertexText != nil && s.pixelHeader != nil && s.pixelText != nil
 	return s.vertexHeader, s.vertexText, s.pixelHeader, s.pixelText, ok
 }
 

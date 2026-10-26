@@ -240,3 +240,25 @@ func TestKeyedBySourceID(t *testing.T) {
 		t.Errorf("got %q, want %q", lib, "b")
 	}
 }
+
+func TestPlayStation5ShaderWithMissingBlobs(t *testing.T) {
+	for _, name := range []string{"all", "vertex header", "vertex text", "pixel header", "pixel text"} {
+		t.Run(name, func(t *testing.T) {
+			blobs := [4][]byte{[]byte("vh"), []byte("vt"), []byte("ph"), []byte("pt")}
+			if name == "all" {
+				blobs = [4][]byte{}
+			} else {
+				for i, part := range []string{"vertex header", "vertex text", "pixel header", "pixel text"} {
+					if name == part {
+						blobs[i] = nil
+					}
+				}
+			}
+			i := id(t.Name())
+			shaderprecomp.RegisterPlayStation5Shader(i, blobs[0], blobs[1], blobs[2], blobs[3])
+			if _, _, _, _, ok := shaderprecomp.PlayStation5Shader(i); ok {
+				t.Error("incomplete shader must not be available")
+			}
+		})
+	}
+}
