@@ -20,6 +20,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.view.ViewParent;
 
 import javax.microedition.khronos.egl.EGL10;
 import javax.microedition.khronos.egl.EGLConfig;
@@ -136,7 +137,13 @@ class EbitenSurfaceView extends GLSurfaceView implements Renderer {
     }
 
     private void onErrorOnGameUpdate(Exception e) {
-        ((EbitenView)getParent()).onErrorOnGameUpdate(e);
+        // The posted runnable can run after this view is detached from the window.
+        ViewParent parent = getParent();
+        if (parent instanceof EbitenView) {
+            ((EbitenView)parent).onErrorOnGameUpdate(e);
+        } else {
+            Log.e("Go", e.toString());
+        }
     }
 
     @Override
