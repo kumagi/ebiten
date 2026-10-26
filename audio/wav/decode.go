@@ -195,6 +195,14 @@ func readHeaderPart(src io.Reader, buf []byte, what string) error {
 }
 
 func decode(src io.Reader, bitDepthInBytes int) (*Stream, error) {
+	// The RIFF header can start partway through a seekable source.
+	base := int64(0)
+	if seeker, ok := src.(io.Seeker); ok {
+		if p, err := seeker.Seek(0, io.SeekCurrent); err == nil {
+			base = p
+		}
+	}
+
 	buf := make([]byte, 12)
 	if err := readHeaderPart(src, buf, "header"); err != nil {
 		return nil, err
@@ -300,7 +308,7 @@ chunks:
 	} else {
 		// A partial frame at the tail of the data chunk cannot be decoded. Discard it.
 		dataSize = dataSize / bytesPerFrame * bytesPerFrame
-		s = newSectionReader(src, headerSize, dataSize)
+		s = newSectionReader(src, base+headerSize, dataSize)
 	}
 
 	var format convert.Format

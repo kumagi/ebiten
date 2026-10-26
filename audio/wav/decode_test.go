@@ -1495,3 +1495,64 @@ func TestReadWholeSamples(t *testing.T) {
 		}
 	}
 }
+
+func TestSeekWithEmbeddedWAV(t *testing.T) {
+	data := make([]byte, 200000*4)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	raw := wavFile(22050, nil, nil, data)
+	for _, tc := range []struct {
+		name   string
+		decode func(io.Reader) (*wav.Stream, error)
+	}{
+		{
+			name:   "I16",
+			decode: wav.DecodeWithoutResampling,
+		},
+		{
+			name:   "F32",
+			decode: wav.DecodeF32,
+		},
+		{
+			name: "resampling",
+			decode: func(r io.Reader) (*wav.Stream, error) {
+				return wav.DecodeWithSampleRate(44100, r)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			baseline, err := tc.decode(bytes.NewReader(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := io.ReadAll(baseline)
+			if err != nil {
+				t.Fatal(err)
+			}
+			const prefixSize = 100
+			src := bytes.NewReader(append(bytes.Repeat([]byte{0x5a}, prefixSize), raw...))
+			if _, err := src.Seek(prefixSize, io.SeekStart); err != nil {
+				t.Fatal(err)
+			}
+			embedded, err := tc.decode(src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for pass := range 2 {
+				if pass > 0 {
+					if _, err := embedded.Seek(0, io.SeekStart); err != nil {
+						t.Fatal(err)
+					}
+				}
+				got, err := io.ReadAll(embedded)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(got, want) {
+					t.Errorf("pass %d: decoded PCM differs from the unprefixed source", pass)
+				}
+			}
+		})
+	}
+}
