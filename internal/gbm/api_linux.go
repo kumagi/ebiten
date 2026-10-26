@@ -226,15 +226,26 @@ func loadDRMGBM() error {
 	return loadErr
 }
 
-func loadDRMGBMImpl() error {
+func loadDRMGBMImpl() (err error) {
 	libdrm, err := dlopenAny("libdrm.so.2", "libdrm.so")
 	if err != nil {
 		return err
 	}
+	// Keep successful loads open while registered functions refer to them.
+	defer func() {
+		if err != nil {
+			_ = purego.Dlclose(libdrm)
+		}
+	}()
 	libgbm, err := dlopenAny("libgbm.so.1", "libgbm.so")
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err != nil {
+			_ = purego.Dlclose(libgbm)
+		}
+	}()
 	for _, f := range []struct {
 		p    any
 		lib  uintptr
