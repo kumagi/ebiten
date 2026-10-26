@@ -352,6 +352,14 @@ func (g *Game) launchGuest() {
 	}()
 }
 
+func deviceScaleFactor() float64 {
+	m := ebiten.Monitor()
+	if m == nil {
+		return 1
+	}
+	return m.DeviceScaleFactor()
+}
+
 // advanceGuestTicks gives the guest its screen, forwards the window's input to it, and advances it by the
 // number of ticks due this host update at the guest's TPS.
 func (g *Game) advanceGuestTicks(state debugui.InputCapturingState) error {
@@ -360,7 +368,7 @@ func (g *Game) advanceGuestTicks(state debugui.InputCapturingState) error {
 	}
 	// The guest renders at the host's device scale factor, so its screen is physical-sized: the
 	// window's size in device-independent pixels times the scale.
-	scale := ebiten.Monitor().DeviceScaleFactor()
+	scale := deviceScaleFactor()
 	pw, ph := int(float64(g.width)*scale), int(float64(g.height)*scale)
 	if g.guestScreen == nil || g.guestScreen.Bounds().Dx() != pw || g.guestScreen.Bounds().Dy() != ph {
 		g.guestScreen = ebiten.NewImage(pw, ph)
@@ -600,7 +608,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.gp.session.AdvanceFrame()
 		g.gp.session.CompositeFrame()
 		// guestScreen is physical-sized; scale it back down to fill the logical screen.
-		scale := ebiten.Monitor().DeviceScaleFactor()
+		scale := deviceScaleFactor()
 		op := &ebiten.DrawImageOptions{}
 		op.GeoM.Scale(1/scale, 1/scale)
 		screen.DrawImage(g.guestScreen, op)
