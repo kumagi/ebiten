@@ -43,6 +43,8 @@ type style struct {
 type propertyValue struct {
 	property property
 	value    string
+
+	deferred bool
 }
 
 type propertyValues []propertyValue
@@ -211,6 +213,7 @@ type cascadeValue struct {
 	value       string
 	specificity int
 	important   bool
+	deferred    bool
 }
 
 func (r *styleResolver) specifiedStyle(e *element) (propertyValues, error) {
@@ -244,6 +247,7 @@ func (r *styleResolver) specifiedStyle(e *element) (propertyValues, error) {
 				value:       d.value,
 				specificity: specificity,
 				important:   d.important,
+				deferred:    d.deferred,
 			}
 		}
 	}
@@ -263,9 +267,19 @@ func (r *styleResolver) specifiedStyle(e *element) (propertyValues, error) {
 		}
 		v := normalizeProperty(p, strings.TrimSpace(a.Value))
 		if err := validateProperty(p, v); err != nil {
-			if errors.Is(err, errLimit) || errors.Is(err, errUnsupported) {
+			if errors.Is(err, errLimit) {
 				return nil, err
 			}
+			if !errors.Is(err, errUnsupported) {
+				continue
+			}
+			// The value is valid but unsupported. Keep it so that the cascade can
+			// decide whether it is effective.
+			apply(declaration{
+				property: p,
+				value:    v,
+				deferred: true,
+			}, 0)
 			continue
 		}
 		apply(declaration{
@@ -328,6 +342,7 @@ func (r *styleResolver) specifiedStyle(e *element) (propertyValues, error) {
 			values = append(values, propertyValue{
 				property: property(p),
 				value:    w.value,
+				deferred: w.deferred,
 			})
 		}
 	}
@@ -383,8 +398,10 @@ func (r *styleResolver) computeMode(e *element, parent *style, mode styleMode) (
 		parent = &initial
 	}
 	var declarations [propertyCount]string
+	var deferred [propertyCount]bool
 	for _, value := range specified {
 		declarations[value.property] = value.value
+		deferred[value.property] = value.deferred
 	}
 	var values [propertyCount]string
 	s := initial
@@ -394,6 +411,12 @@ func (r *styleResolver) computeMode(e *element, parent *style, mode styleMode) (
 		switch {
 		case value == "inherit" || (info.inherited && (value == "" || value == "unset")):
 			values[p] = parent.value(property(p))
+			for _, inherited := range parent.values {
+				if inherited.property == property(p) {
+					deferred[p] = inherited.deferred
+					break
+				}
+			}
 		case value == "" || value == "initial" || value == "unset":
 		default:
 			values[p] = value
@@ -404,7 +427,17 @@ func (r *styleResolver) computeMode(e *element, parent *style, mode styleMode) (
 		return style{}, err
 	}
 	s.Opacity, _ = opacity(values[propOpacity])
+	s.Display = values[propDisplay] != "none"
 	paintProperties := mode != styleBounds && (mode != stylePainting || s.Opacity != 0)
+	for p, pending := range deferred {
+		if !pending || !s.Display || (!paintProperties && !properties[p].cssOnly) {
+			continue
+		}
+		if err := r.spend(len(values[p])); err != nil {
+			return style{}, err
+		}
+		return style{}, errUnsupported
+	}
 	if paintProperties {
 		// color:currentColor has the same computed value as inherited color.
 		colorValue := declarations[propColor]
@@ -419,7 +452,7 @@ func (r *styleResolver) computeMode(e *element, parent *style, mode styleMode) (
 			}
 			s.Color, err = parseColor(values[propColor], parent.Color, r.colors)
 			if err != nil {
-				if errors.Is(err, errLimit) || errors.Is(err, errUnsupported) {
+				if errors.Is(err, errLimit) || (s.Display && errors.Is(err, errUnsupported)) {
 					return style{}, err
 				}
 				s.Color = parent.Color
@@ -431,7 +464,7 @@ func (r *styleResolver) computeMode(e *element, parent *style, mode styleMode) (
 				return style{}, err
 			}
 			if _, err := parsePaint(values[p], s.Color, r.colors, p != propStopColor); err != nil {
-				if errors.Is(err, errLimit) || errors.Is(err, errUnsupported) {
+				if errors.Is(err, errLimit) || (s.Display && errors.Is(err, errUnsupported)) {
 					return style{}, err
 				}
 				if properties[p].inherited {
@@ -467,6 +500,7 @@ func (r *styleResolver) computeMode(e *element, parent *style, mode styleMode) (
 		entry := propertyValue{
 			property: property(p),
 			value:    value,
+			deferred: deferred[p],
 		}
 		s.values = append(s.values, entry)
 	}

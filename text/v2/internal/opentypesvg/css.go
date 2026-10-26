@@ -423,6 +423,11 @@ type declaration struct {
 	property  property
 	value     string
 	important bool
+
+	// deferred reports that the value is valid but unsupported. The declaration
+	// still takes part in the cascade, and the unsupported feature is reported
+	// only when the value is effective.
+	deferred bool
 }
 
 type cssRule struct {
@@ -468,9 +473,20 @@ func compileDeclarations(source []svgcss.Declaration) ([]declaration, error) {
 			return nil, errLimit
 		}
 		if err := validateProperty(p, value); err != nil {
-			if errors.Is(err, errLimit) || errors.Is(err, errUnsupported) {
+			if errors.Is(err, errLimit) {
 				return nil, err
 			}
+			if !errors.Is(err, errUnsupported) {
+				continue
+			}
+			// The value is valid but unsupported. Keep it so that the cascade can
+			// decide whether it is effective.
+			result = append(result, declaration{
+				property:  p,
+				value:     value,
+				important: parsed.Important,
+				deferred:  true,
+			})
 			continue
 		}
 		result = append(result, declaration{

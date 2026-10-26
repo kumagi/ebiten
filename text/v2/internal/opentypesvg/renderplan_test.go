@@ -614,3 +614,54 @@ func TestRenderCulledRuleChangeBoundary(t *testing.T) {
 		t.Error("culled rule change must not join two oversized batches")
 	}
 }
+
+func TestUnsupportedDeclarationsAfterCascade(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want error
+	}{
+		{
+			name: "unmatched",
+			body: `<style>.unused{stroke-width:1em}</style><rect width="4" height="4"/>`,
+		},
+		{
+			name: "overridden declaration",
+			body: `<rect width="4" height="4" style="stroke-width:1em;stroke-width:2px"/>`,
+		},
+		{
+			name: "overridden attribute",
+			body: `<rect width="4" height="4" stroke-width="1em" style="stroke-width:2px"/>`,
+		},
+		{
+			name: "hidden",
+			body: `<rect display="none" stroke-width="1em" fill="url(https://example.invalid/g)"/>`,
+		},
+		{
+			name: "transparent",
+			body: `<rect opacity="0" stroke-width="1em" fill="url(https://example.invalid/g)"/>`,
+		},
+		{
+			name: "effective width",
+			body: `<rect width="4" height="4" stroke-width="1em"/>`,
+			want: opentypesvg.ErrUnsupported,
+		},
+		{
+			name: "effective paint",
+			body: `<rect width="4" height="4" fill="url(https://example.invalid/g)"/>`,
+			want: opentypesvg.ErrUnsupported,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := opentypesvg.PrepareRender([]byte(`<svg>`+tc.body+`</svg>`), opentypesvg.RenderOptions{
+				UnitsPerEm: 48,
+				Width:      48,
+				Height:     48,
+				Samples:    4,
+			})
+			if !errors.Is(err, tc.want) {
+				t.Errorf("error = %v, want %v", err, tc.want)
+			}
+		})
+	}
+}
