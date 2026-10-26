@@ -218,7 +218,12 @@ func DecodeWithSampleRate(sampleRate int, src io.Reader) (*Stream, error) {
 	r := newInt16ReadSeeker(d)
 	length := d.Length()
 	if d.SampleRate() != sampleRate {
-		r2 := convert.NewResampling(d, d.Length(), d.SampleRate(), sampleRate, bitDepthInBytesInt16)
+		var resamplingSource io.Reader = d
+		if !seekable {
+			// The decoder always implements io.Seeker, but cannot seek a non-seekable source.
+			resamplingSource = struct{ io.Reader }{d}
+		}
+		r2 := convert.NewResampling(resamplingSource, d.Length(), d.SampleRate(), sampleRate, bitDepthInBytesInt16)
 		r = r2
 		length = r2.Length()
 	}

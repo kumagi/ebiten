@@ -201,6 +201,17 @@ type readerOnly struct {
 	io.Reader
 }
 
+func TestReadNonSeekableSourceLowSampleRate(t *testing.T) {
+	// At a low sample rate, consecutive output samples can skip entire source blocks.
+	s, err := mp3.DecodeWithSampleRate(1, readerOnly{bytes.NewReader(resources.Ragtime_mp3)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(s, make([]byte, 8)); !errors.Is(err, errors.ErrUnsupported) {
+		t.Errorf("Read: got %v, want errors.ErrUnsupported", err)
+	}
+}
+
 func TestSeekNonSeekableSource(t *testing.T) {
 	for _, decode := range mp3Decoders {
 		t.Run(decode.name, func(t *testing.T) {
