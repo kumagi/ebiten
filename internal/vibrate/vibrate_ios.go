@@ -39,12 +39,6 @@ package vibrate
 //       return nil;
 //     }
 //
-//     [engine startAndReturnError:&error];
-//     if (error) {
-//       NSLog(@"CHHapticEngine::startAndReturnError failed %@", error);
-//       [engine release];
-//       return nil;
-//     }
 //     return engine;
 //   }
 //   return nil;
@@ -52,13 +46,17 @@ package vibrate
 //
 // static void vibrateOnMainThread(double duration, double intensity) {
 //   if (@available(iOS 13.0, *)) {
-//     static BOOL initializeHapticEngineCalled = NO;
 //     static CHHapticEngine* engine = nil;
-//     if (!initializeHapticEngineCalled) {
+//     if (!engine) {
 //       engine = (CHHapticEngine*)initializeHapticEngine();
-//       initializeHapticEngineCalled = YES;
 //     }
 //     if (!engine) {
+//       return;
+//     }
+//     // The engine can stop when the app is suspended. Start it before each playback.
+//     NSError* startError = nil;
+//     if (![engine startAndReturnError:&startError]) {
+//       NSLog(@"CHHapticEngine::startAndReturnError failed %@", startError);
 //       return;
 //     }
 //     @autoreleasepool {
