@@ -84,6 +84,9 @@ func DecodeF32(src io.Reader) (*Stream, error) {
 	if err != nil {
 		return nil, err
 	}
+	if r.SampleRate() <= 0 {
+		return nil, fmt.Errorf("vorbis: sample rate must be positive but was %d", r.SampleRate())
+	}
 	if r.Channels() != 1 && r.Channels() != 2 {
 		return nil, fmt.Errorf("vorbis: number of channels must be 1 or 2 but was %d", r.Channels())
 	}
@@ -184,6 +187,9 @@ func decodeI16(in io.Reader) (*i16Stream, error) {
 	r, err := oggvorbis.NewReader(in)
 	if err != nil {
 		return nil, err
+	}
+	if r.SampleRate() <= 0 {
+		return nil, fmt.Errorf("vorbis: sample rate must be positive but was %d", r.SampleRate())
 	}
 	if r.Channels() != 1 && r.Channels() != 2 {
 		return nil, fmt.Errorf("vorbis: number of channels must be 1 or 2 but was %d", r.Channels())
