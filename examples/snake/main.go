@@ -73,6 +73,28 @@ func (g *Game) collidesWithSelf() bool {
 	return false
 }
 
+func (g *Game) spawnApple() {
+	occupied := make(map[Position]struct{}, len(g.snakeBody))
+	for _, p := range g.snakeBody {
+		occupied[p] = struct{}{}
+	}
+	var freeCells []Position
+	for y := range yGridCountInScreen {
+		for x := range xGridCountInScreen {
+			p := Position{X: x, Y: y}
+			if _, ok := occupied[p]; !ok {
+				freeCells = append(freeCells, p)
+			}
+		}
+	}
+	if len(freeCells) == 0 {
+		// A full board has no apple to place.
+		g.apple = Position{X: -1, Y: -1}
+		return
+	}
+	g.apple = freeCells[rand.IntN(len(freeCells))]
+}
+
 func (g *Game) collidesWithWall() bool {
 	return g.snakeBody[0].X < 0 ||
 		g.snakeBody[0].Y < 0 ||
@@ -125,8 +147,7 @@ func (g *Game) Update() error {
 		}
 
 		if g.collidesWithApple() {
-			g.apple.X = rand.IntN(xGridCountInScreen)
-			g.apple.Y = rand.IntN(yGridCountInScreen)
+			g.spawnApple()
 			g.snakeBody = append(g.snakeBody, Position{
 				X: g.snakeBody[len(g.snakeBody)-1].X,
 				Y: g.snakeBody[len(g.snakeBody)-1].Y,
