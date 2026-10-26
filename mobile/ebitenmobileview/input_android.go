@@ -180,7 +180,7 @@ func OnKeyDownOnAndroid(keyCode int, unicodeChar int, source int, deviceID int, 
 		if key, ok := androidKeyToUIKey[keyCode]; ok {
 			setKeyPressed(key)
 		}
-		updateLockKeys(source, metaState)
+		updateLockKeys(source, deviceID, metaState)
 		var runes []rune
 		if r := rune(unicodeChar); r != 0 && unicode.IsPrint(r) {
 			runes = []rune{r}
@@ -204,15 +204,18 @@ func OnKeyUpOnAndroid(keyCode int, source int, deviceID int, metaState int) {
 		if key, ok := androidKeyToUIKey[keyCode]; ok {
 			setKeyReleased(key)
 		}
-		updateLockKeys(source, metaState)
+		updateLockKeys(source, deviceID, metaState)
 		updateInput(nil)
 	}
 }
 
 // updateLockKeys takes the lock key states from a key event's meta state.
-// A virtual keyboard has no lock keys and reports none, so only a physical keyboard is a source.
-func updateLockKeys(source int, metaState int) {
+// Ignore virtual keyboard events when tracking the physical lock key states.
+func updateLockKeys(source int, deviceID int, metaState int) {
 	if source&sourceKeyboard != sourceKeyboard {
+		return
+	}
+	if deviceID == virtualKeyboard {
 		return
 	}
 	capsLock = ui.NewLockKeyStateFromBool(metaState&metaCapsLockOn != 0)
