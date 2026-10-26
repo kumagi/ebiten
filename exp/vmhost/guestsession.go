@@ -310,6 +310,9 @@ type NewGuestSessionOptions struct {
 // It returns an error if the protocol handshake fails, including a protocol version mismatch,
 // or if single-thread mode is already selected by [ebiten.RunGameWithOptions] or a build tag.
 // options can be nil, which means the default options.
+//
+// On success, the session takes ownership of conn and [GuestSession.Close] closes it.
+// On error, the caller retains ownership of conn and is responsible for closing it.
 func NewGuestSession(conn net.Conn, options *NewGuestSessionOptions) (*GuestSession, error) {
 	if err := ui.RegisterVMHost(); err != nil {
 		return nil, err
