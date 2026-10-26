@@ -669,7 +669,8 @@ func (h *hookerImpl) AppendHookOnBeforeUpdateWithVMGuestInfo(f func(vmGuest bool
 // For a non-empty buffer shorter than one sample, Read returns [io.ErrShortBuffer], or [io.EOF] once the stream has ended.
 //
 // When the rates differ, the returned value implements [io.Seeker]. Its Seek returns an error wrapping
-// [errors.ErrUnsupported] if source is not an io.Seeker, or if seeking from the end when the length is unknown.
+// [errors.ErrUnsupported] if source is not an io.Seeker, or if seeking from the end when the resampled length
+// is unknown or cannot be represented as an int64 byte count.
 // Its Read returns an error wrapping [errors.ErrUnsupported] if it requires seeking a non-seekable source.
 func ResampleReader(source io.Reader, length int64, from, to int) io.Reader {
 	validateResamplingSampleRates(from, to)
@@ -693,7 +694,8 @@ func ResampleReader(source io.Reader, length int64, from, to int) io.Reader {
 // For a non-empty buffer shorter than one sample, Read returns [io.ErrShortBuffer], or [io.EOF] once the stream has ended.
 //
 // When the rates differ, the returned value implements [io.Seeker]. Its Seek returns an error wrapping
-// [errors.ErrUnsupported] if source is not an io.Seeker, or if seeking from the end when the length is unknown.
+// [errors.ErrUnsupported] if source is not an io.Seeker, or if seeking from the end when the resampled length
+// is unknown or cannot be represented as an int64 byte count.
 // Its Read returns an error wrapping [errors.ErrUnsupported] if it requires seeking a non-seekable source.
 func ResampleReaderF32(source io.Reader, length int64, from, to int) io.Reader {
 	validateResamplingSampleRates(from, to)

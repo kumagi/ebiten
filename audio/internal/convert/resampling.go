@@ -143,7 +143,8 @@ func (r *Resampling) bytesPerSample() int {
 	return r.bitDepthInBytes * channelNum
 }
 
-// Length returns the length of the resampled stream in bytes, or -1 when the length is unknown.
+// Length returns the length of the resampled stream in bytes, or -1 when the length is unknown
+// or cannot be represented as an int64.
 func (r *Resampling) Length() int64 {
 	srcLength := r.srcLength()
 	if srcLength < 0 {
@@ -160,13 +161,28 @@ func (r *Resampling) srcLength() int64 {
 	return r.derivedSrcLength.Load()
 }
 
-// resampledLength returns the length of the resampled stream in bytes for a source stream of the given length.
+// resampledLength returns the length of the resampled stream in bytes for a source stream of the
+// given length, or -1 when the length is not representable, e.g. when a large declared length is
+// upsampled.
 func (r *Resampling) resampledLength(srcLength int64) int64 {
 	s, ok := mathutil.MulDiv(srcLength, int64(r.to), int64(r.from))
 	if !ok {
-		panic("convert: resampled length is out of range")
+		return -1
 	}
 	return s / int64(r.bytesPerSample()) * int64(r.bytesPerSample())
+}
+
+// endOfResampled reports whether the resampled stream of a source stream of srcLength bytes has no
+// more data at pos bytes into it.
+func (r *Resampling) endOfResampled(srcLength int64, pos int64) bool {
+	if srcLength < 0 {
+		return false
+	}
+	length := r.resampledLength(srcLength)
+	if length < 0 {
+		return false
+	}
+	return pos >= length
 }
 
 func (r *Resampling) src(i int64) (float64, float64, error) {
@@ -319,7 +335,7 @@ func (r *Resampling) at(t int64) (float64, float64, error) {
 
 // Read reads resampled audio and returns an error wrapping [errors.ErrUnsupported] if it requires seeking a non-seekable source.
 func (r *Resampling) Read(b []byte) (int, error) {
-	if r.eof || (r.srcLength() >= 0 && r.pos >= r.Length()) {
+	if r.eof || r.endOfResampled(r.srcLength(), r.pos) {
 		return 0, io.EOF
 	}
 	if len(b) == 0 {
@@ -334,7 +350,7 @@ func (r *Resampling) Read(b []byte) (int, error) {
 			if err != nil && err != io.EOF {
 				return 0, err
 			}
-			if (err == io.EOF && r.srcLength() < 0) || (r.srcLength() >= 0 && r.pos >= r.Length()) {
+			if (err == io.EOF && r.srcLength() < 0) || r.endOfResampled(r.srcLength(), r.pos) {
 				r.eof = true
 				return 0, io.EOF
 			}
@@ -369,7 +385,7 @@ func (r *Resampling) Read(b []byte) (int, error) {
 			b[4*i+2] = byte(r16)
 			b[4*i+3] = byte(r16 >> 8)
 			// If the length is known, check whether the resampled data ends (#3352).
-			if srcLength := r.srcLength(); srcLength >= 0 && r.pos+int64(size*i) >= r.resampledLength(srcLength) {
+			if r.endOfResampled(r.srcLength(), r.pos+int64(size*i)) {
 				n = size * i
 				r.eof = true
 				break
@@ -399,7 +415,7 @@ func (r *Resampling) Read(b []byte) (int, error) {
 			b[8*i+5] = byte(r32b >> 8)
 			b[8*i+6] = byte(r32b >> 16)
 			b[8*i+7] = byte(r32b >> 24)
-			if srcLength := r.srcLength(); srcLength >= 0 && r.pos+int64(size*i) >= r.resampledLength(srcLength) {
+			if r.endOfResampled(r.srcLength(), r.pos+int64(size*i)) {
 				n = size * i
 				r.eof = true
 				break
@@ -432,10 +448,11 @@ func (r *Resampling) Seek(offset int64, whence int) (int64, error) {
 		}
 		base = r.pos
 	case io.SeekEnd:
-		if r.srcLength() < 0 {
+		length := r.Length()
+		if length < 0 {
 			return 0, fmt.Errorf("convert: seeking from the end is not possible when the length is unknown: %w", errors.ErrUnsupported)
 		}
-		base = r.Length()
+		base = length
 	default:
 		return 0, fmt.Errorf("convert: whence must be io.SeekStart, io.SeekCurrent, or io.SeekEnd but was %d", whence)
 	}

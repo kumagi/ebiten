@@ -1273,3 +1273,61 @@ func TestResamplingFloat32Headroom(t *testing.T) {
 		}
 	}
 }
+
+func TestResamplingUnrepresentableLength(t *testing.T) {
+	for _, depth := range []int{2, 4} {
+		for _, tc := range []struct {
+			name       string
+			length     int64
+			wantLength int64
+		}{
+			{
+				name:       "unrepresentable",
+				length:     math.MaxInt64,
+				wantLength: -1,
+			},
+			{
+				name:       "known",
+				length:     64,
+				wantLength: 128,
+			},
+			{
+				name:       "unknown",
+				length:     -1,
+				wantLength: -1,
+			},
+		} {
+			t.Run(fmt.Sprintf("depth=%d/%s", depth, tc.name), func(t *testing.T) {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Errorf("unrepresentable length caused a panic: %v", r)
+					}
+				}()
+				newStream := func() *convert.Resampling {
+					return convert.NewResampling(bytes.NewReader(make([]byte, 64)), tc.length, 1, 2, depth)
+				}
+				if got := newStream().Length(); got != tc.wantLength {
+					t.Errorf("Length = %d, want %d", got, tc.wantLength)
+				}
+				position, err := newStream().Seek(0, io.SeekEnd)
+				if tc.wantLength < 0 {
+					if !errors.Is(err, errors.ErrUnsupported) {
+						t.Errorf("SeekEnd error = %v, want unsupported", err)
+					}
+				} else if err != nil || position != tc.wantLength {
+					t.Errorf("SeekEnd = (%d,%v), want (%d,nil)", position, err, tc.wantLength)
+				}
+				if n, err := newStream().Read(nil); n != 0 || err != nil {
+					t.Errorf("empty Read = (%d,%v), want (0,nil)", n, err)
+				}
+				if n, err := newStream().Read(make([]byte, 1)); n != 0 || !errors.Is(err, io.ErrShortBuffer) {
+					t.Errorf("short Read = (%d,%v), want (0,short buffer)", n, err)
+				}
+				b := make([]byte, 2*depth)
+				if n, err := newStream().Read(b); n != len(b) || err != nil {
+					t.Errorf("Read = (%d,%v), want (%d,nil)", n, err, len(b))
+				}
+			})
+		}
+	}
+}
