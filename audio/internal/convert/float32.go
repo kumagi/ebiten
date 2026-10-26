@@ -58,6 +58,7 @@ func (r *float32BytesReader) Read(buf []byte) (int, error) {
 	// Buffer at least one sample to distinguish EOF from a short destination buffer.
 	i16LenToFill := max(len(buf)/float32SampleSize, 1) * int16SampleSize
 	var readErr error
+	var zeroReads int
 	for len(r.i16Buf) < i16LenToFill && !r.eof {
 		origLen := len(r.i16Buf)
 		if cap(r.i16Buf) < i16LenToFill {
@@ -72,8 +73,18 @@ func (r *float32BytesReader) Read(buf []byte) (int, error) {
 		}
 		if err == io.EOF {
 			r.eof = true
+			break
 		}
-		if len(r.i16Buf) >= int16SampleSize || n == 0 {
+		if len(r.i16Buf) >= int16SampleSize {
+			break
+		}
+		if n > 0 {
+			zeroReads = 0
+			continue
+		}
+		zeroReads++
+		if zeroReads >= maxZeroReads {
+			readErr = io.ErrNoProgress
 			break
 		}
 	}

@@ -21,6 +21,9 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/internal/mathutil"
 )
 
+// maxZeroReads bounds consecutive empty source reads while collecting a frame.
+const maxZeroReads = 100
+
 type StereoF32 struct {
 	source io.ReadSeeker
 	mono   bool
@@ -51,6 +54,7 @@ func (s *StereoF32) Read(b []byte) (int, error) {
 	// Read source bytes. Keep reading until one frame is available so that a source returning
 	// less than one frame at a time doesn't make Read return (0, nil).
 	var readErr error
+	var zeroReads int
 	for len(s.buf) < l && !s.eof {
 		origLen := len(s.buf)
 		if cap(s.buf) < l {
@@ -65,8 +69,18 @@ func (s *StereoF32) Read(b []byte) (int, error) {
 		}
 		if err == io.EOF {
 			s.eof = true
+			break
 		}
-		if len(s.buf) >= frameSize || n == 0 {
+		if len(s.buf) >= frameSize {
+			break
+		}
+		if n > 0 {
+			zeroReads = 0
+			continue
+		}
+		zeroReads++
+		if zeroReads >= maxZeroReads {
+			readErr = io.ErrNoProgress
 			break
 		}
 	}
