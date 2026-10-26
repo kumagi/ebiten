@@ -83,16 +83,24 @@ func chooseEGLConfig(ctxconfig *ctxconfig, fbconfig_ *fbconfig) (uintptr, error)
 	}
 
 	var nativeCount int32
-	egl.GetConfigs(egl.display, nil, 0, &nativeCount)
-	if nativeCount == 0 {
-		return 0, fmt.Errorf("glfw: egl: no EGLConfigs returned: %w", APIUnavailable)
+	if !egl.GetConfigs(egl.display, nil, 0, &nativeCount) {
+		return 0, fmt.Errorf("glfw: egl: eglGetConfigs for the size failed: %s: %w", getEGLErrorString(egl.GetError()), APIUnavailable)
+	}
+	if nativeCount <= 0 {
+		return 0, fmt.Errorf("glfw: egl: eglGetConfigs returned invalid count %d: %w", nativeCount, APIUnavailable)
 	}
 
 	nativeConfigs := make([]uintptr, nativeCount)
-	egl.GetConfigs(egl.display, &nativeConfigs[0], nativeCount, &nativeCount)
-	nativeConfigs = nativeConfigs[:nativeCount]
+	var returnedCount int32
+	if !egl.GetConfigs(egl.display, &nativeConfigs[0], nativeCount, &returnedCount) {
+		return 0, fmt.Errorf("glfw: egl: eglGetConfigs failed: %s: %w", getEGLErrorString(egl.GetError()), APIUnavailable)
+	}
+	if returnedCount < 0 || int(returnedCount) > len(nativeConfigs) {
+		return 0, fmt.Errorf("glfw: egl: eglGetConfigs returned invalid count %d for %d configs: %w", returnedCount, len(nativeConfigs), APIUnavailable)
+	}
+	nativeConfigs = nativeConfigs[:returnedCount]
 
-	usableConfigs := make([]*fbconfig, 0, nativeCount)
+	usableConfigs := make([]*fbconfig, 0, returnedCount)
 	var wrongApiAvailable bool
 
 	for _, n := range nativeConfigs {
