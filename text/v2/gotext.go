@@ -98,12 +98,14 @@ func (g *GoTextFace) SetVariation(tag Tag, value float32) {
 		if v.Value == value {
 			return
 		}
+		g.variations = slices.Clone(g.variations)
 		g.variations[i].Value = value
 		g.variationsString = encodeVariations(g.variations)
 		return
 	}
 
 	// Keep the alphabetical order in order to make the cache key deterministic.
+	g.variations = slices.Clone(g.variations)
 	g.variations = append(g.variations, font.Variation{})
 	copy(g.variations[idx+1:], g.variations[idx:])
 	g.variations[idx] = font.Variation{
@@ -123,6 +125,7 @@ func (g *GoTextFace) RemoveVariation(tag Tag) {
 			return
 		}
 
+		g.variations = slices.Clone(g.variations)
 		copy(g.variations[i:], g.variations[i+1:])
 		g.variations = g.variations[:len(g.variations)-1]
 		g.variationsString = encodeVariations(g.variations)
@@ -145,12 +148,14 @@ func (g *GoTextFace) SetFeature(tag Tag, value uint32) {
 		if f.Value == value {
 			return
 		}
+		g.features = slices.Clone(g.features)
 		g.features[i].Value = value
 		g.featuresString = encodeFeatures(g.features)
 		return
 	}
 
 	// Keep the alphabetical order in order to make the cache key deterministic.
+	g.features = slices.Clone(g.features)
 	g.features = append(g.features, shaping.FontFeature{})
 	copy(g.features[idx+1:], g.features[idx:])
 	g.features[idx] = shaping.FontFeature{
@@ -170,6 +175,7 @@ func (g *GoTextFace) RemoveFeature(tag Tag) {
 			return
 		}
 
+		g.features = slices.Clone(g.features)
 		copy(g.features[i:], g.features[i+1:])
 		g.features = g.features[:len(g.features)-1]
 		g.featuresString = encodeFeatures(g.features)

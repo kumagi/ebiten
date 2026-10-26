@@ -76,3 +76,52 @@ func TestGoTextFaceSourceAppendVariationAxes(t *testing.T) {
 		t.Errorf("AppendVariationAxes(%v): got %v, want %v", prefix, got, want)
 	}
 }
+
+func TestGoTextFaceCopyKeepsOriginalShaping(t *testing.T) {
+	data := variableFontData(t)
+	width := text.MustParseTag("wdth")
+	kern := text.MustParseTag("kern")
+	for _, tc := range []struct {
+		name   string
+		mutate func(*text.GoTextFace)
+	}{
+		{
+			name:   "set variation",
+			mutate: func(f *text.GoTextFace) { f.SetVariation(width, 151) },
+		},
+		{
+			name:   "remove variation",
+			mutate: func(f *text.GoTextFace) { f.RemoveVariation(width) },
+		},
+		{
+			name:   "set feature",
+			mutate: func(f *text.GoTextFace) { f.SetFeature(kern, 1) },
+		},
+		{
+			name:   "remove feature",
+			mutate: func(f *text.GoTextFace) { f.RemoveFeature(kern) },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			newFace := func() *text.GoTextFace {
+				f := &text.GoTextFace{
+					Source: newGoTextFaceSourceForTest(t, data),
+					Size:   32,
+				}
+				f.SetVariation(width, 80)
+				f.SetVariation(text.MustParseTag("wght"), 400)
+				f.SetFeature(kern, 0)
+				f.SetFeature(text.MustParseTag("liga"), 1)
+				return f
+			}
+			original := newFace()
+			copied := *original
+			tc.mutate(&copied)
+			want := newFace()
+			const str = "AVATo"
+			if got, expected := text.Advance(str, original), text.Advance(str, want); got != expected {
+				t.Errorf("original advance = %v, want %v", got, expected)
+			}
+		})
+	}
+}
