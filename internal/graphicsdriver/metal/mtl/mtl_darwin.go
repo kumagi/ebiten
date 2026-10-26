@@ -635,7 +635,14 @@ func (d Device) NewLibraryWithSource(source string, opt CompileOptions) (Library
 func (d Device) NewLibraryWithData(buffer []byte) (Library, error) {
 	defer runtime.KeepAlive(buffer)
 
+	if len(buffer) == 0 {
+		return Library{}, errors.New("mtl: the library data is empty")
+	}
+
 	data := dispatchDataCreate(unsafe.Pointer(&buffer[0]), uint(len(buffer)), 0, 0)
+	if data == 0 {
+		return Library{}, errors.New("mtl: dispatch_data_create failed")
+	}
 	defer dispatchRelease(data)
 
 	var err cocoa.NSError
@@ -1062,6 +1069,9 @@ func (t Texture) Release() {
 // The underlying selectors are the convenience forms without a slice or a bytes-per-image argument, so a
 // transfer always covers region.Size.Height rows of bytesPerRow bytes in slice 0, and the region must be 2D.
 func checkPixelsForTransfer(pixels []byte, bytesPerRow int, region Region, funcName string) error {
+	if len(pixels) == 0 {
+		return fmt.Errorf("mtl: len(pixels) must not be 0 at %s", funcName)
+	}
 	if region.Size.Depth != 1 {
 		return fmt.Errorf("mtl: region depth must be 1 but was %d at %s", region.Size.Depth, funcName)
 	}
@@ -1074,7 +1084,7 @@ func checkPixelsForTransfer(pixels []byte, bytesPerRow int, region Region, funcN
 // GetBytes copies a block of pixels from the storage allocation of texture
 // slice zero into pixels.
 //
-// GetBytes returns an error if len(pixels) is less than region.Size.Height * bytesPerRow.
+// GetBytes returns an error if pixels is empty or len(pixels) is less than region.Size.Height * bytesPerRow.
 //
 // Reference: https://developer.apple.com/documentation/metal/mtltexture/1515751-getbytes?language=objc.
 func (t Texture) GetBytes(pixels []byte, bytesPerRow int, region Region, level int) error {
