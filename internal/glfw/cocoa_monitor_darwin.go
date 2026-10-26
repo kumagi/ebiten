@@ -388,7 +388,11 @@ func pollMonitorsNS() error {
 			cfRelease(mode)
 		}
 
+		// Keep the primary monitor first, independently of the online display enumeration order.
 		typ := _GLFW_INSERT_LAST
+		if display == cgMainDisplayID() {
+			typ = _GLFW_INSERT_FIRST
+		}
 
 		if err := inputMonitor(monitor, Connected, typ); err != nil {
 			return err
