@@ -72,10 +72,13 @@ func bluetoothFromDeviceInstanceID(id string) (bt, ok bool) {
 
 // Report sizes include the leading report ID byte. That the Bluetooth sizes
 // match across models and directions is a coincidence.
+//
+// DualSense USB includes a report ID, 47 common bytes, and 15 reserved bytes.
+// Reference: https://github.com/torvalds/linux/blob/master/drivers/hid/hid-playstation.c.
 const (
 	dualShock4OutputReportSizeUSB = 32
 	dualShock4OutputReportSizeBT  = 78
-	dualSenseOutputReportSizeUSB  = 48
+	dualSenseOutputReportSizeUSB  = 63
 	dualSenseOutputReportSizeBT   = 78
 
 	dualShock4InputReportSizeUSB = 64 // Report 0x01.

@@ -159,7 +159,7 @@ func TestOutputReportSize(t *testing.T) {
 		{
 			model: sonyhid.ModelDualSense,
 			bt:    false,
-			want:  48,
+			want:  63,
 		},
 		{
 			model: sonyhid.ModelDualSense,
@@ -296,7 +296,7 @@ func TestDualShock4RumbleReportBT(t *testing.T) {
 }
 
 func TestDualSenseRumbleReportUSB(t *testing.T) {
-	checkReport(t, "usb", sonyhid.DualSenseRumbleReportUSB(0xab, 0xcd), sonyhid.DualSenseOutputReportSizeUSB, map[int]byte{
+	checkReport(t, "usb", sonyhid.DualSenseRumbleReportUSB(0xab, 0xcd), 63, map[int]byte{
 		0: 0x02,
 		1: 0x03,
 		3: 0xcd, // weak
