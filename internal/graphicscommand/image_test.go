@@ -20,6 +20,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"sync"
 	"testing"
 	"time"
 
@@ -80,6 +81,37 @@ func TestClear(t *testing.T) {
 				t.Errorf("dst.At(%d, %d) after DrawTriangles: got %v, want: %v", i, j, got, want)
 			}
 		}
+	}
+}
+
+func TestInternalSizeConcurrent(t *testing.T) {
+	for _, tc := range []struct {
+		width, height, wantWidth, wantHeight int
+		screen                               bool
+	}{
+		{1, 1, 16, 16, false},
+		{17, 33, 32, 64, false},
+		{13, 9, 13, 9, true},
+	} {
+		t.Run(fmt.Sprintf("%dx%d/screen=%v", tc.width, tc.height, tc.screen), func(t *testing.T) {
+			for range 16 {
+				img := graphicscommand.NewImage(tc.width, tc.height, tc.screen, "")
+				start := make(chan struct{})
+				var wg sync.WaitGroup
+				for range 8 {
+					wg.Go(func() {
+						<-start
+						w, h := img.InternalSize()
+						if w != tc.wantWidth || h != tc.wantHeight {
+							t.Errorf("InternalSize: got %dx%d, want %dx%d", w, h, tc.wantWidth, tc.wantHeight)
+						}
+					})
+				}
+				close(start)
+				wg.Wait()
+				img.Dispose()
+			}
+		})
 	}
 }
 

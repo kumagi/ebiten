@@ -69,6 +69,10 @@ func NewImage(width, height int, screenFramebuffer bool, attribute string) *Imag
 		id:        genNextImageID(),
 		attribute: attribute,
 	}
+	if !screenFramebuffer {
+		i.internalWidth = graphics.InternalImageSize(width)
+		i.internalHeight = graphics.InternalImageSize(height)
+	}
 	c := &newImageCommand{
 		result:    i,
 		width:     width,
@@ -105,12 +109,6 @@ func (i *Image) Dispose() {
 func (i *Image) InternalSize() (int, int) {
 	if i.screen {
 		return i.width, i.height
-	}
-	if i.internalWidth == 0 {
-		i.internalWidth = graphics.InternalImageSize(i.width)
-	}
-	if i.internalHeight == 0 {
-		i.internalHeight = graphics.InternalImageSize(i.height)
 	}
 	return i.internalWidth, i.internalHeight
 }
