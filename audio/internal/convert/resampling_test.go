@@ -1273,3 +1273,84 @@ func TestResamplingFloat32Headroom(t *testing.T) {
 		}
 	}
 }
+
+type rangeProbeReadSeeker struct {
+	reads int
+	seeks int
+}
+
+func (s *rangeProbeReadSeeker) Read(b []byte) (int, error) {
+	s.reads++
+	clear(b)
+	return len(b), nil
+}
+
+func (s *rangeProbeReadSeeker) Seek(offset int64, whence int) (int64, error) {
+	s.seeks++
+	return offset, nil
+}
+
+func TestResamplingRejectsUnrepresentableSourceRange(t *testing.T) {
+	for _, depth := range []int{2, 4} {
+		for _, tc := range []struct {
+			name     string
+			from     int
+			to       int
+			position int64
+		}{
+			{
+				name:     "coordinate",
+				from:     48000,
+				to:       1,
+				position: math.MaxInt64,
+			},
+			{
+				name:     "block_start",
+				from:     48000,
+				to:       48000,
+				position: math.MaxInt64,
+			},
+			{
+				name:     "block_end",
+				from:     48000,
+				to:       48000,
+				position: math.MaxInt64 - int64(2*depth*2048),
+			},
+		} {
+			t.Run(fmt.Sprintf("depth=%d/%s", depth, tc.name), func(t *testing.T) {
+				source := &rangeProbeReadSeeker{}
+				r := convert.NewResampling(source, -1, tc.from, tc.to, depth)
+				if _, err := r.Seek(tc.position, io.SeekStart); err != nil {
+					t.Fatal(err)
+				}
+				if n, err := r.Read(make([]byte, 2*depth)); n != 0 || err == nil {
+					t.Errorf("Read got (%d, %v), want zero bytes and an error", n, err)
+				}
+				if source.reads != 0 || source.seeks != 0 {
+					t.Errorf("source was accessed: %d reads, %d seeks", source.reads, source.seeks)
+				}
+			})
+		}
+	}
+}
+
+func TestResamplingRepresentableSourceRange(t *testing.T) {
+	for _, depth := range []int{2, 4} {
+		for _, frame := range []int64{0, 4095, 4096} {
+			t.Run(fmt.Sprintf("depth=%d/frame=%d", depth, frame), func(t *testing.T) {
+				source := &rangeProbeReadSeeker{}
+				r := convert.NewResampling(source, -1, 48000, 48000, depth)
+				if _, err := r.Seek(frame*int64(2*depth), io.SeekStart); err != nil {
+					t.Fatal(err)
+				}
+				b := make([]byte, 2*depth)
+				if n, err := r.Read(b); n != len(b) || err != nil {
+					t.Errorf("Read got (%d, %v), want (%d, nil)", n, err, len(b))
+				}
+				if source.reads == 0 {
+					t.Error("source was not read")
+				}
+			})
+		}
+	}
+}

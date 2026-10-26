@@ -178,7 +178,10 @@ func (r *Resampling) src(i int64) (float64, float64, error) {
 	sizePerSample := int64(r.bytesPerSample())
 	nextPos := int64(i) / resamplingBufferSize
 	if _, ok := r.srcBufL[nextPos]; !ok {
-		blockStart := nextPos * resamplingBufferSize * sizePerSample
+		blockStart, ok := mathutil.Mul(nextPos, int64(resamplingBufferSize)*sizePerSample)
+		if !ok || blockStart > math.MaxInt64-int64(resamplingBufferSize)*sizePerSample {
+			return 0, 0, fmt.Errorf("convert: source position is out of range")
+		}
 		buf := make([]byte, resamplingBufferSize*sizePerSample)
 		var c int
 		if r.partialSrcBuf != nil && r.partialSrcBlock == nextPos {
@@ -293,6 +296,9 @@ func (r *Resampling) src(i int64) (float64, float64, error) {
 func (r *Resampling) at(t int64) (float64, float64, error) {
 	windowSize := 8.0
 	tInSrc := float64(t) * float64(r.from) / float64(r.to)
+	if tInSrc >= float64(math.MaxInt64)-windowSize {
+		return 0, 0, fmt.Errorf("convert: source position is out of range")
+	}
 	startN := max(int64(tInSrc-windowSize), 0)
 	endN := int64(tInSrc + windowSize)
 	var lv, rv float64
