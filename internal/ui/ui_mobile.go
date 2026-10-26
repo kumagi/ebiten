@@ -93,8 +93,10 @@ type pointI struct {
 }
 
 type userInterfaceImpl struct {
-	graphicsDriver        graphicsdriver.Graphics
-	graphicsLibraryInitCh chan struct{}
+	graphicsDriver          graphicsdriver.Graphics
+	graphicsLibraryInitCh   chan struct{}
+	graphicsLibraryInitOnce sync.Once
+	graphicsLibraryInitErr  error
 
 	outsideSize atomic.Pointer[pointF]
 
@@ -162,6 +164,7 @@ func (u *UserInterface) runMobile(game Game, options *RunOptions) (err error) {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%v\n%s", r, string(debug.Stack()))
 		}
+		u.finishGraphicsLibraryInit(err)
 	}()
 
 	graphicscommand.SetOSThreadAsRenderThread()
@@ -179,13 +182,21 @@ func (u *UserInterface) runMobile(game Game, options *RunOptions) (err error) {
 	}
 	u.graphicsDriver = g
 	u.setGraphicsLibrary(lib)
-	close(u.graphicsLibraryInitCh)
+	u.finishGraphicsLibraryInit(nil)
 
 	for {
 		if err := u.update(); err != nil {
 			return err
 		}
 	}
+}
+
+// finishGraphicsLibraryInit publishes the initialization result before waking all waiters.
+func (u *UserInterface) finishGraphicsLibraryInit(err error) {
+	u.graphicsLibraryInitOnce.Do(func() {
+		u.graphicsLibraryInitErr = err
+		close(u.graphicsLibraryInitCh)
+	})
 }
 
 // outsideSize must be called on the same goroutine as update().

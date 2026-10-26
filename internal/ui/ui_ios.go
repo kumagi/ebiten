@@ -90,10 +90,9 @@ func (*graphicsDriverCreatorImpl) newPlayStation5() (graphicsdriver.Graphics, er
 func (u *UserInterface) SetUIView(uiview uintptr) error {
 	u.uiView.Store(uiview)
 	u.refreshDisplayInfo()
-	select {
-	case err := <-u.errCh:
+	<-u.graphicsLibraryInitCh
+	if err := u.graphicsLibraryInitErr; err != nil {
 		return err
-	case <-u.graphicsLibraryInitCh:
 	}
 
 	// Only the Metal driver needs the view. The OpenGL driver renders through
@@ -110,10 +109,9 @@ func (u *UserInterface) UIView() uintptr {
 }
 
 func (u *UserInterface) IsGL() (bool, error) {
-	select {
-	case err := <-u.errCh:
+	<-u.graphicsLibraryInitCh
+	if err := u.graphicsLibraryInitErr; err != nil {
 		return false, err
-	case <-u.graphicsLibraryInitCh:
 	}
 
 	return u.GraphicsLibrary() == GraphicsLibraryOpenGL, nil
