@@ -75,15 +75,15 @@ type Graphics struct {
 
 	host Host
 
-	// maxImageSize caches the host's maximum image size, queried from the host exactly once via
-	// maxImageSizeOnce. It never changes for a session.
+	// maxImageSize and maxImageSizeErr cache the host query's first outcome for the session.
 	maxImageSize     int
 	maxImageSizeOnce sync.Once
+	maxImageSizeErr  error
 
-	// colorSpace caches the host's color space, queried from the host exactly once via
-	// colorSpaceOnce. It never changes for a session.
+	// colorSpace and colorSpaceErr cache the host query's first outcome for the session.
 	colorSpace     color.ColorSpace
 	colorSpaceOnce sync.Once
+	colorSpaceErr  error
 }
 
 // NewGraphics returns a remote graphics driver.
@@ -137,7 +137,7 @@ func (g *Graphics) Initialize() error {
 }
 
 // ColorSpace returns the host graphics driver's color space: the guest's pixels are rendered by the
-// host's driver, so its color space is the one in effect. It panics if no host is attached.
+// host's driver, so its color space is the one in effect. It panics if no host is attached or the query failed.
 func (g *Graphics) ColorSpace() color.ColorSpace {
 	// A call happens only while the guest is driven, by which point a host is attached.
 	if g.host == nil {
@@ -146,10 +146,14 @@ func (g *Graphics) ColorSpace() color.ColorSpace {
 	g.colorSpaceOnce.Do(func() {
 		c, err := g.host.ColorSpace()
 		if err != nil {
-			panic(fmt.Sprintf("remote: querying the host's color space failed: %v", err))
+			g.colorSpaceErr = err
+			return
 		}
 		g.colorSpace = c
 	})
+	if g.colorSpaceErr != nil {
+		panic(fmt.Sprintf("remote: querying the host's color space failed: %v", g.colorSpaceErr))
+	}
 	return g.colorSpace
 }
 
@@ -223,7 +227,7 @@ func (g *Graphics) NeedsClearingScreen() bool {
 }
 
 // MaxImageSize returns the host graphics driver's maximum image size. It panics if no host is
-// attached.
+// attached or the query failed.
 func (g *Graphics) MaxImageSize() int {
 	// The first call happens during the guest's first frame, by which point a host is attached.
 	if g.host == nil {
@@ -232,10 +236,14 @@ func (g *Graphics) MaxImageSize() int {
 	g.maxImageSizeOnce.Do(func() {
 		n, err := g.host.MaxImageSize()
 		if err != nil {
-			panic(fmt.Sprintf("remote: querying the host's maximum image size failed: %v", err))
+			g.maxImageSizeErr = err
+			return
 		}
 		g.maxImageSize = n
 	})
+	if g.maxImageSizeErr != nil {
+		panic(fmt.Sprintf("remote: querying the host's maximum image size failed: %v", g.maxImageSizeErr))
+	}
 	return g.maxImageSize
 }
 
