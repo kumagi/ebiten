@@ -26,6 +26,7 @@ type (
 		// which fails to suspend or resume.
 		suspendErr error
 		resumeErr  error
+		err        error
 
 		// players are the players created since the context was reset last. ResetContextForTesting
 		// stops them, so that a player reading an infinite source does not keep reading after its test.
@@ -100,7 +101,9 @@ func (d *dummyDriver) Resume() error {
 }
 
 func (d *dummyDriver) Err() error {
-	return nil
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.err
 }
 
 func (p *dummyPlayer) Pause() {
@@ -373,4 +376,11 @@ func (i *InfiniteLoop) SetNoBlendForTesting(value bool) {
 // integer stereo.
 func NewTimeStreamForTesting(src io.ReadSeeker, sampleRate int) (io.ReadSeeker, error) {
 	return newTimeStream(src, true, sampleRate, bitDepthInBytesInt16)
+}
+
+func SetDeviceErrorForTesting(err error) {
+	d := dummyDriverForTesting
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.err = err
 }

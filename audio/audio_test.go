@@ -21,6 +21,7 @@ import (
 	"math"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1012,5 +1013,31 @@ func TestTimeStreamSeekCurrentOverInfiniteLoop(t *testing.T) {
 	}
 	if want := int64(length + 16); pos != want {
 		t.Errorf("Seek(0, io.SeekCurrent): got %d, want %d", pos, want)
+	}
+}
+
+func TestContextErrorPreservesDeviceError(t *testing.T) {
+	setup()
+	defer teardown()
+	if err := audio.UpdateForTesting(); err != nil {
+		t.Fatal(err)
+	}
+	p := context.NewPlayerFromBytes(make([]byte, 4))
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+	p.Play()
+	contextErr := audio.UpdateForTesting()
+	if contextErr == nil {
+		t.Fatal("closed player did not report a context error")
+	}
+	audio.SetDeviceErrorForTesting(errDeviceFailed)
+	defer audio.SetDeviceErrorForTesting(nil)
+	err := audio.UpdateForTesting()
+	if !errors.Is(err, errDeviceFailed) {
+		t.Errorf("device error missing: got %v", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), contextErr.Error()) {
+		t.Errorf("context error missing: got %v, want %v", err, contextErr)
 	}
 }

@@ -207,10 +207,7 @@ func (c *Context) setError(err error) {
 func (c *Context) error() error {
 	c.m.Lock()
 	defer c.m.Unlock()
-	if c.err != nil {
-		return fmt.Errorf("audio: context error: %w", c.err)
-	}
-	if err := c.playerFactory.error(); err != nil {
+	if err := errors.Join(c.err, c.playerFactory.error()); err != nil {
 		return fmt.Errorf("audio: context error: %w", err)
 	}
 	return nil
