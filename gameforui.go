@@ -134,6 +134,12 @@ func (g *gameForUI) DrawFinalScreen(scale, offsetX, offsetY float64) {
 // DefaultDrawFinalScreen is the default implementation of [FinalScreenDrawer.DrawFinalScreen],
 // used when a [Game] doesn't implement [FinalScreenDrawer].
 //
+// geoM is expected to be a uniform scale followed by a translation, as passed to
+// [FinalScreenDrawer.DrawFinalScreen]. The scale is taken from its (0, 0) element.
+// When the screen filter is enabled, an integral scale uses [FilterNearest],
+// a non-integral scale below 1 uses [FilterLinear], and a non-integral scale above
+// 1 uses [FilterPixelated]. When the screen filter is disabled, [FilterNearest] is used.
+//
 // You can use DefaultDrawFinalScreen when you need the default implementation of [FinalScreenDrawer.DrawFinalScreen]
 // in your implementation of [FinalScreenDrawer], for example.
 func DefaultDrawFinalScreen(screen FinalScreen, offscreen *Image, geoM GeoM) {
