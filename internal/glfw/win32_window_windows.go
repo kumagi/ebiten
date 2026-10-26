@@ -2030,10 +2030,8 @@ func (w *Window) platformSetWindowMonitor(monitor *Monitor, xpos, ypos, width, h
 		}
 
 		mi, _ := _GetMonitorInfoW(w.monitor.platform.handle)
-		var hWnd windows.HWND = _HWND_NOTOPMOST
-		if w.floating {
-			hWnd = _HWND_TOPMOST
-		}
+		// Fullscreen windows are topmost regardless of the windowed floating hint.
+		hWnd := _HWND_TOPMOST
 		if err := _SetWindowPos(w.platform.handle, hWnd,
 			mi.rcMonitor.left,
 			mi.rcMonitor.top,
