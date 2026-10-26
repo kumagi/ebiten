@@ -25,18 +25,20 @@ import (
 
 // SetGame sets a mobile game.
 //
-// SetGame is expected to be called only once.
+// SetGame can be called at any time. Until SetGame or SetGameWithOptions is called, the game does not start.
 //
-// SetGame can be called anytime. Until SetGame is called, the game does not start.
+// SetGame and SetGameWithOptions must be called only once in total. A subsequent call panics.
+// SetGame also panics on platforms other than Android and iOS.
 func SetGame(game ebiten.Game) {
 	SetGameWithOptions(game, nil)
 }
 
 // SetGameWithOptions sets a mobile game with the specified options.
 //
-// SetGameWithOptions is expected to be called only once.
+// SetGameWithOptions can be called at any time. Until SetGameWithOptions or SetGame is called, the game does not start.
 //
-// SetGameWithOptions can be called anytime. Until SetGameWithOptions is called, the game does not start.
+// SetGameWithOptions and SetGame must be called only once in total. A subsequent call panics.
+// SetGameWithOptions also panics on platforms other than Android and iOS.
 func SetGameWithOptions(game ebiten.Game, options *ebiten.RunGameOptions) {
 	setGame(game, options)
 }
