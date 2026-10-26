@@ -371,7 +371,11 @@ func setMarkedText(_ objc.ID, _ objc.SEL, str objc.ID, selectedRange nsRange, re
 }
 
 func unmarkText(_ objc.ID, _ objc.SEL) {
-	// Do nothing
+	// Clear the preedit when the IME unmarks text without inserting it.
+	if !theTextInputImpl.marked {
+		return
+	}
+	theTextInputImpl.update("", 0, 0, noReplacement, noReplacement, commitNone)
 }
 
 func validAttributesForMarkedText(_ objc.ID, _ objc.SEL) objc.ID {
