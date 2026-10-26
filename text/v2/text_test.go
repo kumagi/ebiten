@@ -48,6 +48,26 @@ func TestMain(m *testing.M) {
 	t.MainWithRunLoop(m)
 }
 
+func TestAdjustGranularityNegativeOrigins(t *testing.T) {
+	values := []fixed.Int26_6{math.MinInt32, math.MinInt32 + 1, math.MaxInt32}
+	for x := -129; x <= 129; x++ {
+		values = append(values, fixed.Int26_6(x))
+	}
+	for _, factor := range []fixed.Int26_6{8, 16, 32, 64} {
+		for _, x := range values {
+			want := fixed.Int26_6(math.Floor(float64(x)/float64(factor)) * float64(factor))
+			if got := text.AdjustGranularityForTesting(x, factor); got != want {
+				t.Errorf("origin=%d factor=%d: got %d, want %d", x, factor, got, want)
+			}
+			if x <= math.MaxInt32-64 {
+				if delta := text.AdjustGranularityForTesting(x+64, factor) - text.AdjustGranularityForTesting(x, factor); delta != 64 {
+					t.Errorf("origin=%d factor=%d: shifting by one pixel shifted the rounded origin by %d", x, factor, delta)
+				}
+			}
+		}
+	}
+}
+
 func TestGlyphIndex(t *testing.T) {
 	const sampleText = `The quick brown fox jumps
 over the lazy dog.`

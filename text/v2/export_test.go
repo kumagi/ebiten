@@ -29,6 +29,8 @@ func L2VisualOrder(levels []bidi.Level) []int {
 	return appendL2VisualOrder(nil, levels)
 }
 
+var AdjustGranularityForTesting = adjustGranularity
+
 func Fixed26_6ToFloat32(x fixed.Int26_6) float32 {
 	return fixed26_6ToFloat32(x)
 }
