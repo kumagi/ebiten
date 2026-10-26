@@ -15,6 +15,7 @@
 package gamepad_test
 
 import (
+	"encoding/hex"
 	"syscall/js"
 	"testing"
 	"time"
@@ -204,5 +205,94 @@ func TestUpdateFindsGamepadWithoutEvent(t *testing.T) {
 	}
 	if calls != 13 {
 		t.Errorf("calls after ten more updates: got %d, want 13", calls)
+	}
+}
+
+func TestUpdateGamepadIndexReuse(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		id      string
+		mapping string
+	}{
+		{
+			name:    "id",
+			id:      "second-controller",
+			mapping: "",
+		},
+		{
+			name:    "id suffix",
+			id:      "first-controller-with-new-suffix",
+			mapping: "",
+		},
+		{
+			name:    "mapping",
+			id:      "first-controller",
+			mapping: "standard",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			id, mapping, pressed := "first-controller", "", false
+			makeGamepad := func(index int, id, mapping string) js.Value {
+				button := object.New()
+				button.Set("pressed", pressed)
+				button.Set("value", 0)
+				gp := object.New()
+				gp.Set("index", index)
+				gp.Set("id", id)
+				gp.Set("mapping", mapping)
+				gp.Set("axes", []any{})
+				gp.Set("buttons", []any{button})
+				return gp
+			}
+			setNavigator(t, func() any { return []any{makeGamepad(0, id, mapping), nil, makeGamepad(2, "other-controller", "")} })
+			var gps gamepad.Gamepads
+			n := &gamepad.JSGamepads{}
+			if err := n.Init(&gps); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(n.RemoveEventListener)
+			if err := n.Update(&gps); err != nil {
+				t.Fatal(err)
+			}
+			ids := gps.AppendGamepadIDs(nil)
+			if len(ids) != 2 {
+				t.Fatal("expected two gamepads")
+			}
+			first, other := gps.Get(ids[0]), gps.Get(ids[1])
+			if err := n.Update(&gps); err != nil {
+				t.Fatal(err)
+			}
+			if gps.Get(ids[0]) != first || gps.Get(ids[1]) != other {
+				t.Error("unchanged metadata replaced a gamepad")
+			}
+			id, mapping, pressed = tc.id, tc.mapping, true
+			if err := n.Update(&gps); err != nil {
+				t.Fatal(err)
+			}
+			if got := len(gps.AppendGamepadIDs(nil)); got != 2 {
+				t.Errorf("gamepad count=%d, want2", got)
+			}
+			current := gps.Get(ids[0])
+			if current == first {
+				t.Error("reused index retained the previous gamepad")
+			}
+			if got := current.Name(); got != tc.id {
+				t.Errorf("name=%q, want%q", got, tc.id)
+			}
+			var guid [16]byte
+			copy(guid[:], tc.id)
+			if got, want := current.SDLID(), hex.EncodeToString(guid[:]); got != want {
+				t.Errorf("SDLID=%q, want%q", got, want)
+			}
+			if got, want := current.IsStandardLayoutAvailable(), tc.mapping == "standard"; got != want {
+				t.Errorf("standard layout=%v, want%v", got, want)
+			}
+			if !current.Button(0) {
+				t.Error("replacement did not receive its button state")
+			}
+			if gps.Get(ids[1]) != other {
+				t.Error("unrelated gamepad was replaced")
+			}
+		})
 	}
 }

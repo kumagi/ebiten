@@ -102,22 +102,31 @@ func (g *nativeGamepadsImpl) update(gamepads *gamepads) error {
 		}
 		g.indices[index] = struct{}{}
 
-		// The gamepad is not registered yet, register this.
+		id := gp.Get("id").String()
+		mapping := gp.Get("mapping").String()
 		gamepad := gamepads.find(func(gamepad *Gamepad) bool {
-			return index == gamepad.native.(*nativeGamepadImpl).index
+			return gamepad.native.(*nativeGamepadImpl).index == index
 		})
+		if gamepad != nil {
+			n := gamepad.native.(*nativeGamepadImpl)
+			if n.id != id || n.mapping != mapping {
+				gamepads.remove(func(gp *Gamepad) bool {
+					return gp == gamepad
+				})
+				gamepad = nil
+			}
+		}
 		if gamepad == nil {
-			name := gp.Get("id").String()
-
 			// This emulates the implementation of EMSCRIPTEN_JoystickGetDeviceGUID.
 			// https://github.com/libsdl-org/SDL/blob/0e9560aea22818884921e5e5064953257bfe7fa7/src/joystick/emscripten/SDL_sysjoystick.c#L385
 			var sdlID [16]byte
-			copy(sdlID[:], []byte(name))
+			copy(sdlID[:], []byte(id))
 
-			gamepad = gamepads.add(name, hex.EncodeToString(sdlID[:]))
+			gamepad = gamepads.add(id, hex.EncodeToString(sdlID[:]))
 			gamepad.native = &nativeGamepadImpl{
+				id:      id,
 				index:   index,
-				mapping: gp.Get("mapping").String(),
+				mapping: mapping,
 			}
 		}
 		withNative(gamepad, func(n *nativeGamepadImpl) {
@@ -139,6 +148,7 @@ func (g *nativeGamepadsImpl) update(gamepads *gamepads) error {
 
 type nativeGamepadImpl struct {
 	value   js.Value
+	id      string
 	index   int
 	mapping string
 }
