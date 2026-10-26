@@ -539,7 +539,10 @@ func (w *Window) releaseMonitor() error {
 }
 
 func (w *Window) maximizeWindowManually() error {
-	mi, _ := _GetMonitorInfoW(_MonitorFromWindow(w.platform.handle, _MONITOR_DEFAULTTONEAREST))
+	mi, ok := _GetMonitorInfoW(_MonitorFromWindow(w.platform.handle, _MONITOR_DEFAULTTONEAREST))
+	if !ok {
+		return fmt.Errorf("glfw: GetMonitorInfoW failed")
+	}
 
 	rect := mi.rcWork
 
@@ -1165,7 +1168,11 @@ func windowProc(hWnd windows.HWND, uMsg uint32, wParam _WPARAM, lParam _LPARAM) 
 
 		if !window.decorated {
 			mh := _MonitorFromWindow(window.platform.handle, _MONITOR_DEFAULTTONEAREST)
-			mi, _ := _GetMonitorInfoW(mh)
+			mi, ok := _GetMonitorInfoW(mh)
+			if !ok {
+				_glfw.errors = append(_glfw.errors, fmt.Errorf("glfw: GetMonitorInfoW failed"))
+				return 0
+			}
 
 			mmi.ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left
 			mmi.ptMaxPosition.y = mi.rcWork.top - mi.rcMonitor.top
@@ -1408,7 +1415,10 @@ func (w *Window) createNativeWindow(wndconfig *wndconfig, fbconfig *fbconfig) er
 		// make such a window cover the whole monitor instead of its workarea
 
 		if wndconfig.maximized && !wndconfig.decorated {
-			mi, _ := _GetMonitorInfoW(mh)
+			mi, ok := _GetMonitorInfoW(mh)
+			if !ok {
+				return fmt.Errorf("glfw: GetMonitorInfoW failed")
+			}
 			if err := _SetWindowPos(w.platform.handle, _HWND_TOP,
 				mi.rcWork.left, mi.rcWork.top, mi.rcWork.right-mi.rcWork.left, mi.rcWork.bottom-mi.rcWork.top,
 				_SWP_NOACTIVATE|_SWP_NOZORDER); err != nil {
@@ -2029,7 +2039,10 @@ func (w *Window) platformSetWindowMonitor(monitor *Monitor, xpos, ypos, width, h
 			return err
 		}
 
-		mi, _ := _GetMonitorInfoW(w.monitor.platform.handle)
+		mi, ok := _GetMonitorInfoW(w.monitor.platform.handle)
+		if !ok {
+			return fmt.Errorf("glfw: GetMonitorInfoW failed")
+		}
 		var hWnd windows.HWND = _HWND_NOTOPMOST
 		if w.floating {
 			hWnd = _HWND_TOPMOST
