@@ -411,3 +411,22 @@ func TestReadDirPartialError(t *testing.T) {
 		}
 	}
 }
+
+func TestFSReadDirSorted(t *testing.T) {
+	root := newFakeDirEntry(t, "root", []string{"z", "a", "m", "B", "あ"}, js.Undefined())
+	fsys, err := file.NewFileEntryFS([]js.Value{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := fs.ReadDir(fsys, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	if want := []string{"B", "a", "m", "z", "あ"}; !slices.Equal(names, want) {
+		t.Errorf("names = %v, want %v", names, want)
+	}
+}

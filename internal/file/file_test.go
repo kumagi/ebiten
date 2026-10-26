@@ -20,9 +20,9 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/file"
@@ -38,9 +38,6 @@ func TestFSReadDir(t *testing.T) {
 	if len(rootEnts) != 2 {
 		t.Errorf("len(ents): got: %d, want: %d", len(rootEnts), 2)
 	}
-	slices.SortFunc(rootEnts, func(a, b fs.DirEntry) int {
-		return strings.Compare(a.Name(), b.Name())
-	})
 	if got, want := rootEnts[0].Name(), "dir"; got != want {
 		t.Errorf("ents[0].Name(): got: %s, want: %s", got, want)
 	}
@@ -61,9 +58,6 @@ func TestFSReadDir(t *testing.T) {
 	if len(subEnts) != 2 {
 		t.Errorf("len(ents): got: %d, want: %d", len(subEnts), 1)
 	}
-	slices.SortFunc(subEnts, func(a, b fs.DirEntry) int {
-		return strings.Compare(a.Name(), b.Name())
-	})
 	if got, want := subEnts[0].Name(), "foo.txt"; got != want {
 		t.Errorf("ents[0].Name(): got: %s, want: %s", got, want)
 	}
@@ -372,5 +366,26 @@ func TestFSPathErrors(t *testing.T) {
 				t.Errorf("error = %v, want fs.ErrNotExist", err)
 			}
 		})
+	}
+}
+
+func TestFSReadDirSorted(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"z", "a", "m", "B", "あ"} {
+		if err := os.Mkdir(filepath.Join(dir, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fsys := newVirtualFS(t, []string{dir})
+	entries, err := fs.ReadDir(fsys, filepath.Base(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	if want := []string{"B", "a", "m", "z", "あ"}; !slices.Equal(names, want) {
+		t.Errorf("names = %v, want %v", names, want)
 	}
 }
