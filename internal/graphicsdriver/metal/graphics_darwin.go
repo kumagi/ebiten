@@ -431,6 +431,7 @@ func (g *Graphics) NewImage(width, height int) (graphicsdriver.Image, error) {
 }
 
 func (g *Graphics) NewScreenFramebufferImage(width, height int) (graphicsdriver.Image, error) {
+	g.checkSize(width, height)
 	g.view.setDrawableSize(width, height)
 	i := &Image{
 		id:       g.genNextImageID(),
