@@ -230,6 +230,11 @@ func DrawWithOptions(dst *ebiten.Image, text string, face font.Face, options *eb
 		prevR = r
 	}
 
+	cleanUpGlyphImageCache(fc)
+}
+
+// cleanUpGlyphImageCache removes the stale entries of the glyph image cache of the given face.
+func cleanUpGlyphImageCache(face *faceWithCache) {
 	// cacheSoftLimit indicates the soft limit of the number of glyphs in the cache.
 	// If the number of glyphs exceeds this soft limit, old glyphs are removed.
 	// Even after cleaning up the cache, the number of glyphs might still exceed the soft limit, but
@@ -237,11 +242,11 @@ func DrawWithOptions(dst *ebiten.Image, text string, face font.Face, options *eb
 	const cacheSoftLimit = 512
 
 	// Clean up the cache.
-	if len(glyphImageCache[fc]) > cacheSoftLimit {
+	if len(glyphImageCache[face]) > cacheSoftLimit {
 		now := ebiten.Tick()
-		for r, e := range glyphImageCache[fc] {
+		for r, e := range glyphImageCache[face] {
 			if e.atime < now-60 {
-				delete(glyphImageCache[fc], r)
+				delete(glyphImageCache[face], r)
 			}
 		}
 	}
@@ -361,6 +366,8 @@ func CacheGlyphs(face font.Face, text string) {
 		dx += a
 		prevR = r
 	}
+
+	cleanUpGlyphImageCache(fc)
 }
 
 // FaceWithLineHeight returns a font.Face with the given lineHeight in pixels.
@@ -466,6 +473,8 @@ func AppendGlyphs(glyphs []Glyph, face font.Face, text string) []Glyph {
 		pos.X += a
 		prevR = r
 	}
+
+	cleanUpGlyphImageCache(fc)
 
 	return glyphs
 }
