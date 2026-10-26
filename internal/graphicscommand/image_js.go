@@ -34,9 +34,18 @@ func download(buf *bytes.Buffer, mime string, path string) {
 		[]any{jsData},
 		map[string]any{"type": mime},
 	)
-	a.Set("href", global.Get("URL").Call("createObjectURL", blob))
+	url := global.Get("URL")
+	objectURL := url.Call("createObjectURL", blob)
+	a.Set("href", objectURL)
 	a.Set("download", path)
 	a.Call("click")
+	var revoke js.Func
+	revoke = js.FuncOf(func(js.Value, []js.Value) any {
+		url.Call("revokeObjectURL", objectURL)
+		revoke.Release()
+		return nil
+	})
+	global.Call("setTimeout", revoke, 0)
 }
 
 func (i *Image) Dump(graphicsDriver graphicsdriver.Graphics, path string, blackbg bool, rect image.Rectangle) (string, error) {
