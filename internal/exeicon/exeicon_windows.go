@@ -36,8 +36,8 @@ var (
 // Extract returns the icon of the given pixel size embedded in the running
 // executable, or a zero handle when no icon is available.
 //
-// The caller owns the returned handle and must release it with
-// windows.DestroyIcon.
+// The caller owns a nonzero returned handle and must release it with the
+// DestroyIcon function in user32.dll.
 func Extract(width, height int) (windows.Handle, error) {
 	// In Xbox, PrivateExtractIconsW might not exist.
 	if procPrivateExtractIconsW.Find() != nil {
