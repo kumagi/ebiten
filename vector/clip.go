@@ -399,6 +399,11 @@ const clipImagePixelBudget = 4 * 1024 * 1024
 
 const clipImageMaxUnusedTicks = 60
 
+// clipImageOversizedPixelBudget is the allocated-pixel budget for the idle images that are
+// larger than clipImagePixelBudget. Without a budget, a game that draws with a clip region
+// of a changing size keeps every oversized mask until it ages out.
+const clipImageOversizedPixelBudget = 4 * clipImagePixelBudget
+
 // clipImageMaxReuseAreaRatio is the maximum image area relative to a rounded request.
 const clipImageMaxReuseAreaRatio = 2
 
@@ -516,6 +521,14 @@ func (p *clipImagePool) put(img *ebiten.Image, batched bool) {
 			batched: batched,
 		})
 		p.oversizedPixels += pixels
+		// Evict the oldest oversized images so that the pool cannot grow without a bound.
+		for p.oversizedPixels > clipImageOversizedPixelBudget {
+			evicted := p.oversizedImages[0]
+			b := evicted.image.Bounds()
+			p.oversizedImages = slices.Delete(p.oversizedImages, 0, 1)
+			p.oversizedPixels -= int64(b.Dx()) * int64(b.Dy())
+			evicted.image.Deallocate()
+		}
 		return
 	}
 	for p.pixels+pixels > clipImagePixelBudget {
