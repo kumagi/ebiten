@@ -1576,11 +1576,13 @@ func (u *glfwBackend) updateGame() error {
 		return err
 	}
 
-	u.bufferOnceSwappedOnce.Do(func() {
-		thread.CallWithArg(u.mainThread, func(u *glfwBackend) {
-			u.bufferOnceSwapped = true
-		}, u)
-	})
+	if r.present {
+		u.bufferOnceSwappedOnce.Do(func() {
+			thread.CallWithArg(u.mainThread, func(u *glfwBackend) {
+				u.bufferOnceSwapped = true
+			}, u)
+		})
+	}
 
 	// When a window is not focused or in another space, SwapBuffers might return immediately even with vsync enabled,
 	// and CPU might be busy. Mitigate this by sleeping for one refresh interval (#982, #2521). With vsync disabled,
