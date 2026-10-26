@@ -96,7 +96,7 @@ func waitForX11Event(timeout *float64) bool {
 func waitForAnyEvent(timeout *float64) bool {
 	fds := []unix.PollFd{
 		{Fd: int32(xConnectionNumber(_glfw.platformWindow.display)), Events: unix.POLLIN},
-		{Fd: int32(_glfw.platformWindow.emptyEventPipe[0]), Events: unix.POLLIN},
+		{Fd: int32(emptyEventPipe[0]), Events: unix.POLLIN},
 	}
 
 	for xPending(_glfw.platformWindow.display) == 0 {
@@ -118,7 +118,7 @@ func waitForAnyEvent(timeout *float64) bool {
 func writeEmptyEvent() {
 	for {
 		b := []byte{0}
-		result, err := unix.Write(_glfw.platformWindow.emptyEventPipe[1], b)
+		result, err := unix.Write(emptyEventPipe[1], b)
 		if result == 1 || err != unix.EINTR {
 			break
 		}
@@ -129,7 +129,7 @@ func writeEmptyEvent() {
 func drainEmptyEvents() {
 	for {
 		dummy := make([]byte, 64)
-		_, err := unix.Read(_glfw.platformWindow.emptyEventPipe[0], dummy)
+		_, err := unix.Read(emptyEventPipe[0], dummy)
 		if err != nil && err != unix.EINTR {
 			break
 		}

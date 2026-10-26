@@ -965,9 +965,15 @@ func createHelperWindow() _XID {
 		_CWEventMask, &wa)
 }
 
-// createEmptyEventPipe creates the pipe for empty events.
+// The process-lifetime empty event pipe survives Init resetting the platform window state.
+var emptyEventPipe = [2]int{-1, -1}
+
+// createEmptyEventPipe creates the pipe for empty events if it does not already exist.
 func createEmptyEventPipe() error {
-	if err := unix.Pipe2(_glfw.platformWindow.emptyEventPipe[:], unix.O_NONBLOCK|unix.O_CLOEXEC); err != nil {
+	if emptyEventPipe[0] >= 0 {
+		return nil
+	}
+	if err := unix.Pipe2(emptyEventPipe[:], unix.O_NONBLOCK|unix.O_CLOEXEC); err != nil {
 		return fmt.Errorf("glfw: x11: failed to create empty event pipe: %v: %w", err, PlatformError)
 	}
 	return nil

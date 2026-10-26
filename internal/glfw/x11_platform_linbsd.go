@@ -127,7 +127,6 @@ type platformLibraryWindowState struct {
 	restoreCursorPosX, restoreCursorPosY float64
 	// The window whose disabled cursor mode is active
 	disabledCursorWindow *Window
-	emptyEventPipe       [2]int
 
 	// Window manager atoms
 	NET_SUPPORTED                  _Atom
