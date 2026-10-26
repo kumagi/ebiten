@@ -48,7 +48,9 @@ func (u *UserInterface) updateInputStateFromOutside(keys []KeyEvent, runes []run
 			u.inputState.setKeyReleased(key.Key, t)
 		}
 	}
-	u.inputState.Runes = append(u.inputState.Runes, runes...)
+	for _, r := range runes {
+		u.inputState.appendRune(r)
+	}
 	u.inputState.CapsLock = capsLock
 	u.inputState.NumLock = numLock
 	u.touches = u.touches[:0]
