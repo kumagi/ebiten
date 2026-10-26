@@ -17,6 +17,8 @@
 // The embedded database is adapted from SDL_GameControllerDB.
 // See the SDL_GameControllerDB section in THIRD_PARTY_LICENSES.md for its license.
 
+//go:build !ios
+
 package gamepaddb
 
 import (

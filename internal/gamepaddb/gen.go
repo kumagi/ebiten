@@ -123,7 +123,8 @@ func run() error {
 			hasGLFWGamepads:  true,
 		},
 		"Mac OS X": {
-			filenameSuffix: "iokit_darwin",
+			filenameSuffix:   "iokit_darwin",
+			buildConstraints: "//go:build !ios",
 		},
 		"Linux": {
 			filenameSuffix:   "linbsd",
