@@ -139,7 +139,11 @@ func (g *gamepads) update(nativeWindow uintptr, virtualGamepads []VirtualGamepad
 	// A gamepad can be detected even though there is none. Apparently, some special devices are
 	// recognized as gamepads by OSes. In this case, the number of the 'buttons' can exceed the
 	// maximum. Skip such devices as a tentative solution (#1173, #2039).
+	// Virtual gamepads use explicitly supplied reports and cannot be misdetected devices.
 	g.remove(func(gamepad *Gamepad) bool {
+		if gamepad.virtual {
+			return false
+		}
 		if gamepad.ButtonCount() <= ButtonCount {
 			return false
 		}

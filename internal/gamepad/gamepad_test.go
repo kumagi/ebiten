@@ -176,6 +176,34 @@ func TestAxisButtonPressedMatchesValue(t *testing.T) {
 	}
 }
 
+func TestVirtualGamepadWithMoreButtonsThanMax(t *testing.T) {
+	buttons := make([]bool, gamepad.ButtonCount+1)
+	buttons[gamepad.ButtonCount] = true
+
+	states := []gamepad.VirtualGamepadState{
+		{ID: 0, SDLID: "oversized", Name: "Oversized Pad", Buttons: buttons},
+	}
+	updateVirtualGamepads(t, states)
+	defer updateVirtualGamepads(t, []gamepad.VirtualGamepadState{})
+
+	g := gamepad.Get(0)
+	if g == nil {
+		t.Fatal("Get(0) = nil; want a gamepad (a virtual gamepad is exempt from the oversized-device filter)")
+	}
+	if got, want := g.ButtonCount(), len(buttons); got != want {
+		t.Errorf("ButtonCount() = %d; want %d", got, want)
+	}
+
+	// A later update must keep the same gamepad instead of dropping and recreating it.
+	updateVirtualGamepads(t, states)
+	if got := gamepad.Get(0); got != g {
+		t.Errorf("Get(0) after a second update = %p; want %p (the same gamepad)", got, g)
+	}
+	if !g.Button(gamepad.ButtonCount) {
+		t.Errorf("Button(%d) = false; want true", gamepad.ButtonCount)
+	}
+}
+
 func TestButtonsWithHats(t *testing.T) {
 	g := gamepad.NewGamepadForTest("00000000000000000000000000009302")
 	g.SetReportForTest(nil, []bool{true, false}, []int{gamepaddb.HatUp | gamepaddb.HatRight, 0})
