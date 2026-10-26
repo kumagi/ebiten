@@ -1014,3 +1014,51 @@ func TestTimeStreamSeekCurrentOverInfiniteLoop(t *testing.T) {
 		t.Errorf("Seek(0, io.SeekCurrent): got %d, want %d", pos, want)
 	}
 }
+
+type gatedSampleSource struct {
+	released atomic.Bool
+	reads    atomic.Int64
+}
+
+func (s *gatedSampleSource) Read(buf []byte) (int, error) {
+	const sampleSize = 4 * 2
+	if len(buf) < sampleSize || !s.released.Swap(false) {
+		return 0, nil
+	}
+	clear(buf[:sampleSize])
+	s.reads.Add(1)
+	return sampleSize, nil
+}
+
+func TestPositionNotDecreasingAfterStall(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		setup()
+		defer teardown()
+
+		src := &gatedSampleSource{}
+		p, err := context.NewPlayerF32(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		start := time.Now()
+		p.Play()
+		if err := audio.UpdateForTesting(); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(100 * time.Millisecond)
+		stalled := p.Position()
+		if stalled <= 0 {
+			t.Fatal("position did not advance while playing the stalled source")
+		}
+		src.released.Store(true)
+		time.Sleep(20 * time.Millisecond)
+		if got := src.reads.Load(); got != 1 {
+			t.Fatalf("samples read = %d, want 1", got)
+		}
+		if got := p.Position(); got < stalled {
+			t.Errorf("Position after stall = %v, want at least %v", got, stalled)
+		} else if elapsed := time.Since(start); got > elapsed+time.Millisecond {
+			t.Errorf("Position after stall = %v, elapsed %v", got, elapsed)
+		}
+	})
+}

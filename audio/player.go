@@ -580,6 +580,16 @@ func (p *playerImpl) onContextResumed() {
 	}
 }
 
+// samplesToTimeDuration converts the given number of the samples to a time duration at the player's
+// sample rate. It panics when the result is not representable.
+func (p *playerImpl) samplesToTimeDuration(samples int64) time.Duration {
+	t, ok := mathutil.MulDiv(samples, int64(time.Second), int64(p.factory.sampleRate))
+	if !ok {
+		panic("audio: position is out of range")
+	}
+	return time.Duration(t)
+}
+
 func (p *playerImpl) updatePosition() {
 	p.m.Lock()
 	defer p.m.Unlock()
@@ -596,36 +606,28 @@ func (p *playerImpl) updatePosition() {
 
 	samples := (p.stream.position() - int64(p.player.BufferedSize())) / int64(p.bytesPerSample)
 
+	// Retain wall time not yet represented by consumed samples (#2901).
+	// A VM guest instead advances only as its host consumes samples.
 	var adjustingTime time.Duration
-	if p.lastSamples >= 0 && p.lastSamples == samples {
-		// If the number of samples is not changed from the last tick,
-		// the underlying buffer is not updated yet. Adjust the position by the time (#2901).
-		// A virtualization guest's device consumes the sources only as the host pulls them, not
-		// in real time, so the consumed samples are already the exact position there.
-		if !p.factory.isVMGuest() {
-			// If the player is not actually playing (for example, it has finished its source or
-			// it has been paused), stop the stopwatch so that the last adjustment is retained
-			// without growing further. Otherwise the position would keep growing while the
-			// samples stay constant.
+	if !p.factory.isVMGuest() {
+		if p.lastSamples < 0 {
+			p.stopwatch.reset()
+		} else if p.lastSamples == samples {
 			if !p.isPlaying() {
 				p.stopwatch.stop()
 			}
 			adjustingTime = p.stopwatch.current()
+		} else {
+			adjustingTime = p.stopwatch.subtract(p.samplesToTimeDuration(samples - p.lastSamples))
 		}
-	} else {
-		p.lastSamples = samples
-		p.stopwatch.reset()
 		if p.isPlaying() {
 			p.stopwatch.start()
 		}
 	}
+	p.lastSamples = samples
 
 	// Update the adjusted position every tick. This is necessary to keep the position accurate.
-	position, ok := mathutil.MulDiv(samples, int64(time.Second), int64(p.factory.sampleRate))
-	if !ok {
-		panic("audio: position is out of range")
-	}
-	p.adjustedPosition = position + int64(adjustingTime)
+	p.adjustedPosition = int64(p.samplesToTimeDuration(samples)) + int64(adjustingTime)
 }
 
 type timeStream struct {

@@ -60,6 +60,21 @@ func (s *stopwatch) current() time.Duration {
 	return d
 }
 
+// subtract stops the measurement and removes time already counted by consumed samples.
+// Negative d compensates for a decrease in the consumed-sample estimate.
+func (s *stopwatch) subtract(d time.Duration) time.Duration {
+	s.m.Lock()
+	defer s.m.Unlock()
+
+	measured := s.duration
+	if s.running {
+		measured += time.Since(s.lastStarted)
+		s.running = false
+	}
+	s.duration = max(measured-d, 0)
+	return s.duration
+}
+
 func (s *stopwatch) reset() {
 	s.m.Lock()
 	defer s.m.Unlock()
