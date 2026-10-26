@@ -81,6 +81,9 @@ func sinc01(x float64) float64 {
 	return fastSin01(x) / (x * 2 * math.Pi)
 }
 
+// zeroReadRetryLimit bounds retries for a source that makes no progress.
+const zeroReadRetryLimit = 16
+
 type Resampling struct {
 	source io.Reader
 
@@ -193,6 +196,7 @@ func (r *Resampling) src(i int64) (float64, float64, error) {
 		}
 		r.partialSrcBuf = nil
 		var eof bool
+		var zeroReads int
 		for c < len(buf) {
 			n, err := r.source.Read(buf[c:])
 			c += n
@@ -218,11 +222,17 @@ func (r *Resampling) src(i int64) (float64, float64, error) {
 				}
 				return 0, 0, err
 			}
-			// A source making no progress must not spin here.
 			if n == 0 {
-				r.lastReadSrcBlockValid = false
-				break
+				// A zero-byte read without an error leaves the source position unchanged.
+				zeroReads++
+				if zeroReads >= zeroReadRetryLimit {
+					// Keep the existing fallback for a persistently stalled source.
+					r.lastReadSrcBlockValid = false
+					break
+				}
+				continue
 			}
+			zeroReads = 0
 		}
 		if c == len(buf) {
 			r.lastReadSrcBlock = nextPos

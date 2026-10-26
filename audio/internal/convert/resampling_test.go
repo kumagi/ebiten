@@ -854,6 +854,132 @@ func TestResamplingZeroReadInMiddle(t *testing.T) {
 	}
 }
 
+// zeroReadNonSeeker returns (0, nil) once after delivering stallAt bytes, and then reads its source
+// sequentially. io.Reader allows a read to deliver no byte without an error, and this source is not
+// an io.Seeker, so its position cannot be recovered by seeking.
+type zeroReadNonSeeker struct {
+	src       io.Reader
+	delivered int
+	stallAt   int
+	stalled   bool
+}
+
+func (s *zeroReadNonSeeker) Read(buf []byte) (int, error) {
+	if !s.stalled && s.delivered >= s.stallAt {
+		s.stalled = true
+		return 0, nil
+	}
+	if !s.stalled {
+		buf = buf[:min(len(buf), s.stallAt-s.delivered)]
+	}
+	n, err := s.src.Read(buf)
+	s.delivered += n
+	return n, err
+}
+
+func TestResamplingZeroReadNonSeeker(t *testing.T) {
+	const (
+		from        = 44100
+		to          = 48000
+		blockFrames = 4096
+	)
+
+	for _, bitDepthInBytes := range []int{2, 4} {
+		t.Run(fmt.Sprintf("bitDepthInBytes=%d", bitDepthInBytes), func(t *testing.T) {
+			bytesPerSample := bitDepthInBytes * 2
+			blockBytes := blockFrames * bytesPerSample
+			inB := newSoundBytesForFrames(from, 5*blockFrames, bitDepthInBytes)
+
+			// A stream whose length is known gives the expected values.
+			known := convert.NewResampling(bytes.NewReader(inB), int64(len(inB)), from, to, bitDepthInBytes)
+			wantB, err := io.ReadAll(known)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// The stall is in the middle of a block, so the rest of the block and the
+			// following blocks must be read sequentially. The last case stalls at the
+			// source's end, so that io.EOF must still be recognized.
+			for _, c := range []struct {
+				name    string
+				stallAt int
+			}{
+				{
+					name:    "in a block",
+					stallAt: blockBytes / 2,
+				},
+				{
+					name:    "at a block boundary",
+					stallAt: blockBytes,
+				},
+				{
+					name:    "at the end",
+					stallAt: len(inB),
+				},
+			} {
+				t.Run(c.name, func(t *testing.T) {
+					for _, l := range []int64{int64(len(inB)), -1} {
+						t.Run(fmt.Sprintf("length=%d", l), func(t *testing.T) {
+							src := &zeroReadNonSeeker{src: bytes.NewReader(inB), stallAt: c.stallAt}
+							r := convert.NewResampling(src, l, from, to, bitDepthInBytes)
+							gotB, err := io.ReadAll(r)
+							if err != nil {
+								t.Fatal(err)
+							}
+							if !bytes.Equal(gotB, wantB) {
+								t.Errorf("io.ReadAll returned %d bytes, want the same %d bytes as a source that never stalls", len(gotB), len(wantB))
+							}
+							if got, want := r.Length(), known.Length(); got != want {
+								t.Errorf("Length after reading: got %d, want %d", got, want)
+							}
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
+// stallingNonSeeker never delivers a byte, and counts its Read calls.
+type stallingNonSeeker struct {
+	reads int
+}
+
+func (s *stallingNonSeeker) Read(buf []byte) (int, error) {
+	s.reads++
+	return 0, nil
+}
+
+func TestResamplingZeroReadNonSeekerRetryLimit(t *testing.T) {
+	const (
+		from = 44100
+		to   = 48000
+	)
+
+	for _, bitDepthInBytes := range []int{2, 4} {
+		t.Run(fmt.Sprintf("bitDepthInBytes=%d", bitDepthInBytes), func(t *testing.T) {
+			inB := newSoundBytesForFrames(from, 8, bitDepthInBytes)
+
+			// A source that never makes progress must not be read without a limit, and
+			// the declared length must still terminate the stream.
+			src := &stallingNonSeeker{}
+			r := convert.NewResampling(src, int64(len(inB)), from, to, bitDepthInBytes)
+			gotB, err := io.ReadAll(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := int64(len(gotB)), r.Length(); got != want {
+				t.Errorf("io.ReadAll returned %d bytes, want %d bytes as the declared length", got, want)
+			}
+			// The limit must stay at most 16 as a stalled source in the other tests reports
+			// an error instead of io.EOF after 16 reads delivering no byte.
+			if src.reads > 16 {
+				t.Errorf("the source was read %d times, want at most 16 times for a block", src.reads)
+			}
+		})
+	}
+}
+
 var errSourceRead = errors.New("source read failed")
 
 // failingReadSeeker fails the Read call with the given 1-based number once.
