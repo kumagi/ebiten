@@ -328,7 +328,8 @@ func restoreVideoModeX11(monitor *Monitor) {
 
 func (m *Monitor) platformGetMonitorPos() (xpos, ypos int, ok bool) {
 	if !_glfw.platformWindow.randr.available || _glfw.platformWindow.randr.monitorBroken {
-		return 0, 0, false
+		// The fallback exposes the whole screen as one monitor at the origin.
+		return 0, 0, true
 	}
 
 	display := _glfw.platformWindow.display

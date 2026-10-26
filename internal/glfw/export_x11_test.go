@@ -137,3 +137,17 @@ func XIRecordPendingScroll(pending XIPendingScrolls, sourceid int32, time uint, 
 func XITakePendingScroll(pending XIPendingScrolls, sourceid int32, time uint) (xoff, yoff float64) {
 	return xiTakePendingScroll(pending, sourceid, _Time(time))
 }
+
+func MonitorPositionForTesting(available, broken bool) (int, int, error) {
+	initialized := _glfw.initialized
+	randr := &_glfw.platformWindow.randr
+	oldAvailable, oldBroken, oldResources := randr.available, randr.monitorBroken, randr.GetScreenResourcesCurrent
+	defer func() {
+		_glfw.initialized = initialized
+		randr.available, randr.monitorBroken, randr.GetScreenResourcesCurrent = oldAvailable, oldBroken, oldResources
+	}()
+	_glfw.initialized = true
+	randr.available, randr.monitorBroken = available, broken
+	randr.GetScreenResourcesCurrent = func(uintptr, _XID) uintptr { return 0 }
+	return (&Monitor{}).GetPos()
+}

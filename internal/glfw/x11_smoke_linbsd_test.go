@@ -17,6 +17,7 @@
 package glfw_test
 
 import (
+	"errors"
 	"os"
 	"testing"
 
@@ -29,5 +30,27 @@ func TestX11Smoke(t *testing.T) {
 	}
 	if err := glfw.SmokeTestX11(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMonitorPositionFailureAndFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name                         string
+		available, broken, wantError bool
+	}{
+		{name: "RandR unavailable"},
+		{name: "RandR broken", available: true, broken: true},
+		{name: "resources unavailable", available: true, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			x, y, err := glfw.MonitorPositionForTesting(tc.available, tc.broken)
+			if tc.wantError {
+				if !errors.Is(err, glfw.PlatformError) {
+					t.Errorf("GetPos error = %v, want PlatformError", err)
+				}
+			} else if x != 0 || y != 0 || err != nil {
+				t.Errorf("fallback GetPos = (%d, %d, %v), want (0, 0, nil)", x, y, err)
+			}
+		})
 	}
 }

@@ -9,6 +9,7 @@ package glfw
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 )
 
@@ -217,7 +218,7 @@ func (m *Monitor) GetPos() (xpos, ypos int, err error) {
 	}
 	xpos, ypos, ok := m.platformGetMonitorPos()
 	if !ok {
-		return 0, 0, nil
+		return 0, 0, fmt.Errorf("glfw: the position of the monitor cannot be queried: %w", PlatformError)
 	}
 	return xpos, ypos, nil
 }
