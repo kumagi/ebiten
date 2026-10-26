@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"image"
 	"math"
+	"strconv"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/atlas"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphics"
@@ -206,7 +207,7 @@ func (f *frameRenderer) renderOne(c vmprotocol.GraphicsCommand) error {
 			// whether a source image is bound.
 			region, ok := srcRegionFromUniforms(c.Uniforms, i)
 			if !ok {
-				return fmt.Errorf("vmhost: DrawTriangles lacks the preserved uniform prefix")
+				return fmt.Errorf("vmhost: DrawTriangles carries a malformed preserved uniform prefix")
 			}
 			srcRegions[i] = region
 		}
@@ -226,8 +227,12 @@ func (f *frameRenderer) renderOne(c vmprotocol.GraphicsCommand) error {
 		if offset < 0 || offset > len(f.indices) {
 			return fmt.Errorf("vmhost: DrawTriangles starts at index %d, outside the %d indices set", offset, len(f.indices))
 		}
+		bounds := image.Rect(0, 0, dst.width, dst.height)
 		vertexCount := len(f.vertices) / graphics.VertexFloatCount
 		for _, dr := range c.DstRegions {
+			if !dr.Region.Empty() && !dr.Region.In(bounds) {
+				return fmt.Errorf("vmhost: DrawTriangles region %v is not within the dst image %d's bounds %v", dr.Region, c.Dst, bounds)
+			}
 			// Comparing against what remains keeps offset+IndexCount from overflowing.
 			if dr.IndexCount < 0 || dr.IndexCount > len(f.indices)-offset {
 				return fmt.Errorf("vmhost: DrawTriangles takes %d indices from index %d, outside the %d indices set",
@@ -309,7 +314,8 @@ func (f *frameRenderer) renderOne(c vmprotocol.GraphicsCommand) error {
 }
 
 // srcRegionFromUniforms recovers source image i's sampling region (in source pixels) from the
-// preserved-uniform prefix. It returns false if the prefix is absent.
+// preserved-uniform prefix. It returns false if the prefix is absent or the coordinates are not
+// integral pixel values representable as ints.
 func srcRegionFromUniforms(uniforms []uint32, i int) (image.Rectangle, bool) {
 	if len(uniforms) < graphics.PreservedUniformDwordCount {
 		return image.Rectangle{}, false
@@ -321,5 +327,17 @@ func srcRegionFromUniforms(uniforms []uint32, i int) (image.Rectangle, bool) {
 	oy := math.Float32frombits(uniforms[graphics.SourceImageRegionOriginUniformDwordIndex+2*i+1])
 	sw := math.Float32frombits(uniforms[graphics.SourceImageRegionSizeUniformDwordIndex+2*i])
 	sh := math.Float32frombits(uniforms[graphics.SourceImageRegionSizeUniformDwordIndex+2*i+1])
+	if !integralPixelCoordinate(ox) || !integralPixelCoordinate(oy) ||
+		!integralPixelCoordinate(sw) || !integralPixelCoordinate(sh) ||
+		!integralPixelCoordinate(ox+sw) || !integralPixelCoordinate(oy+sh) {
+		return image.Rectangle{}, false
+	}
 	return image.Rect(int(ox), int(oy), int(ox+sw), int(oy+sh)), true
+}
+
+// integralPixelCoordinate reports whether f is a finite integer representable as an int.
+func integralPixelCoordinate(f float32) bool {
+	const limit = 1 << (strconv.IntSize - 1)
+	v := float64(f)
+	return v == math.Trunc(v) && v >= -limit && v < limit
 }

@@ -56,3 +56,13 @@ func TestSrcRegionFromUniforms(t *testing.T) {
 		}
 	})
 }
+
+func TestSrcRegionWithoutSourceImage(t *testing.T) {
+	// DrawRectShader can supply a region larger than a texture without binding a source image.
+	const width = 1 << 25
+	u := makePrefix(0, 0, 0, 0, width, 1)
+	got, ok := vmhost.SrcRegionFromUniforms(u, 0)
+	if !ok || got != image.Rect(0, 0, width, 1) {
+		t.Errorf("region = %v, %v; want %v, true", got, ok, image.Rect(0, 0, width, 1))
+	}
+}
