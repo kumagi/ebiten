@@ -817,7 +817,11 @@ func Tick() int64 {
 // RunOnMainThread runs the given function on the main thread.
 // RunOnMainThread executes the function synchronously and returns after the function completes.
 //
-// If RunOnMainThread is called on the main thread, RunOnMainThread blocks forever.
+// In the default multi-thread mode, calling RunOnMainThread on the main thread blocks forever.
+//
+// In the single-thread mode enabled by [RunGameOptions.SingleThread] or the build tag
+// ebitenginesinglethread, RunOnMainThread calls the function directly on the calling goroutine.
+// Calling RunOnMainThread on the main thread in this mode returns after the function completes.
 //
 // RunOnMainThread might not run the function e.g. before the game starts or after the game ends.
 //
