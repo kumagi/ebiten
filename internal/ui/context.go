@@ -444,6 +444,14 @@ func (c *context) drawGame(graphicsDriver graphicsdriver.Graphics, ui *UserInter
 	return true, nil
 }
 
+func layoutImageSize(v float64) int {
+	n := math.Ceil(v)
+	if n >= -float64(math.MinInt) {
+		panic("ui: Layout size is too large")
+	}
+	return int(n)
+}
+
 // layoutGame updates the game's layout for the given outside size, in device-independent pixels,
 // and the given screen size, in pixels. It returns the offscreen size in pixels. The returned bool
 // reports whether the screen size changed from the previous layout.
@@ -460,13 +468,13 @@ func (c *context) layoutGame(outsideWidth, outsideHeight float64, screenWidth, s
 	if resized {
 		c.skipCount = 0
 	}
+	ow := layoutImageSize(owf)
+	oh := layoutImageSize(ohf)
+
 	c.screenWidth = screenWidth
 	c.screenHeight = screenHeight
 	c.offscreenWidth = owf
 	c.offscreenHeight = ohf
-
-	ow := int(math.Ceil(c.offscreenWidth))
-	oh := int(math.Ceil(c.offscreenHeight))
 
 	if c.screen != nil && (c.screen.width != screenWidth || c.screen.height != screenHeight) {
 		c.screen.Deallocate()
