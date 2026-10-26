@@ -21,23 +21,24 @@ package ui
 //
 // #cgo noescape displayInfoOnMainThread
 // #cgo nocallback displayInfoOnMainThread
-// static void displayInfoOnMainThread(float* width, float* height, float* scale, uintptr_t viewPtr) {
+// static int displayInfoOnMainThread(float* width, float* height, float* scale, uintptr_t viewPtr) {
 //   *width = 0;
 //   *height = 0;
 //   *scale = 1;
 //   UIView* view = (__bridge UIView*)(void*)viewPtr;
 //   UIWindow* window = view.window;
 //   if (!window) {
-//     return;
+//     return 0;
 //   }
 //   UIWindowScene* scene = window.windowScene;
 //   if (!scene) {
-//     return;
+//     return 0;
 //   }
 //   CGRect bounds = scene.screen.bounds;
 //   *width = bounds.size.width;
 //   *height = bounds.size.height;
 //   *scale = scene.screen.nativeScale;
+//   return 1;
 // }
 import "C"
 
@@ -136,7 +137,10 @@ func (u *UserInterface) refreshDisplayInfo() {
 	}
 
 	var cWidth, cHeight, cScale C.float
-	C.displayInfoOnMainThread(&cWidth, &cHeight, &cScale, C.uintptr_t(view))
+	if C.displayInfoOnMainThread(&cWidth, &cHeight, &cScale, C.uintptr_t(view)) == 0 {
+		// The view is not in a window yet, so there is no screen to read.
+		return
+	}
 	theDisplayInfo.Store(&displayInfoValues{
 		width:  float64(cWidth),
 		height: float64(cHeight),
