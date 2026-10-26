@@ -292,14 +292,16 @@ func (c *Context) onSuspend() error {
 	}
 	c.m.Unlock()
 
+	var errs []error
 	for _, p := range players {
 		if err := p.Err(); err != nil {
-			return err
+			errs = append(errs, err)
+			continue
 		}
 		p.onContextSuspended()
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 func (c *Context) onResume() error {
@@ -313,14 +315,16 @@ func (c *Context) onResume() error {
 	}
 	c.m.Unlock()
 
+	var errs []error
 	for _, p := range players {
 		if err := p.Err(); err != nil {
-			return err
+			errs = append(errs, err)
+			continue
 		}
 		p.onContextResumed()
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 func (c *Context) updatePlayers() error {
