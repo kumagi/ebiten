@@ -42,6 +42,7 @@ import (
 	"image"
 	"io"
 	"maps"
+	"math"
 	"net"
 	"slices"
 	"sync"
@@ -1252,17 +1253,30 @@ func (g *GuestSession) waitTicksStep(target int64) (done, ok bool) {
 }
 
 // PendingTicks returns the number of ticks requested but not yet processed by the guest.
+// Counts exceeding the maximum int value are reported as that maximum.
 func (g *GuestSession) PendingTicks() int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return int(g.submittedTicks - g.consumedTicks)
+	return tickCountToInt(g.submittedTicks - g.consumedTicks)
 }
 
 // ProcessedTicks returns the number of ticks the guest has processed so far.
+// Counts exceeding the maximum int value are reported as that maximum.
 func (g *GuestSession) ProcessedTicks() int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return int(g.consumedTicks)
+	return tickCountToInt(g.consumedTicks)
+}
+
+// tickCountToInt converts a tick count to an int without wrapping on 32-bit systems.
+func tickCountToInt(v int64) int {
+	if v > math.MaxInt {
+		return math.MaxInt
+	}
+	if v < 0 {
+		return 0
+	}
+	return int(v)
 }
 
 // Err returns the error that ended the session, or nil if it is still running. It reports
