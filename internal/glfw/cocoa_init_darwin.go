@@ -301,6 +301,8 @@ func createMenuBar() {
 	// to get the application menu working properly.
 	nsApp.Send(objc.RegisterName("performSelector:withObject:"),
 		objc.RegisterName("setAppleMenu:"), appMenu)
+	appMenu.Send(sel_release)
+	windowMenu.Send(sel_release)
 }
 
 // updateUnicodeDataNS updates the cached keyboard layout unicode data.
