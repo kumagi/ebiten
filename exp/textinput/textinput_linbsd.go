@@ -151,6 +151,11 @@ var (
 	x11SpotLocationName = []byte("spotLocation\x00")
 )
 
+// clampX11Coordinate clamps a window coordinate to the int16 range the X protocol uses.
+func clampX11Coordinate(v int) int16 {
+	return int16(min(max(v, -1<<15), 1<<15-1))
+}
+
 // setIMESpotLocation sets the XIM spot location of the given X input context:
 // the position the input method places its preedit and candidate windows at.
 //
@@ -159,7 +164,7 @@ func setIMESpotLocation(ic uintptr, x, y int) {
 	if ic == 0 || !ensureX11() {
 		return
 	}
-	x11IMESpotLocation = xPoint{x: int16(x), y: int16(y)}
+	x11IMESpotLocation = xPoint{x: clampX11Coordinate(x), y: clampX11Coordinate(y)}
 	list := xVaCreateNestedList(0, &x11SpotLocationName[0], &x11IMESpotLocation, 0)
 	if list == 0 {
 		return
