@@ -245,10 +245,20 @@ func (u *glfwBackend) applyWindowSettings() error {
 	if err := w.windowResizingMode.apply(u.setWindowResizingMode); err != nil {
 		return err
 	}
-	if err := w.windowSizeLimit.apply(func(_ windowSizeRange) error {
-		return u.updateWindowSizeLimits()
-	}); err != nil {
-		return err
+	// Without a monitor, updateWindowSizeLimits cannot apply the limits.
+	// Keep the request pending so a later application can retry it.
+	if w.windowSizeLimit.pending() != nil {
+		m, err := u.currentMonitor()
+		if err != nil {
+			return err
+		}
+		if m != nil {
+			if err := w.windowSizeLimit.apply(func(_ windowSizeRange) error {
+				return u.updateWindowSizeLimits()
+			}); err != nil {
+				return err
+			}
+		}
 	}
 	if err := u.requestedMonitor.apply(u.setWindowMonitor); err != nil {
 		return err
