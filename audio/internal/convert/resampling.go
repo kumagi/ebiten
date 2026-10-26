@@ -179,9 +179,18 @@ func (r *Resampling) src(i int64) (float64, float64, error) {
 	if _, ok := r.srcBufL[nextPos]; !ok {
 		blockStart := nextPos * resamplingBufferSize * sizePerSample
 		buf := make([]byte, resamplingBufferSize*sizePerSample)
+		readSize := len(buf)
+		if srcLength := r.srcLength(); srcLength >= 0 {
+			if blockStart >= srcLength {
+				return 0, 0, io.EOF
+			}
+			if remaining := srcLength - blockStart; remaining < int64(readSize) {
+				readSize = int(remaining)
+			}
+		}
 		var c int
 		if r.partialSrcBuf != nil && r.partialSrcBlock == nextPos {
-			c = copy(buf, r.partialSrcBuf)
+			c = copy(buf[:readSize], r.partialSrcBuf)
 		} else if !r.lastReadSrcBlockValid || r.lastReadSrcBlock+1 != nextPos {
 			seeker, ok := r.source.(io.Seeker)
 			if !ok {
@@ -193,8 +202,8 @@ func (r *Resampling) src(i int64) (float64, float64, error) {
 		}
 		r.partialSrcBuf = nil
 		var eof bool
-		for c < len(buf) {
-			n, err := r.source.Read(buf[c:])
+		for c < readSize {
+			n, err := r.source.Read(buf[c:readSize])
 			c += n
 			if err != nil {
 				if err == io.EOF {
@@ -224,7 +233,7 @@ func (r *Resampling) src(i int64) (float64, float64, error) {
 				break
 			}
 		}
-		if c == len(buf) {
+		if c == readSize {
 			r.lastReadSrcBlock = nextPos
 			r.lastReadSrcBlockValid = true
 		}

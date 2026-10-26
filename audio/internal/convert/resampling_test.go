@@ -1273,3 +1273,54 @@ func TestResamplingFloat32Headroom(t *testing.T) {
 		}
 	}
 }
+
+type resamplingBoundarySource struct {
+	*bytes.Reader
+	maxRead int64
+}
+
+func (s *resamplingBoundarySource) Read(p []byte) (int, error) {
+	n, err := s.Reader.Read(p)
+	pos := s.Size() - int64(s.Len())
+	s.maxRead = max(s.maxRead, pos)
+	return n, err
+}
+
+func TestResamplingDeclaredLengthBoundary(t *testing.T) {
+	for _, bitDepth := range []int{2, 4} {
+		for _, frames := range []int{12, 4093} {
+			for _, seekable := range []bool{false, true} {
+				t.Run(fmt.Sprintf("depth=%d/frames=%d/seekable=%t", bitDepth, frames, seekable), func(t *testing.T) {
+					length := frames * 2 * bitDepth
+					data := make([]byte, length+32*2*bitDepth)
+					for i := length; i < len(data); i += bitDepth {
+						if bitDepth == 2 {
+							binary.LittleEndian.PutUint16(data[i:], 0x4000)
+						} else {
+							binary.LittleEndian.PutUint32(data[i:], math.Float32bits(0.5))
+						}
+					}
+					src := &resamplingBoundarySource{Reader: bytes.NewReader(data)}
+					var source io.Reader = src
+					if !seekable {
+						source = struct{ io.Reader }{src}
+					}
+					got, err := io.ReadAll(convert.NewResampling(source, int64(length), 44100, 48000, bitDepth))
+					if err != nil {
+						t.Fatal(err)
+					}
+					want, err := io.ReadAll(convert.NewResampling(bytes.NewReader(data[:length]), int64(length), 44100, 48000, bitDepth))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !bytes.Equal(got, want) {
+						t.Error("data after the declared end changed resampled audio")
+					}
+					if src.maxRead > int64(length) {
+						t.Errorf("read through byte %d, declared end %d", src.maxRead, length)
+					}
+				})
+			}
+		}
+	}
+}
