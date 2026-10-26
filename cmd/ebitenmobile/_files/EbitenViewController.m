@@ -28,6 +28,7 @@
   GLKView*       glkView_;
   bool           started_;
   bool           active_;
+  bool           activeRequested_;
   bool           error_;
   CADisplayLink* displayLink_;
   bool           explicitRendering_;
@@ -89,7 +90,11 @@
 
   if (!started_) {
     @synchronized(self) {
-      active_ = true;
+      // suspendGame and resumeGame can be called before the game starts e.g. by
+      // applicationWillResignActive. Keep the requested state in that case.
+      if (!activeRequested_) {
+        active_ = true;
+      }
     }
     started_ = true;
   }
@@ -121,6 +126,14 @@
       error_ = true;
     }
     return;
+  }
+
+  if (!active_) {
+    $Placeholder_Prefix$EbitenmobileviewSuspend(&err);
+    if (err != nil) {
+      [self onErrorOnGameUpdate:err];
+      return;
+    }
   }
 
   renderThread_ = [[NSThread alloc] initWithTarget:self
@@ -358,12 +371,13 @@
 }
 
 - (void)suspendGame {
-  if (!started_) {
-    return;
-  }
-
   @synchronized(self) {
     active_ = false;
+    activeRequested_ = true;
+  }
+
+  if (!started_) {
+    return;
   }
 
   NSError* err = nil;
@@ -374,12 +388,13 @@
 }
 
 - (void)resumeGame {
-  if (!started_) {
-    return;
-  }
-
   @synchronized(self) {
     active_ = true;
+    activeRequested_ = true;
+  }
+
+  if (!started_) {
+    return;
   }
 
   NSError* err = nil;
