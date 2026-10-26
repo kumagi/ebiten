@@ -1551,6 +1551,17 @@ func Fragment(dstPos vec4, src0Pos vec2, color vec4) vec4 {
 			Want:   color.RGBA{R: 0x24, G: 0x3f, B: 0x6a, A: 0x88},
 		},
 		{
+			Name: "float",
+			Uniforms: map[string]any{
+				"U0": float32(0x24),
+				"U1": float32(0x3f),
+				"U2": float32(0x6a),
+				"U3": float32(0x88),
+			},
+			Shader: ints,
+			Want:   color.RGBA{R: 0x24, G: 0x3f, B: 0x6a, A: 0x88},
+		},
+		{
 			Name: "uint",
 			Uniforms: map[string]any{
 				"U0": uint8(0x85),
@@ -1710,6 +1721,43 @@ func Fragment(dstPos vec4, src0Pos vec2, color vec4) vec4 {
 	op := &ebiten.DrawRectShaderOptions{}
 	op.Uniforms = map[string]any{
 		"U": []float32{
+			0x24, 0x3f, 0x6a,
+			0x88, 0x85, 0xa3,
+			0x08, 0xd3, 0x13,
+			0x19, 0x8a, 0x2e,
+		},
+	}
+	dst.DrawRectShader(w, h, s, op)
+	if got, want := dst.At(0, 0).(color.RGBA), (color.RGBA{R: 0x24, G: 0x85, B: 0x13, A: 0x19}); !sameColors(got, want, 1) {
+		t.Errorf("got: %v, want: %v", got, want)
+	}
+}
+
+func TestShaderUniformVec3ArrayIntValues(t *testing.T) {
+	const shader = `//kage:unit pixels
+
+package main
+
+var U [4]vec3
+
+func Fragment(dstPos vec4, src0Pos vec2, color vec4) vec4 {
+	return vec4(U[0].x/255.0, U[1].y/255.0, U[2].z/255.0, U[3].x/255.0)
+}
+`
+	const w, h = 1, 1
+
+	dst := ebiten.NewImage(w, h)
+	defer dst.Deallocate()
+
+	s, err := ebiten.NewShader([]byte(shader))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Deallocate()
+
+	op := &ebiten.DrawRectShaderOptions{}
+	op.Uniforms = map[string]any{
+		"U": []int32{
 			0x24, 0x3f, 0x6a,
 			0x88, 0x85, 0xa3,
 			0x08, 0xd3, 0x13,

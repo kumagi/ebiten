@@ -50,6 +50,125 @@ func (s *Shader) Deallocate() {
 	s.shader.Deallocate()
 }
 
+func uniformIsSequence(typ shaderir.Type) bool {
+	switch typ.Main {
+	case shaderir.Vec2, shaderir.Vec3, shaderir.Vec4,
+		shaderir.IVec2, shaderir.IVec3, shaderir.IVec4,
+		shaderir.Mat2, shaderir.Mat3, shaderir.Mat4, shaderir.Array:
+		return true
+	default:
+		return false
+	}
+}
+
+func uniformScalarType(typ shaderir.Type) shaderir.Type {
+	for typ.Main == shaderir.Array {
+		if len(typ.Sub) == 0 {
+			return shaderir.Type{}
+		}
+		typ = typ.Sub[0]
+	}
+	switch typ.Main {
+	case shaderir.Vec2, shaderir.Vec3, shaderir.Vec4,
+		shaderir.Mat2, shaderir.Mat3, shaderir.Mat4:
+		return shaderir.Type{Main: shaderir.Float}
+	case shaderir.IVec2, shaderir.IVec3, shaderir.IVec4:
+		return shaderir.Type{Main: shaderir.Int}
+	default:
+		return typ
+	}
+}
+
+func uniformValueMatches(typ shaderir.Type, v reflect.Value) bool {
+	switch typ.Main {
+	case shaderir.Bool:
+		return v.Kind() == reflect.Bool
+	case shaderir.Int:
+		switch v.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+			reflect.Float32, reflect.Float64:
+			return true
+		}
+	case shaderir.Float:
+		switch v.Kind() {
+		case reflect.Float32, reflect.Float64,
+			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+			return true
+		}
+	}
+	return false
+}
+
+func panicUniform(name string, typ shaderir.Type) {
+	panic(fmt.Sprintf("ui: unexpected uniform value for %s (%s)", name, typ.String()))
+}
+
+func validateUniformValue(name string, typ shaderir.Type, v reflect.Value) {
+	scalarType := uniformScalarType(typ)
+	if (scalarType.Main != shaderir.Bool && scalarType.Main != shaderir.Int && scalarType.Main != shaderir.Float) || !v.IsValid() {
+		panicUniform(name, typ)
+	}
+	if uniformIsSequence(typ) {
+		if (v.Kind() != reflect.Slice && v.Kind() != reflect.Array) || v.Len() != typ.DwordCount() {
+			panicUniform(name, typ)
+		}
+		for i := range v.Len() {
+			if !uniformValueMatches(scalarType, v.Index(i)) {
+				panicUniform(name, typ)
+			}
+		}
+		return
+	}
+	if (v.Kind() == reflect.Slice || v.Kind() == reflect.Array) || !uniformValueMatches(scalarType, v) {
+		panicUniform(name, typ)
+	}
+}
+
+func uniformFloatValue(v reflect.Value) float64 {
+	switch v.Kind() {
+	case reflect.Float32, reflect.Float64:
+		return v.Float()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(v.Int())
+	default:
+		return float64(v.Uint())
+	}
+}
+
+func writeUniformValue(dst []uint32, idx int, typ shaderir.Type, v reflect.Value) {
+	if uniformIsSequence(typ) {
+		elementType := uniformScalarType(typ)
+		for i := range v.Len() {
+			writeUniformValue(dst, idx+i, elementType, v.Index(i))
+		}
+		return
+	}
+	switch typ.Main {
+	case shaderir.Bool:
+		if v.Bool() {
+			dst[idx] = 1
+		} else {
+			dst[idx] = 0
+		}
+	case shaderir.Int, shaderir.IVec2, shaderir.IVec3, shaderir.IVec4:
+		switch v.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			dst[idx] = uint32(v.Int())
+		case reflect.Float32, reflect.Float64:
+			dst[idx] = uint32(int64(v.Float()))
+		default:
+			dst[idx] = uint32(v.Uint())
+		}
+	case shaderir.Float, shaderir.Vec2, shaderir.Vec3, shaderir.Vec4,
+		shaderir.Mat2, shaderir.Mat3, shaderir.Mat4:
+		dst[idx] = math.Float32bits(float32(uniformFloatValue(v)))
+	default:
+		panic("ui: unexpected uniform type")
+	}
+}
+
 func (s *Shader) AppendUniforms(dst []uint32, uniforms map[string]any) []uint32 {
 	origLen := len(dst)
 	if cap(dst)-len(dst) >= s.uniformDwordCount {
@@ -64,70 +183,12 @@ func (s *Shader) AppendUniforms(dst []uint32, uniforms map[string]any) []uint32 
 	idx := origLen
 	for i, name := range s.uniformNames {
 		typ := s.uniformTypes[i]
-
-		// Ignore if an unused name is specified (#2710).
+		// Ignore unused names (#2710).
 		if uv, ok := uniforms[name]; ok {
 			v := reflect.ValueOf(uv)
-			t := v.Type()
-			switch t.Kind() {
-			case reflect.Bool:
-				if typ.DwordCount() != 1 {
-					panic(fmt.Sprintf("ui: unexpected uniform value for %s (%s)", name, typ.String()))
-				}
-				if v.Bool() {
-					dst[idx] = 1
-				} else {
-					dst[idx] = 0
-				}
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-				if typ.DwordCount() != 1 {
-					panic(fmt.Sprintf("ui: unexpected uniform value for %s (%s)", name, typ.String()))
-				}
-				dst[idx] = uint32(v.Int())
-			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-				if typ.DwordCount() != 1 {
-					panic(fmt.Sprintf("ui: unexpected uniform value for %s (%s)", name, typ.String()))
-				}
-				dst[idx] = uint32(v.Uint())
-			case reflect.Float32, reflect.Float64:
-				if typ.DwordCount() != 1 {
-					panic(fmt.Sprintf("ui: unexpected uniform value for %s (%s)", name, typ.String()))
-				}
-				dst[idx] = math.Float32bits(float32(v.Float()))
-			case reflect.Slice, reflect.Array:
-				l := v.Len()
-				if typ.DwordCount() != l {
-					panic(fmt.Sprintf("ui: unexpected uniform value for %s (%s)", name, typ.String()))
-				}
-				switch t.Elem().Kind() {
-				case reflect.Bool:
-					for i := range l {
-						if v.Index(i).Bool() {
-							dst[idx+i] = 1
-						} else {
-							dst[idx+i] = 0
-						}
-					}
-				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-					for i := range l {
-						dst[idx+i] = uint32(v.Index(i).Int())
-					}
-				case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-					for i := range l {
-						dst[idx+i] = uint32(v.Index(i).Uint())
-					}
-				case reflect.Float32, reflect.Float64:
-					for i := range l {
-						dst[idx+i] = math.Float32bits(float32(v.Index(i).Float()))
-					}
-				default:
-					panic(fmt.Sprintf("ui: unexpected uniform value type: %s (%s)", name, t.Elem().Kind().String()))
-				}
-			default:
-				panic(fmt.Sprintf("ui: unexpected uniform value type: %s (%s)", name, v.Kind().String()))
-			}
+			validateUniformValue(name, typ, v)
+			writeUniformValue(dst, idx, typ, v)
 		}
-
 		idx += typ.DwordCount()
 	}
 
