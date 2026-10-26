@@ -18,6 +18,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"golang.org/x/tools/go/packages"
+
 	ebitenmobile "github.com/hajimehoshi/ebiten/v2/cmd/ebitenmobile"
 )
 
@@ -109,4 +111,66 @@ func TestFrameworkName(t *testing.T) {
 			t.Errorf("frameworkName(%q) = %q; want %q", tc.in, got, want)
 		}
 	}
+}
+
+func TestLoadedPackageName(t *testing.T) {
+	t.Run("Valid", func(t *testing.T) {
+		pkgs := []*packages.Package{
+			{
+				Name:    "main",
+				PkgPath: "example.com/foo",
+			},
+		}
+		if name, err := ebitenmobile.LoadedPackageName(pkgs); err != nil {
+			t.Errorf("loadedPackageName failed: %v", err)
+		} else if name != "main" {
+			t.Errorf("loadedPackageName = %q; want %q", name, "main")
+		}
+	})
+
+	t.Run("NoPackage", func(t *testing.T) {
+		if name, err := ebitenmobile.LoadedPackageName(nil); err == nil {
+			t.Errorf("loadedPackageName = %q; want an error", name)
+		}
+	})
+
+	t.Run("MultiplePackages", func(t *testing.T) {
+		pkgs := []*packages.Package{
+			{
+				Name:    "main",
+				PkgPath: "example.com/foo",
+			},
+			{
+				Name:    "bar",
+				PkgPath: "example.com/bar",
+			},
+		}
+		if name, err := ebitenmobile.LoadedPackageName(pkgs); err == nil {
+			t.Errorf("loadedPackageName = %q; want an error", name)
+		}
+	})
+
+	t.Run("PackageError", func(t *testing.T) {
+		pkgs := []*packages.Package{
+			{
+				Name:    "main",
+				PkgPath: "example.com/foo",
+				Errors: []packages.Error{{
+					Msg: "no required module provides package example.com/nope",
+				}},
+			},
+		}
+		if name, err := ebitenmobile.LoadedPackageName(pkgs); err == nil {
+			t.Errorf("loadedPackageName = %q; want an error", name)
+		}
+	})
+
+	t.Run("NoPackageName", func(t *testing.T) {
+		pkgs := []*packages.Package{
+			{PkgPath: "example.com/foo"},
+		}
+		if name, err := ebitenmobile.LoadedPackageName(pkgs); err == nil {
+			t.Errorf("loadedPackageName = %q; want an error", name)
+		}
+	})
 }

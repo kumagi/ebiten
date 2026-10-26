@@ -220,10 +220,14 @@ func doBind(args []string, flagset *flag.FlagSet, buildOS string) error {
 	if err != nil {
 		return err
 	}
-	prefixLower := bindPrefix + pkgs[0].Name
+	pkgName, err := loadedPackageName(pkgs)
+	if err != nil {
+		return err
+	}
+	prefixLower := bindPrefix + pkgName
 	// gomobile derives its Objective-C names from the raw prefix and strings.Title of the package name
 	// (see bind/genobjc.go in github.com/ebitengine/gomobile). Use the same rule so that the names match.
-	prefixUpper := bindPrefix + strings.Title(pkgs[0].Name)
+	prefixUpper := bindPrefix + strings.Title(pkgName)
 
 	args = append(args, "github.com/hajimehoshi/ebiten/v2/mobile/ebitenmobileview")
 
@@ -290,6 +294,23 @@ func doBind(args []string, flagset *flag.FlagSet, buildOS string) error {
 	}
 
 	return nil
+}
+
+// loadedPackageName validates the metadata returned by packages.Load.
+// This is duplicated in gobind.go, which is built as a standalone program.
+func loadedPackageName(pkgs []*packages.Package) (string, error) {
+	if len(pkgs) != 1 {
+		return "", fmt.Errorf("ebitenmobile: expected one package to be loaded, but got %d packages", len(pkgs))
+	}
+	pkg := pkgs[0]
+	// packages.Load can report errors on the package instead of returning an error.
+	if len(pkg.Errors) != 0 {
+		return "", fmt.Errorf("ebitenmobile: failed to load package %s: %w", pkg.PkgPath, pkg.Errors[0])
+	}
+	if pkg.Name == "" {
+		return "", fmt.Errorf("ebitenmobile: no package name for %s", pkg.PkgPath)
+	}
+	return pkg.Name, nil
 }
 
 var iosModuleMapTmpl = template.Must(template.New("iosmmap").Parse(`framework module "{{.Module}}" {

@@ -85,7 +85,24 @@ func invokeOriginalGobind(lang string) (pkgName string, err error) {
 	if err != nil {
 		return "", err
 	}
-	return pkgs[0].Name, nil
+	return loadedPackageName(pkgs)
+}
+
+// loadedPackageName validates the metadata returned by packages.Load.
+// This is duplicated in main.go because this file is built as a standalone program.
+func loadedPackageName(pkgs []*packages.Package) (string, error) {
+	if len(pkgs) != 1 {
+		return "", fmt.Errorf("ebitenmobile: expected one package to be loaded, but got %d packages", len(pkgs))
+	}
+	pkg := pkgs[0]
+	// packages.Load can report errors on the package instead of returning an error.
+	if len(pkg.Errors) != 0 {
+		return "", fmt.Errorf("ebitenmobile: failed to load package %s: %w", pkg.PkgPath, pkg.Errors[0])
+	}
+	if pkg.Name == "" {
+		return "", fmt.Errorf("ebitenmobile: no package name for %s", pkg.PkgPath)
+	}
+	return pkg.Name, nil
 }
 
 func run() error {

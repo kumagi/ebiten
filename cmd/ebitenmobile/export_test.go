@@ -17,4 +17,5 @@ package main
 var (
 	FrameworkName          = frameworkName
 	IsValidJavaPackageName = isValidJavaPackageName
+	LoadedPackageName      = loadedPackageName
 )
