@@ -89,10 +89,9 @@ func (n *nativeGamepadsXbox) init(gamepads *gamepads) error {
 		return err
 	}
 
-	n.gameInput = g
 	n.deviceCallbackPtr = windows.NewCallback(n.deviceCallback)
 
-	if err := n.gameInput.RegisterDeviceCallback(
+	if err := g.RegisterDeviceCallback(
 		nil,
 		_GameInputKindGamepad,
 		_GameInputDeviceConnected,
@@ -101,8 +100,18 @@ func (n *nativeGamepadsXbox) init(gamepads *gamepads) error {
 		n.deviceCallbackPtr,
 		&n.token,
 	); err != nil {
+		// Blocking enumeration has finished when registration returns.
+		n.devicesMu.Lock()
+		events := n.deviceEvents
+		n.deviceEvents = nil
+		n.devicesMu.Unlock()
+		for _, e := range events {
+			e.device.Release()
+		}
+		g.Release()
 		return err
 	}
+	n.gameInput = g
 	return nil
 }
 

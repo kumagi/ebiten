@@ -175,6 +175,11 @@ func (i *_IGameInput) GetCurrentReading(inputKind _GameInputKind, device *_IGame
 	return reading, nil
 }
 
+func (i *_IGameInput) Release() uint32 {
+	r, _, _ := syscall.Syscall(i.vtbl.Release, 1, uintptr(unsafe.Pointer(i)), 0, 0)
+	return uint32(r)
+}
+
 func (i *_IGameInput) RegisterDeviceCallback(device *_IGameInputDevice,
 	inputKind _GameInputKind,
 	statusFilter _GameInputDeviceStatus,
