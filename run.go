@@ -180,11 +180,11 @@ func IsScreenClearedEveryFrame() bool {
 	return ui.Get().IsScreenClearedEveryFrame()
 }
 
-// SetScreenFilterEnabled enables/disables the use of the "screen" filter Ebitengine uses.
+// SetScreenFilterEnabled controls filtering in [DefaultDrawFinalScreen].
 //
-// The "screen" filter is a box filter from game to display resolution.
-//
-// If disabled, nearest-neighbor filtering will be used for scaling instead.
+// When enabled, integer scaling uses [FilterNearest], shrinking uses [FilterLinear],
+// and other enlargement uses [FilterPixelated].
+// When disabled, [FilterNearest] is always used.
 //
 // The default state is true.
 //
