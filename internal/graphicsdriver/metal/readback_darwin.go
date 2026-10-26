@@ -15,6 +15,7 @@
 package metal
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver"
@@ -34,6 +35,9 @@ type readback struct {
 
 // ReadPixelsAsync records texture copies without waiting for the GPU.
 func (i *Image) ReadPixelsAsync(args []graphicsdriver.PixelsArgs) (_ graphicsdriver.PixelReadback, err error) {
+	if i.screen {
+		return nil, errors.New("metal: ReadPixelsAsync cannot be called on the screen")
+	}
 	// Validate everything before recording commands or allocating resources.
 	var size int
 	for _, arg := range args {
