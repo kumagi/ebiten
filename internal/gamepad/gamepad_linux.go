@@ -190,8 +190,7 @@ func (g *nativeGamepadsImpl) openEventNode(gamepads *gamepads, path string) (*Ga
 		return nil, err
 	}
 	if info.kind == evdevKindOther {
-		owned = false
-		return nil, unix.Close(fd)
+		return nil, nil
 	}
 	if info.kind == evdevKindTouchSurface {
 		gp := attachTouch(gamepads, fd, path, info)
