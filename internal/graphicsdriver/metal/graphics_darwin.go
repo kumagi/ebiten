@@ -861,7 +861,7 @@ func (i *Image) Dispose() {
 	i.graphics.removeImage(i)
 }
 
-func (i *Image) WritePixels(args []graphicsdriver.PixelsArgs) error {
+func (i *Image) WritePixels(args []graphicsdriver.PixelsArgs) (err error) {
 	g := i.graphics
 
 	g.flushRenderCommandEncoderIfNeeded()
@@ -879,7 +879,11 @@ func (i *Image) WritePixels(args []graphicsdriver.PixelsArgs) error {
 	if err != nil {
 		return fmt.Errorf("metal: device.NewBufferWithLength failed: %w", err)
 	}
-	g.tmpBuffers = append(g.tmpBuffers, b)
+	defer func() {
+		if err != nil {
+			b.Release()
+		}
+	}()
 
 	var offset uintptr
 	for _, a := range args {
@@ -907,6 +911,7 @@ func (i *Image) WritePixels(args []graphicsdriver.PixelsArgs) error {
 		offset += uintptr(4 * w * h)
 	}
 	bce.EndEncoding()
+	g.tmpBuffers = append(g.tmpBuffers, b)
 
 	return nil
 }
