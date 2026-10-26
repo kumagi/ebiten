@@ -109,10 +109,11 @@ func FillPath(dst *ebiten.Image, path *Path, fillOptions *FillOptions, drawPathO
 		fillOptions = &FillOptions{}
 	}
 
-	paint := snapshotPaint(drawPathOptions.Paint, dst)
-	if paint.source != nil && fillOptions.FillRule != FillRuleNonZero && fillOptions.FillRule != FillRuleEvenOdd {
+	if fillOptions.FillRule != FillRuleNonZero && fillOptions.FillRule != FillRuleEvenOdd {
 		panic(fmt.Sprintf("vector: invalid fill rule: %d", fillOptions.FillRule))
 	}
+
+	paint := snapshotPaint(drawPathOptions.Paint, dst)
 
 	var hasEmptyClip bool
 	var clipState *clipPreparationState

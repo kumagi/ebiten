@@ -207,6 +207,40 @@ func TestFillPathZeroCoverage(t *testing.T) {
 	}
 }
 
+func TestFillPathInvalidFillRule(t *testing.T) {
+	paths := []struct {
+		name string
+		x, y float32
+	}{
+		{
+			name: "InBounds",
+			x:    1,
+			y:    1,
+		},
+		{
+			name: "OutOfBounds",
+			x:    1000,
+			y:    1000,
+		},
+	}
+	for _, pt := range paths {
+		t.Run(pt.name, func(t *testing.T) {
+			dst := ebiten.NewImage(64, 64)
+			defer dst.Deallocate()
+			var path vector.Path
+			path.MoveTo(pt.x, pt.y)
+			path.LineTo(pt.x+30, pt.y)
+			path.LineTo(pt.x+30, pt.y+30)
+			defer func() {
+				if r := recover(); r == nil {
+					t.Error("expected a panic")
+				}
+			}()
+			vector.FillPath(dst, &path, &vector.FillOptions{FillRule: vector.FillRule(7)}, nil)
+		})
+	}
+}
+
 func TestDrawEmptyPath(t *testing.T) {
 	var empty, reset vector.Path
 	reset.MoveTo(1, 1)
