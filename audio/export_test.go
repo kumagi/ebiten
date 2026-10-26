@@ -374,3 +374,17 @@ func (i *InfiniteLoop) SetNoBlendForTesting(value bool) {
 func NewTimeStreamForTesting(src io.ReadSeeker, sampleRate int) (io.ReadSeeker, error) {
 	return newTimeStream(src, true, sampleRate, bitDepthInBytesInt16)
 }
+
+// InitDriverWithoutReadyForTesting creates the dummy device without delivering its ready notification.
+func (c *Context) InitDriverWithoutReadyForTesting() error {
+	_, err := c.playerFactory.initDriverIfNeeded(false)
+	return err
+}
+
+func (c *Context) MarkReadyForTesting() {
+	c.setReady()
+}
+
+func (c *Context) UpdatePlayersForTesting() error {
+	return c.updatePlayers()
+}

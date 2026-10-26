@@ -590,7 +590,7 @@ func (p *playerImpl) updatePosition() {
 		return
 	}
 	if !p.context.IsReady() {
-		p.adjustedPosition = 0
+		// Keep the requested position until the device can report its progress.
 		return
 	}
 
