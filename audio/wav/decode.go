@@ -96,8 +96,14 @@ func (s *Stream) Seek(offset int64, whence int) (int64, error) {
 // Length returns the size of decoded stream in bytes.
 //
 // Length returns -1 when the size is unknown. The size is unknown when the 'data' chunk does not
-// declare its size and the source cannot seek to its end.
+// declare its size and the source cannot seek to its end. A resampled stream can determine its
+// length as it is read.
 func (s *Stream) Length() int64 {
+	if s.size < 0 {
+		if r, ok := s.inner.(*convert.Resampling); ok {
+			return r.Length()
+		}
+	}
 	return s.size
 }
 

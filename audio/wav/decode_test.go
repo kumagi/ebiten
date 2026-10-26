@@ -837,6 +837,14 @@ func TestDecodePlaceholderDataChunkSize(t *testing.T) {
 						if !bytes.Equal(got, wantBytes) {
 							t.Errorf("decoded %d bytes, want %d bytes", len(got), len(wantBytes))
 						}
+						if d.name == "DecodeWithSampleRate" {
+							if got, want := s.Length(), want.Length(); got != want {
+								t.Errorf("Length after reading: got %d, want %d", got, want)
+							}
+							if got, err := s.Seek(0, io.SeekEnd); err != nil || got != want.Length() {
+								t.Errorf("SeekEnd after reading: got %d/%v, want %d", got, err, want.Length())
+							}
+						}
 					})
 				})
 			}
