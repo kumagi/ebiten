@@ -19,6 +19,8 @@
 // The result, including the reported SourceIDs and the converted sources, can change when
 // Ebitengine is updated. Re-run shadercollector and re-precompile the shaders for the specific
 // Ebitengine version you target.
+//
+// In a shaderfile directive, a standalone // token starts a trailing comment.
 package main
 
 import (
@@ -259,6 +261,9 @@ func appendShaderSources(shaders []Shader, pkg *packages.Package, visitedPaths m
 					}
 					patterns := strings.TrimPrefix(line, m)
 					for pattern := range strings.FieldsFuncSeq(patterns, isAsciiSpace) {
+						if pattern == "//" {
+							break
+						}
 						pattern := filepath.Join(pkg.Dir, filepath.FromSlash(pattern))
 						if _, ok := visitedPatterns[pattern]; ok {
 							continue
