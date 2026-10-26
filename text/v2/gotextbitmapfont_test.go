@@ -16,6 +16,8 @@ package text_test
 
 import (
 	"bytes"
+	"fmt"
+	"image"
 	"slices"
 	"strings"
 	"testing"
@@ -122,6 +124,49 @@ func rotateClockwise(rows string) string {
 		sb.WriteByte('\n')
 	}
 	return sb.String()
+}
+
+func TestBitmapFontCacheAcrossFractionalSizes(t *testing.T) {
+	type snapshot struct {
+		bounds image.Rectangle
+		size   image.Point
+		pixels []byte
+	}
+	newSource := func() *text.GoTextFaceSource {
+		t.Helper()
+		source, err := text.NewGoTextFaceSource(bytes.NewReader(fonts.TerminusTTF_ttf))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return source
+	}
+	read := func(source *text.GoTextFaceSource, size float64) snapshot {
+		t.Helper()
+		glyphs := text.AppendLazyGlyphs(nil, "F", &text.GoTextFace{Source: source, Size: size}, nil)
+		if len(glyphs) != 1 || glyphs[0].Image() == nil {
+			t.Fatal("expected one rendered glyph")
+		}
+		img := glyphs[0].Image()
+		pix := make([]byte, 4*img.Bounds().Dx()*img.Bounds().Dy())
+		img.ReadPixels(pix)
+		return snapshot{glyphs[0].ImageBounds, img.Bounds().Size(), pix}
+	}
+	// The two sizes truncate to the same 26.6 value, but only 16 exactly matches a strike.
+	wants := map[float64]snapshot{
+		16:     read(newSource(), 16),
+		16.005: read(newSource(), 16.005),
+	}
+	for _, order := range [][2]float64{{16.005, 16}, {16, 16.005}} {
+		t.Run(fmt.Sprint(order), func(t *testing.T) {
+			source := newSource()
+			for _, size := range order {
+				got, want := read(source, size), wants[size]
+				if got.bounds != want.bounds || got.size != want.size || !bytes.Equal(got.pixels, want.pixels) {
+					t.Errorf("size %v depends on previous face size: got %v/%v, want %v/%v (pixels equal: %t)", size, got.bounds, got.size, want.bounds, want.size, bytes.Equal(got.pixels, want.pixels))
+				}
+			}
+		})
+	}
 }
 
 // TestBitmapFontSideways tests that a glyph of a bitmap font is rotated in a

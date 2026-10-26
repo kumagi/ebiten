@@ -229,11 +229,13 @@ type glyphDataCacheKey struct {
 	// interpreter is added in the future, outlines may vary per ppem
 	// and the outline case will need a non-zero size here too.
 	size fixed.Int26_6
+	// A truncated size can cover different bitmap ppems selected from the full face size.
+	bitmapPpem uint16
 }
 
 // glyphRenderDataCacheKey identifies the render-data bundle for one glyph.
-// Scaled segments depend on all four key fields; bitmap depends only on
-// (gid, size) but is bundled here so a single cache entry yields every
+// Scaled segments depend on gid, variations, sideways, and size; bitmap also depends on
+// the selected ppem, and is bundled here so a single cache entry yields every
 // renderable form of the glyph. For fonts exercising multiple variations
 // or sideways modes at the same size, the same bitmap image may be
 // referenced from multiple entries — the image data is still shared via
@@ -246,6 +248,8 @@ type glyphRenderDataCacheKey struct {
 	variations string
 	sideways   bool
 	size       fixed.Int26_6
+	// See glyphDataCacheKey.bitmapPpem. This is zero for a font without bitmap strikes.
+	bitmapPpem uint16
 }
 
 // glyphRenderData holds a glyph's font-metric bounds and captured outline/bitmap state.
@@ -965,6 +969,7 @@ func (g *GoTextFaceSource) buildGlyphs(outputs []shaping.Output, text string, fa
 				variations: variations,
 				sideways:   sideways,
 				size:       out.Size,
+				bitmapPpem: bm.yPpem,
 			}
 			render := g.renderDataCache.getOrCreate(renderKey, func() (*glyphRenderData, bool) {
 				return g.buildRenderData(gl, out.Size, sideways, variationsSnapshot, variations, bm)
@@ -1002,7 +1007,7 @@ func (g *GoTextFaceSource) buildRenderData(gl shaping.Glyph, size fixed.Int26_6,
 		// the glyph's outline, which renders with better fidelity at
 		// arbitrary sizes; color bitmap fonts typically have only stub
 		// outlines, which must not win here.
-		switch d := g.fetchGlyphData(gl.GlyphID, variationsString, sideways, size, gl.YOffset, true).(type) {
+		switch d := g.fetchGlyphData(gl.GlyphID, variationsString, sideways, size, gl.YOffset, bm.yPpem, true).(type) {
 		case font.GlyphBitmap:
 			switch d.Format {
 			case font.BlackAndWhite, font.BlackAndWhiteByteAligned:
@@ -1156,7 +1161,7 @@ func colrClipBoxExtents(clips tables.ClipList, gid font.GID) (font.GlyphExtents,
 
 // fetchGlyphData returns the glyph data for gid via the glyph data
 // cache. Cached entries are reusable across glyph instances sharing
-// (gid, variations, sideways, size). useBitmap selects the bitmap-mode
+// (gid, variations, sideways, size, bitmapPpem). useBitmap selects the bitmap-mode
 // cache key; the outline path is ppem-independent and shares one entry
 // across sizes (see glyphDataCacheKey).
 //
@@ -1168,19 +1173,22 @@ func colrClipBoxExtents(clips tables.ClipList, gid font.GID) (font.GlyphExtents,
 //
 // The caller must hold g.shapeMu, and the shared font state must
 // reflect the given variations and the bitmap-mode ppem.
-func (g *GoTextFaceSource) fetchGlyphData(gid font.GID, variationsString string, sideways bool, size, yOffset fixed.Int26_6, useBitmap bool) font.GlyphData {
+func (g *GoTextFaceSource) fetchGlyphData(gid font.GID, variationsString string, sideways bool, size, yOffset fixed.Int26_6, bitmapPpem uint16, useBitmap bool) font.GlyphData {
 	if g.glyphDataCache == nil {
 		g.glyphDataCache = newCache[glyphDataCacheKey, font.GlyphData](512)
 	}
 	var keySize fixed.Int26_6
+	var keyPpem uint16
 	if useBitmap {
 		keySize = size
+		keyPpem = bitmapPpem
 	}
 	key := glyphDataCacheKey{
 		gid:        gid,
 		variations: variationsString,
 		sideways:   sideways,
 		size:       keySize,
+		bitmapPpem: keyPpem,
 	}
 	return g.glyphDataCache.getOrCreate(key, func() (font.GlyphData, bool) {
 		d := g.glyphDataWithoutSVG(gid)
@@ -1233,7 +1241,7 @@ func (g *GoTextFaceSource) realizeRenderData(rd *glyphRenderData) {
 		g.lastXPpem, g.lastYPpem = wantX, wantY
 	}
 
-	data := g.fetchGlyphData(rd.gid, variationsString, rd.sideways, rd.size, rd.yOffset, rd.useBitmap)
+	data := g.fetchGlyphData(rd.gid, variationsString, rd.sideways, rd.size, rd.yOffset, rd.bitmapYPpem, rd.useBitmap)
 	if data == nil {
 		return
 	}
