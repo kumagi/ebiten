@@ -541,6 +541,14 @@ func (g *Graphics) Initialize() error {
 	return nil
 }
 
+// Terminate releases cached read-back buffers.
+func (g *Graphics) Terminate() error {
+	for _, b := range g.readbackBuffers.Clear() {
+		b.Release()
+	}
+	return nil
+}
+
 func (g *Graphics) addResidentResource(r mtl.Resource) {
 	if g.residencySet == (mtl.ResidencySet{}) {
 		return
