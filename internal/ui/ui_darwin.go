@@ -180,12 +180,14 @@ func (u *UserInterface) initializePlatform() error {
 				Cmd: objc.RegisterName("windowDidFailToEnterFullScreen:"),
 				Fn: func(id objc.ID, cmd objc.SEL, window objc.ID) {
 					invalidateFullscreen(false)
+					popResizableState(id, window)
 				},
 			},
 			{
 				Cmd: objc.RegisterName("windowDidFailToExitFullScreen:"),
 				Fn: func(id objc.ID, cmd objc.SEL, window objc.ID) {
 					invalidateFullscreen(false)
+					popResizableState(id, window)
 				},
 			},
 			{
