@@ -163,9 +163,9 @@ func (g *Graphics) Begin() error {
 }
 
 func (g *Graphics) End(mode graphicsdriver.FlushMode) error {
-	g.flushCommandBufferIfNeeded(mode == graphicsdriver.FlushModePresent)
-	if err := g.keepResidentIfIdle(); err != nil {
-		return err
+	err := g.flushCommandBufferIfNeeded(mode == graphicsdriver.FlushModePresent)
+	if residentErr := g.keepResidentIfIdle(); residentErr != nil {
+		return errors.Join(err, residentErr)
 	}
 	// The residency set retains its resources until their removals are committed.
 	g.commitResidencySetIfNeeded()
@@ -177,7 +177,7 @@ func (g *Graphics) End(mode graphicsdriver.FlushMode) error {
 	}
 	// Reclaim the resources for the past frames here, as a drawable is not always obtained in a frame.
 	g.gcBuffers()
-	return nil
+	return err
 }
 
 func (g *Graphics) SetWindow(window uintptr) {
@@ -336,12 +336,17 @@ func (g *Graphics) SetVertices(vertices []float32, indices []uint32) error {
 	return nil
 }
 
-func (g *Graphics) flushCommandBufferIfNeeded(present bool) {
+func (g *Graphics) flushCommandBufferIfNeeded(present bool) error {
 	if g.cb == (mtl.CommandBuffer{}) {
 		if g.rce != (mtl.RenderCommandEncoder{}) {
 			panic("metal: render command encoder must be empty if command buffer is empty")
 		}
-		return
+		if !present || g.screenDrawable == (ca.MetalDrawable{}) {
+			return nil
+		}
+		if err := g.ensureCommandBuffer(); err != nil {
+			return err
+		}
 	}
 
 	g.flushRenderCommandEncoderIfNeeded()
@@ -376,6 +381,7 @@ func (g *Graphics) flushCommandBufferIfNeeded(present bool) {
 		g.screenDrawable = ca.MetalDrawable{}
 		g.view.finishDrawableUsage()
 	}
+	return nil
 }
 
 func (g *Graphics) checkSize(width, height int) {
@@ -632,7 +638,9 @@ func (g *Graphics) draw(dst *Image, dstRegions []graphicsdriver.DstRegion, srcs 
 	// This is because a drawable is not released as long as the CommandBuffer referencing it is alive, so
 	// it is more efficient to separate CommandBuffers that use the drawable from those that do not.
 	if (g.lastDst != nil && g.lastDst.screen) != dst.screen {
-		g.flushCommandBufferIfNeeded(false)
+		if err := g.flushCommandBufferIfNeeded(false); err != nil {
+			return err
+		}
 	}
 
 	// A render command encoder is bound to the render pass's destination texture,
