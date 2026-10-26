@@ -1154,15 +1154,15 @@ func (g *GuestSession) CompositeFrame() bool {
 	outsideScreen := g.outsideScreen
 	g.mu.Unlock()
 
-	// Drop the frame if its size no longer matches the outside screen (a resize happened after it was
-	// rendered).
-	b := outsideScreen.Bounds()
-	if frame.width != b.Dx() || frame.height != b.Dy() {
-		return false
-	}
 	dst, dstRegion := ui.ImageFromEbitenImage(outsideScreen)
 	if dst == nil {
 		// A disposed outside screen draws nothing.
+		return false
+	}
+
+	// Drop the frame if its size no longer matches the outside screen (a resize happened after it was
+	// rendered).
+	if frame.width != dstRegion.Dx() || frame.height != dstRegion.Dy() {
 		return false
 	}
 	n := 4 * graphics.VertexFloatCount
