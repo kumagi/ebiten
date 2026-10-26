@@ -169,8 +169,9 @@ func (c *Commit) SurroundingText() (before, after string) {
 // during this tick — the caller should skip its own key handlers when
 // handled is true to avoid double-processing keys.
 //
-// A commit delivered with a key press that the game also receives leaves
-// handled false, so the caller still acts on that key.
+// A commit delivered with a key press that the game also receives does not
+// contribute to handled. It remains true if other events consumed input during
+// this call. [Commit.HasPassthroughKey] identifies such commits individually.
 //
 // Update may invoke OnCommit and OnComposition multiple times in one call
 // if the platform queued multiple compositions between ticks.
