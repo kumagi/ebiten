@@ -95,7 +95,8 @@ func getGlyphImage(face *faceWithCache, r rune, offset fixed.Point26_6) *ebiten.
 		return nil
 	}
 
-	if b.Min.X&((1<<6)-1) != 0 {
+	// The advance can shift a glyph even when its bearing is integral.
+	if offset.X != 0 {
 		w++
 	}
 	if b.Min.Y&((1<<6)-1) != 0 {

@@ -21,6 +21,8 @@ import (
 
 	"github.com/hajimehoshi/bitmapfont/v4"
 	"golang.org/x/image/font"
+	"golang.org/x/image/font/gofont/goregular"
+	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -143,6 +145,49 @@ func TestNegativeKern(t *testing.T) {
 			want := color.RGBA{R: 0x80, G: 0x80, B: 0x80, A: 0x80}
 			if got != want {
 				t.Errorf("At(%d, %d): got: %v, want: %v", i, j, got, want)
+			}
+		}
+	}
+}
+
+func TestGlyphImageFractionalAdvance(t *testing.T) {
+	f, err := opentype.Parse(goregular.TTF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cached := range []bool{false, true} {
+		face, err := opentype.NewFace(f, &opentype.FaceOptions{Size: 8, DPI: 72, Hinting: font.HintingNone})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := face.Close(); err != nil {
+				t.Error(err)
+			}
+		}()
+		if cached {
+			text.CacheGlyphs(face, "\"_")
+		}
+		for _, str := range []string{"_", "\"_"} {
+			glyphs := text.AppendGlyphs(nil, face, str)
+			if len(glyphs) != len(str) {
+				t.Fatalf("AppendGlyphs(%q): got %d glyphs", str, len(glyphs))
+			}
+			var advance fixed.Int26_6
+			if len(str) > 1 {
+				advance, _ = face.GlyphAdvance('"')
+				advance += face.Kern('"', '_')
+			}
+			bounds, _, _ := face.GlyphBounds('_')
+			offset := (advance/16*16 + bounds.Min.X) & 63
+			want := image.NewRGBA(image.Rect(0, 0, (bounds.Max.X - bounds.Min.X + offset).Ceil(), 1))
+			drawer := font.Drawer{Dst: want, Src: image.White, Face: face, Dot: fixed.Point26_6{X: -bounds.Min.X + offset}}
+			drawer.DrawString("_")
+			got := glyphs[len(glyphs)-1].Image
+			for x := range want.Bounds().Dx() {
+				if got, want := got.At(x, 0), want.At(x, 0); got != want {
+					t.Errorf("cached=%v text=%q at (%d, 0): got %v, want %v", cached, str, x, got, want)
+				}
 			}
 		}
 	}
