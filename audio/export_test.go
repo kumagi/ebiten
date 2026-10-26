@@ -223,7 +223,7 @@ func (p *dummyPlayer) Seek(offset int64, whence int) (int64, error) {
 	defer p.mu.Unlock()
 	p.eof = false
 	p.drained = false
-	return 0, nil
+	return p.r.(io.Seeker).Seek(offset, whence)
 }
 
 var dummyDriverForTesting = &dummyDriver{}

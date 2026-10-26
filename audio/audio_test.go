@@ -275,6 +275,41 @@ func TestPositionBeforeContextReady(t *testing.T) {
 	}
 }
 
+func TestSetPositionAfterDeviceCreation(t *testing.T) {
+	setup()
+	defer teardown()
+
+	src := bytes.NewReader(make([]byte, 44100*8))
+	p, err := context.NewPlayerF32(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.KeepAlive(p)
+
+	if err := audio.UpdateForTesting(); err != nil {
+		t.Fatal(err)
+	}
+	if err := audio.EnsurePlayerForTesting(p); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, offset := range []time.Duration{500 * time.Millisecond, 0, 250 * time.Millisecond} {
+		if err := p.SetPosition(offset); err != nil {
+			t.Fatal(err)
+		}
+		if got := p.Position(); got != offset {
+			t.Errorf("Position() = %v, want %v", got, offset)
+		}
+		pos, err := src.Seek(0, io.SeekCurrent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := int64(offset) * 44100 * 8 / int64(time.Second); pos != want {
+			t.Errorf("source position = %d, want %d", pos, want)
+		}
+	}
+}
+
 func TestSetPositionLongDuration(t *testing.T) {
 	setup()
 	defer teardown()
