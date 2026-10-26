@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strings"
 	"text/template"
 )
@@ -137,7 +138,12 @@ func run() error {
 		},
 	}
 
-	controllerDBs, err := splitDBsByPlatform(gameControllerDB)
+	platformNames := make([]string, 0, len(platforms))
+	for sdlPlatformName := range platforms {
+		platformNames = append(platformNames, sdlPlatformName)
+	}
+
+	controllerDBs, err := splitDBsByPlatform(gameControllerDB, platformNames)
 	if err != nil {
 		return err
 	}
@@ -163,7 +169,9 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer func() {
+			_ = f.Close()
+		}()
 
 		w := bufio.NewWriter(f)
 		if err := tmpl.Execute(w, struct {
@@ -189,21 +197,39 @@ func run() error {
 	return nil
 }
 
-func splitDBsByPlatform(controllerDB []byte) (map[string]string, error) {
+// splitDBsByPlatform returns the mappings of controllerDB for each of platforms, keeping the order
+// of the source. A mapping with no platform, or with an empty one, applies to every platform.
+func splitDBsByPlatform(controllerDB []byte, platforms []string) (map[string]string, error) {
 	s := bufio.NewScanner(bytes.NewReader(controllerDB))
 	dbs := map[string]string{}
 
 	for s.Scan() {
 		line := s.Text()
-		if strings.HasPrefix(line, "#") {
+		if trimmed := strings.TrimSpace(line); trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
 
-		for _, part := range strings.Split(line, ",") {
-			if platform, found := strings.CutPrefix(part, "platform:"); found {
-				dbs[platform] += line + "\n"
-				break
+		tokens := strings.Split(line, ",")
+		if len(tokens) < 2 {
+			return nil, fmt.Errorf("invalid controller mapping: %s", line)
+		}
+		targets := platforms
+		for _, part := range tokens[2:] {
+			platform, found := strings.CutPrefix(part, "platform:")
+			if !found {
+				continue
 			}
+			if platform == "" {
+				targets = platforms
+				continue
+			}
+			if !slices.Contains(platforms, platform) {
+				return nil, fmt.Errorf("unexpected controller mapping platform: %s", platform)
+			}
+			targets = []string{platform}
+		}
+		for _, target := range targets {
+			dbs[target] += line + "\n"
 		}
 	}
 	if err := s.Err(); err != nil {
