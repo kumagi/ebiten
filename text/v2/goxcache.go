@@ -39,6 +39,15 @@ type kernCacheKey struct {
 	r1 rune
 }
 
+// The caches below memoize what the wrapped font.Face answered. Their keys come from the text an
+// application draws, so the maps are bounded: when one exceeds its limit it is reset instead of
+// growing for the lifetime of the GoXFace, which NewGoXFace's other caches already do.
+const (
+	glyphBoundsCacheLimit  = 1024
+	glyphAdvanceCacheLimit = 1024
+	kernCacheLimit         = 4096
+)
+
 type faceWithCache struct {
 	f font.Face
 
@@ -81,6 +90,8 @@ func (f *faceWithCache) GlyphBounds(r rune) (bounds fixed.Rectangle26_6, advance
 	bounds, advance, ok = f.f.GlyphBounds(r)
 	if f.glyphBoundsCache == nil {
 		f.glyphBoundsCache = map[rune]glyphBoundsCacheValue{}
+	} else if len(f.glyphBoundsCache) >= glyphBoundsCacheLimit {
+		clear(f.glyphBoundsCache)
 	}
 	f.glyphBoundsCache[r] = glyphBoundsCacheValue{
 		bounds:  bounds,
@@ -101,6 +112,8 @@ func (f *faceWithCache) GlyphAdvance(r rune) (advance fixed.Int26_6, ok bool) {
 	advance, ok = f.f.GlyphAdvance(r)
 	if f.glyphAdvanceCache == nil {
 		f.glyphAdvanceCache = map[rune]glyphAdvanceCacheValue{}
+	} else if len(f.glyphAdvanceCache) >= glyphAdvanceCacheLimit {
+		clear(f.glyphAdvanceCache)
 	}
 	f.glyphAdvanceCache[r] = glyphAdvanceCacheValue{
 		advance: advance,
@@ -121,6 +134,8 @@ func (f *faceWithCache) Kern(r0, r1 rune) fixed.Int26_6 {
 	v := f.f.Kern(r0, r1)
 	if f.kernCache == nil {
 		f.kernCache = map[kernCacheKey]fixed.Int26_6{}
+	} else if len(f.kernCache) >= kernCacheLimit {
+		clear(f.kernCache)
 	}
 	f.kernCache[key] = v
 	return v

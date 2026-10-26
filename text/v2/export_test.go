@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-text/typesetting/bidi"
 	"github.com/go-text/typesetting/font"
+	xfont "golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -117,4 +118,14 @@ func SVGAcceptanceGlyph(face *GoTextFace, gid uint16, offset float64, realize bo
 // SVGAcceptanceOffset returns the horizontal fractional origin used by text layout.
 func SVGAcceptanceOffset(face *GoTextFace, offset float64) float64 {
 	return fixed26_6ToFloat64(adjustGranularity(float64ToFixed26_6(offset), granularityFactor(face)) & 63)
+}
+
+func NewGoXFaceCacheForTesting(face xfont.Face) *faceWithCache {
+	return &faceWithCache{f: face}
+}
+
+func (f *faceWithCache) CacheSizesForTesting() (int, int, int) {
+	f.m.Lock()
+	defer f.m.Unlock()
+	return len(f.glyphBoundsCache), len(f.glyphAdvanceCache), len(f.kernCache)
 }

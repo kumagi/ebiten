@@ -19,6 +19,7 @@ import (
 	"slices"
 	"testing"
 
+	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/font/gofont/goregular"
 
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
@@ -127,5 +128,23 @@ func TestMultiFaceAdvanceAtNewline(t *testing.T) {
 				t.Errorf("%q index %d: MultiFace.AdvanceAt got: %v, want: %v", str, idx, got, want)
 			}
 		}
+	}
+}
+
+func TestGoXFaceCacheBounded(t *testing.T) {
+	f := text.NewGoXFaceCacheForTesting(basicfont.Face7x13)
+	for r := rune(0); r < 8192; r++ {
+		f.GlyphBounds(r)
+		f.GlyphAdvance(r)
+		f.Kern(r, r+1)
+	}
+	bounds, advance, kern := f.CacheSizesForTesting()
+	if bounds > 1024 || advance > 1024 || kern > 4096 {
+		t.Errorf("unbounded cache sizes: %d, %d, %d", bounds, advance, kern)
+	}
+	got, ok := f.GlyphAdvance('a')
+	want, wantOK := basicfont.Face7x13.GlyphAdvance('a')
+	if got != want || ok != wantOK {
+		t.Errorf("advance got (%v,%v), want (%v,%v)", got, ok, want, wantOK)
 	}
 }
