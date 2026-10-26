@@ -81,6 +81,10 @@ func (x *xinputRumbler) vibrate(duration time.Duration, strongMagnitude float64,
 		return
 	}
 
+	if duration <= 0 {
+		return
+	}
+
 	x.vib = true
 	x.vibEnd = time.Now().Add(duration)
 	_ = _XInputSetState(uint32(x.index), &_XINPUT_VIBRATION{

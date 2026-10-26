@@ -324,6 +324,10 @@ func (n *nativeGamepadXbox) vibrate(duration time.Duration, strongMagnitude floa
 		}, 0)
 		return
 	}
+	if duration <= 0 {
+		return
+	}
+
 	n.vib = true
 	n.vibEnd = time.Now().Add(duration)
 	n.gameInputDevice.SetRumbleState(&_GameInputRumbleParams{

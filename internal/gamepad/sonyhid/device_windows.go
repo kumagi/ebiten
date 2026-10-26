@@ -249,6 +249,10 @@ func (s *Device) Vibrate(duration time.Duration, strongMagnitude float64, weakMa
 		s.stop()
 		return
 	}
+	if duration <= 0 {
+		return
+	}
+
 	s.vib = true
 	s.vibEnd = time.Now().Add(duration)
 	s.write(rumbleByte(strongMagnitude), rumbleByte(weakMagnitude))
