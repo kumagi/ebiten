@@ -398,6 +398,13 @@ func (r *remoteBackend) outsideSize() (outsideWidth, outsideHeight float64) {
 	return r.outsideWidth, r.outsideHeight
 }
 
+// refreshRate implements virtualMonitorSource.
+//
+// The host's refresh rate is not part of the protocol, so it is unknown.
+func (r *remoteBackend) refreshRate() int {
+	return 0
+}
+
 // screenSize returns the size of the host-owned screen the guest renders into, in pixels.
 func (r *remoteBackend) screenSize() (screenWidth, screenHeight int) {
 	r.mu.Lock()

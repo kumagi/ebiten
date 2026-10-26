@@ -42,5 +42,5 @@ func newGBMBackend(u *UserInterface) (uiBackend, error) {
 		return nil, errors.Join(err, display.Close())
 	}
 
-	return newNoWindowSystemBackend(u, c, display.Close), nil
+	return newNoWindowSystemBackend(u, c, display.Close, display.RefreshRate()), nil
 }

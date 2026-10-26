@@ -56,6 +56,10 @@ type noWindowSystemBackend struct {
 	// only when something asks for one.
 	frameCh chan struct{}
 
+	// displayRefreshRate is the rate the display's mode reported at construction,
+	// or 0 when the display reports no timings.
+	displayRefreshRate int
+
 	// monitor is the single monitor exposed to the game: the display itself.
 	monitor *Monitor
 
@@ -64,15 +68,16 @@ type noWindowSystemBackend struct {
 	mu sync.Mutex
 }
 
-func newNoWindowSystemBackend(u *UserInterface, c noWindowSystemContext, closeDisplay func() error) *noWindowSystemBackend {
+func newNoWindowSystemBackend(u *UserInterface, c noWindowSystemContext, closeDisplay func() error, refreshRate int) *noWindowSystemBackend {
 	width, height := c.Size()
 	b := &noWindowSystemBackend{
-		UserInterface: u,
-		eglContext:    c,
-		closeDisplay:  closeDisplay,
-		width:         width,
-		height:        height,
-		frameCh:       make(chan struct{}, 1),
+		UserInterface:      u,
+		eglContext:         c,
+		closeDisplay:       closeDisplay,
+		width:              width,
+		height:             height,
+		frameCh:            make(chan struct{}, 1),
+		displayRefreshRate: refreshRate,
 	}
 	b.monitor = &Monitor{virtual: b}
 	return b
@@ -90,7 +95,7 @@ func newFbdevBackend(u *UserInterface) (uiBackend, error) {
 		return nil, err
 	}
 
-	return newNoWindowSystemBackend(u, c, nil), nil
+	return newNoWindowSystemBackend(u, c, nil, display.RefreshRate()), nil
 }
 
 func (b *noWindowSystemBackend) run(game Game, options *RunOptions) error {
@@ -164,6 +169,9 @@ func (b *noWindowSystemBackend) initOnMainThread(options *RunOptions) (err error
 	b.graphicsDriver = g
 	b.setGraphicsLibrary(lib)
 	graphicscommand.SetVsyncEnabled(FPSModeType(b.fpsMode.Load()) == FPSModeVsyncOn)
+	// context.flushCommandsAndWait paces the loop at the display's refresh rate when
+	// the driver ignores vsync (#3009), so the display's own rate must be known here.
+	b.setRefreshRate(b.monitor.RefreshRate())
 
 	b.setRunningBackend(b)
 
@@ -237,6 +245,13 @@ func (b *noWindowSystemBackend) deviceScaleFactor() float64 {
 func (b *noWindowSystemBackend) outsideSize() (width, height float64) {
 	w, h := b.screenSize()
 	return float64(w), float64(h)
+}
+
+// refreshRate implements virtualMonitorSource.
+//
+// The display's mode reports the rate, or 0 when it reports no timings.
+func (b *noWindowSystemBackend) refreshRate() int {
+	return b.displayRefreshRate
 }
 
 // screenSize returns the size of the surface in pixels.

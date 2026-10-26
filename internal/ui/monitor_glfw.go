@@ -37,7 +37,7 @@ type Monitor struct {
 	contentScale       float64
 
 	// virtual provides the monitor's values when the monitor has no backing glfw.Monitor (a
-	// virtualization guest's monitor). It is nil for a real monitor.
+	// virtualization guest or a backend without a window system). It is nil for a real monitor.
 	virtual virtualMonitorSource
 }
 
@@ -45,6 +45,7 @@ type Monitor struct {
 type virtualMonitorSource interface {
 	deviceScaleFactor() float64
 	outsideSize() (width, height float64)
+	refreshRate() int
 }
 
 // Name returns the monitor's name.
@@ -65,6 +66,9 @@ func (m *Monitor) DeviceScaleFactor() float64 {
 
 // RefreshRate returns the monitor's refresh rate in Hz. It returns 0 when the rate is unknown.
 func (m *Monitor) RefreshRate() int {
+	if m.virtual != nil {
+		return m.virtual.refreshRate()
+	}
 	if m.videoMode == nil {
 		return 0
 	}
