@@ -42,6 +42,7 @@ import (
 	"image"
 	"io"
 	"maps"
+	"math"
 	"net"
 	"slices"
 	"sync"
@@ -1871,7 +1872,11 @@ func (g *GuestSession) updateAudioStreams(msg *vmprotocol.GuestMessage) []*Guest
 	g.audioMu.Lock()
 	defer g.audioMu.Unlock()
 	var newStreams []*GuestAudioStream
-	g.audioSampleRate = msg.AudioSampleRate
+	sampleRate := msg.AudioSampleRate
+	if sampleRate < 0 {
+		sampleRate = 0
+	}
+	g.audioSampleRate = sampleRate
 	for i := range msg.AudioControls {
 		c := &msg.AudioControls[i]
 		if c.Closed {
@@ -1888,7 +1893,7 @@ func (g *GuestSession) updateAudioStreams(msg *vmprotocol.GuestMessage) []*Guest
 			p = &GuestAudioStream{
 				session:   g,
 				id:        c.ID,
-				rate:      msg.AudioSampleRate,
+				rate:      sampleRate,
 				startTick: msg.StartTick,
 			}
 			g.audioStreams[c.ID] = p
@@ -1896,7 +1901,11 @@ func (g *GuestSession) updateAudioStreams(msg *vmprotocol.GuestMessage) []*Guest
 				newStreams = append(newStreams, p)
 			}
 		}
-		p.setControl(c.Playing, c.Volume)
+		volume := c.Volume
+		if !(volume > 0) || volume > math.MaxFloat32 {
+			volume = 0
+		}
+		p.setControl(c.Playing, volume)
 	}
 	return newStreams
 }
