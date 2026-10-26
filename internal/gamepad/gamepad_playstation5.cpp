@@ -16,7 +16,7 @@
 
 // The actual implementation will be provided by github.com/hajimehoshi/uwagaki.
 
-#include "gamepad_nintendosdk.h"
+#include "gamepad_playstation5.h"
 
 extern "C" void ebitengine_UpdateGamepads() {}
 
