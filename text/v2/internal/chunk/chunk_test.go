@@ -15,6 +15,8 @@
 package chunk_test
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -383,5 +385,24 @@ func TestChunks_FallbackAbsorbsExtend(t *testing.T) {
 	// absorbed combining mark.
 	if want := chunk.FallbackBytes + 1 + len("\u0301"); got[0].End != want {
 		t.Errorf("first chunk ends at %d, want %d", got[0].End, want)
+	}
+}
+
+func TestChunksIgnoreTextAfterLineBreak(t *testing.T) {
+	for _, prefix := range []string{"Wait. ", "א Wait. "} {
+		want := chunk.AppendChunks(nil, prefix, 0)
+		if prefix == "Wait. " && len(want) != 2 {
+			t.Fatalf("first-line chunks: %v, want two chunks", want)
+		}
+		for _, lineBreak := range []string{"\n", "\r", "\r\n", "\v", "\f", "\u0085", "\u2028", "\u2029"} {
+			for _, suffix := range []string{"apple pie", "Apple pie", "éclair"} {
+				t.Run(fmt.Sprintf("%q/%q/%s", prefix, lineBreak, suffix), func(t *testing.T) {
+					got := chunk.AppendChunks(nil, prefix+lineBreak+suffix, 0)
+					if !slices.Equal(got, want) {
+						t.Errorf("chunks: got %v, want first-line chunks %v", got, want)
+					}
+				})
+			}
+		}
 	}
 }

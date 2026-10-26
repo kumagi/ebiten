@@ -268,6 +268,10 @@ func shouldSplitAfterTerminator(text string, clusterEnd int, hasSTerm bool) bool
 	j := clusterEnd
 	for j < len(text) {
 		r, w := utf8.DecodeRuneInString(text[j:])
+		if textutil.IsLineBreak(r) {
+			// Match the first-line slice used by the bidi path.
+			return sawWhitespace
+		}
 		if !unicode.IsSpace(r) {
 			break
 		}
