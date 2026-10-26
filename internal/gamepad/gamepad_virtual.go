@@ -15,6 +15,7 @@
 package gamepad
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"time"
@@ -22,6 +23,9 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/internal/gamepaddb"
 	"github.com/hajimehoshi/ebiten/v2/internal/mathutil"
 )
+
+// Bound the dense storage addressed by externally supplied IDs.
+const maxVirtualGamepadID = 1024
 
 // VirtualGamepadState is the externally supplied state of one virtual gamepad. The raw axes and
 // buttons follow the public gamepad view, where hats are folded into buttons; the standard maps hold
@@ -101,14 +105,21 @@ func (g *gamepads) appendVirtualVibrations(dst []VirtualGamepadVibration) []Virt
 }
 
 // setVirtualGamepads makes the connected gamepads exactly those described by states; a gamepad
-// absent from it is disconnected. g.m must be held.
-func (g *gamepads) setVirtualGamepads(states []VirtualGamepadState) {
+// absent from it is disconnected. A state whose ID is above maxVirtualGamepadID is rejected and the
+// connected gamepads are left as they were. g.m must be held.
+func (g *gamepads) setVirtualGamepads(states []VirtualGamepadState) error {
 	maxID := -1
 	for i := range states {
-		if states[i].ID < 0 {
+		id := states[i].ID
+		if id < 0 {
 			continue
 		}
-		maxID = max(maxID, int(states[i].ID))
+		// The whole snapshot is checked before g.gamepads is grown or any state is applied, so a
+		// rejected one leaves the connected gamepads unchanged instead of half-updated.
+		if id > maxVirtualGamepadID {
+			return fmt.Errorf("gamepad: virtual gamepad ID %d is too large: must be at most %d", id, maxVirtualGamepadID)
+		}
+		maxID = max(maxID, int(id))
 	}
 	for len(g.gamepads) <= maxID {
 		g.gamepads = append(g.gamepads, nil)
@@ -141,6 +152,8 @@ func (g *gamepads) setVirtualGamepads(states []VirtualGamepadState) {
 			g.gamepads[id] = nil
 		}
 	}
+
+	return nil
 }
 
 func containsVirtualGamepadID(states []VirtualGamepadState, id ID) bool {

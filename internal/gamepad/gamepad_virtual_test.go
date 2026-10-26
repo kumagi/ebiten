@@ -330,3 +330,59 @@ func TestVirtualGamepadVibrationAvailable(t *testing.T) {
 		t.Error("IsVibrationAvailable() = false; want true for a virtual gamepad")
 	}
 }
+
+func TestVirtualGamepadIDTooLarge(t *testing.T) {
+	const maxID = gamepad.ID(1024)
+	updateVirtualGamepads(t, []gamepad.VirtualGamepadState{
+		{
+			ID:      maxID,
+			Name:    "existing",
+			Axes:    []float64{0.25},
+			Buttons: []bool{false},
+		},
+	})
+	defer updateVirtualGamepads(t, []gamepad.VirtualGamepadState{})
+	existing := gamepad.Get(maxID)
+	if existing == nil {
+		t.Fatal("ID at the bound was rejected")
+	}
+	for _, invalidFirst := range []bool{false, true} {
+		states := []gamepad.VirtualGamepadState{
+			{
+				ID:      maxID,
+				Name:    "changed",
+				Axes:    []float64{0.75},
+				Buttons: []bool{true},
+			},
+			{
+				ID:   0,
+				Name: "new",
+			},
+			{
+				ID: maxID + 1,
+			},
+		}
+		if invalidFirst {
+			states[0], states[2] = states[2], states[0]
+		}
+		if err := gamepad.Update(0, states); err == nil {
+			t.Error("ID above the bound was accepted")
+		}
+		if got, want := gamepadIDs(), []gamepad.ID{maxID}; !slices.Equal(got, want) {
+			t.Errorf("IDs after rejection=%v, want%v", got, want)
+		}
+		if gamepad.Get(maxID) != existing || existing.Name() != "existing" || existing.Axis(0) != 0.25 || existing.Button(0) {
+			t.Error("rejected snapshot changed existing state")
+		}
+	}
+	updateVirtualGamepads(t, []gamepad.VirtualGamepadState{
+		{
+			ID:      maxID,
+			Name:    "existing",
+			Buttons: []bool{true},
+		},
+	})
+	if !gamepad.Get(maxID).Button(0) {
+		t.Error("valid update after rejection did not apply")
+	}
+}

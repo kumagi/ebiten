@@ -77,6 +77,10 @@ func AppendGamepadIDs(ids []ID) []ID {
 // nativeWindow is the platform's native window handle, or 0 if there is none. virtualGamepads selects
 // the gamepads: a nil slice polls the real devices, while a non-nil slice (possibly empty) makes the
 // connected gamepads exactly those it describes.
+//
+// A virtual gamepad's ID must be in 0..1024: a negative one is ignored, and a larger one returns an
+// error without changing the connected gamepads. The gamepads are stored at their own ID, so an
+// unbounded ID would make a single forwarded one allocate an arbitrary amount of memory.
 func Update(nativeWindow uintptr, virtualGamepads []VirtualGamepadState) error {
 	return theGamepads.update(nativeWindow, virtualGamepads)
 }
@@ -122,7 +126,9 @@ func (g *gamepads) update(nativeWindow uintptr, virtualGamepads []VirtualGamepad
 	}
 
 	if virtual {
-		g.setVirtualGamepads(virtualGamepads)
+		if err := g.setVirtualGamepads(virtualGamepads); err != nil {
+			return err
+		}
 	}
 
 	if !g.inited {
