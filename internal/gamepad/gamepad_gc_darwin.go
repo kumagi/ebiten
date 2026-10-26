@@ -109,10 +109,11 @@ type controllerState struct {
 	hat     uint8
 }
 
-// gcControllerToAdd is a controller waiting to be registered, along with the properties read from it
-// when it was enumerated or its connect notification arrived.
-type gcControllerToAdd struct {
+// gcControllerEvent is a queued connection change. A connected controller carries the properties
+// read when it was enumerated or its connect notification arrived.
+type gcControllerEvent struct {
 	controller uintptr
+	connected  bool
 	prop       controllerProperty
 	rejected   bool
 }
@@ -124,11 +125,10 @@ type gcHIDDeviceLookup struct {
 }
 
 type nativeGamepadsGC struct {
-	// controllersToAdd and controllersToRemove hold one reference per entry, which update releases or
-	// hands over to the gamepad.
-	controllersToAdd    []gcControllerToAdd
-	controllersToRemove []uintptr
-	controllersMu       sync.Mutex
+	// controllerEvents preserves queue order and holds one reference per entry, which update releases
+	// or hands over to the gamepad or rejected-controller lookup.
+	controllerEvents []gcControllerEvent
+	controllersMu    sync.Mutex
 
 	// rejectedControllerHIDLookups maps rejected GC controllers to their HID device lookup results,
 	// holding one reference per controller until disconnection.
@@ -157,7 +157,18 @@ func (g *nativeGamepadsGC) update(gamepads *gamepads) error {
 	g.controllersMu.Lock()
 	defer g.controllersMu.Unlock()
 
-	for _, c := range g.controllersToAdd {
+	for _, c := range g.controllerEvents {
+		if !c.connected {
+			if _, ok := g.rejectedControllerHIDLookups[c.controller]; ok {
+				delete(g.rejectedControllerHIDLookups, c.controller)
+				// Release the reference held by rejectedControllerHIDLookups.
+				objc.ID(c.controller).Send(sel_release)
+			}
+			gamepads.removeGCGamepad(c.controller)
+			// Release the separate reference retained for this removal event.
+			objc.ID(c.controller).Send(sel_release)
+			continue
+		}
 		if c.rejected {
 			if _, ok := g.rejectedControllerHIDLookups[c.controller]; ok {
 				objc.ID(c.controller).Send(sel_release)
@@ -171,18 +182,7 @@ func (g *nativeGamepadsGC) update(gamepads *gamepads) error {
 		}
 		gamepads.addGCGamepad(c.controller, c.prop)
 	}
-	for _, controller := range g.controllersToRemove {
-		if _, ok := g.rejectedControllerHIDLookups[controller]; ok {
-			delete(g.rejectedControllerHIDLookups, controller)
-			// Release the reference retained by addController and held by rejectedControllerHIDLookups.
-			objc.ID(controller).Send(sel_release)
-		}
-		gamepads.removeGCGamepad(controller)
-		// Release the separate reference retained by removeController for the removal queue.
-		objc.ID(controller).Send(sel_release)
-	}
-	g.controllersToAdd = g.controllersToAdd[:0]
-	g.controllersToRemove = g.controllersToRemove[:0]
+	g.controllerEvents = slices.Delete(g.controllerEvents, 0, len(g.controllerEvents))
 	for controller, rejected := range g.rejectedControllerHIDLookups {
 		if !rejected.lookupComplete {
 			rejected.hidDeviceRegistryIDs, rejected.lookupComplete = gcHIDDeviceRegistryIDs(objc.ID(controller))
@@ -620,8 +620,9 @@ func addController(controller objc.ID) {
 	defer theGCGamepads.controllersMu.Unlock()
 
 	controller.Send(sel_retain)
-	theGCGamepads.controllersToAdd = append(theGCGamepads.controllersToAdd, gcControllerToAdd{
+	theGCGamepads.controllerEvents = append(theGCGamepads.controllerEvents, gcControllerEvent{
 		controller: uintptr(controller),
+		connected:  true,
 		prop:       prop,
 		rejected:   rejected,
 	})
@@ -637,7 +638,9 @@ func removeController(controller objc.ID) {
 	// address from being reused by a controller queued for registration before the removal is
 	// applied, which would make the comparison match the new controller's gamepad.
 	controller.Send(sel_retain)
-	theGCGamepads.controllersToRemove = append(theGCGamepads.controllersToRemove, uintptr(controller))
+	theGCGamepads.controllerEvents = append(theGCGamepads.controllerEvents, gcControllerEvent{
+		controller: uintptr(controller),
+	})
 }
 
 // addGCGamepad adds a GameController gamepad to the gamepad list, or leaves the list as it is if the
