@@ -80,7 +80,9 @@ func (v *view) waitForDisplayLinkOutputCallback() {
 	if v.vsyncDisabled.Load() {
 		return
 	}
-	v.fence.wait()
+	// Bound the wait the way nextDrawable does for CAMetalDisplayLink: a display
+	// link that stopped firing must not block the render thread forever.
+	v.fence.wait(100 * time.Millisecond)
 }
 
 // setDrawableSize records the new drawable size. The size is applied to the layer at the next

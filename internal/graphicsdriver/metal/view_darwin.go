@@ -205,29 +205,47 @@ func (h viewHandle) Value() *view {
 }
 
 type fence struct {
+	mu        sync.Mutex
 	value     uint64
 	lastValue uint64
-	cond      *sync.Cond
+	// updated is signaled on every advance. A buffered channel is used instead of a
+	// sync.Cond so that a wait can be given a deadline.
+	updated chan struct{}
 }
 
 func newFence() *fence {
 	return &fence{
-		cond: sync.NewCond(&sync.Mutex{}),
+		updated: make(chan struct{}, 1),
 	}
 }
 
-func (f *fence) wait() {
-	f.cond.L.Lock()
-	defer f.cond.L.Unlock()
-	for f.lastValue >= f.value {
-		f.cond.Wait()
+// wait consumes an advance, waiting up to timeout if none is pending.
+func (f *fence) wait(timeout time.Duration) bool {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		f.mu.Lock()
+		if f.lastValue < f.value {
+			f.lastValue = f.value
+			f.mu.Unlock()
+			return true
+		}
+		f.mu.Unlock()
+
+		select {
+		case <-f.updated:
+		case <-timer.C:
+			return false
+		}
 	}
-	f.lastValue = f.value
 }
 
 func (f *fence) advance() {
-	f.cond.L.Lock()
-	defer f.cond.L.Unlock()
+	f.mu.Lock()
 	f.value++
-	f.cond.Broadcast()
+	f.mu.Unlock()
+	select {
+	case f.updated <- struct{}{}:
+	default:
+	}
 }
