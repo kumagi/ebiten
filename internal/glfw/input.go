@@ -264,6 +264,10 @@ func GetKeyName(key Key, scancode int) (string, error) {
 			return "", nil
 		}
 		scancode = platformGetKeyScancode(key)
+		// A key absent from the current keymap has no name.
+		if scancode < 0 {
+			return "", nil
+		}
 	}
 
 	return platformGetScancodeName(scancode)
