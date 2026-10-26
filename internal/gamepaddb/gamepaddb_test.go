@@ -686,3 +686,25 @@ func TestAddAndroidDefaultMappings(t *testing.T) {
 		}
 	}
 }
+
+func TestUpdateIgnoresUnknownFieldValues(t *testing.T) {
+	for _, field := range []string{"hint:SDL_GAMECONTROLLER_USE_BUTTON_LABELS:=1", "crc:ffff", "misc1:unsupported", "future:"} {
+		t.Run(field, func(t *testing.T) {
+			const id = "00000000000000000000000000000075"
+			if err := gamepaddb.Update([]byte(id + ",Unknown Fields,a:b0," + field)); err != nil {
+				t.Fatal(err)
+			}
+			if got := gamepaddb.Name(id); got != "Unknown Fields" {
+				t.Errorf("Name = %q, want %q", got, "Unknown Fields")
+			}
+			state := stubGamepadState{
+				buttons: map[int]bool{
+					0: true,
+				},
+			}
+			if !gamepaddb.StandardButtonMapping(id, gamepaddb.StandardButtonRightBottom).IsButtonPressed(state) {
+				t.Error("unknown fields dropped the valid button mapping")
+			}
+		})
+	}
+}

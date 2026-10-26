@@ -144,12 +144,17 @@ func parseLine(line string) (id string, name string, buttons map[StandardButton]
 			continue
 		}
 
+		b, isButton := toStandardGamepadButton(tks[0])
+		a, part, isAxis := toStandardGamepadAxis(tks[0])
+		if !isButton && !isAxis {
+			continue
+		}
 		gb, err := parseMappingElement(tks[1])
 		if err != nil {
 			return "", "", nil, nil, platformInvalid, err
 		}
 
-		if b, ok := toStandardGamepadButton(tks[0]); ok {
+		if isButton {
 			if buttons == nil {
 				buttons = map[StandardButton]mapping{}
 			}
@@ -157,7 +162,7 @@ func parseLine(line string) (id string, name string, buttons map[StandardButton]
 			continue
 		}
 
-		if a, part, ok := toStandardGamepadAxis(tks[0]); ok {
+		if isAxis {
 			if axes == nil {
 				axes = map[StandardAxis]axisMapping{}
 			}
@@ -174,8 +179,6 @@ func parseLine(line string) (id string, name string, buttons map[StandardButton]
 			continue
 		}
 
-		// The buttons like "misc1" are ignored so far.
-		// There is no corresponding button in the Web standard gamepad layout.
 	}
 
 	return tokens[0], tokens[1], buttons, axes, p, nil
