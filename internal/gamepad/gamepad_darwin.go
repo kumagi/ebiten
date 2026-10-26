@@ -38,11 +38,17 @@ func newNativeGamepadsImpl() nativeGamepads {
 type nativeGamepadsDarwin struct {
 	gc    nativeGamepads
 	iokit nativeGamepads
+
+	// Avoid registering GameController observers again if IOKit initialization is retried.
+	gcInited bool
 }
 
 func (g *nativeGamepadsDarwin) init(gamepads *gamepads) error {
-	if err := g.gc.init(gamepads); err != nil {
-		return err
+	if !g.gcInited {
+		if err := g.gc.init(gamepads); err != nil {
+			return err
+		}
+		g.gcInited = true
 	}
 	if g.iokit != nil {
 		if err := g.iokit.init(gamepads); err != nil {
