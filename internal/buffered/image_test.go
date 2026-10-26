@@ -188,3 +188,30 @@ func TestReadPixelsOnLargeImageAcrossTiles(t *testing.T) {
 		t.Errorf("cached pixels size: got: %d, want: %d", got, want)
 	}
 }
+
+func TestReadPixelsEmptyRegionDoesNotPopulateCache(t *testing.T) {
+	for _, region := range []image.Rectangle{
+		{},
+		image.Rect(10, 10, 10, 20),
+		image.Rect(10, 10, 20, 10),
+	} {
+		img := buffered.NewImage(64, 64, atlas.ImageTypeRegular)
+		defer img.Deallocate()
+		img.WritePixels(bytes.Repeat([]byte{1, 2, 3, 255}, 64*64), image.Rect(0, 0, 64, 64))
+		ok, err := img.ReadPixels(ui.Get().GraphicsDriverForTesting(), nil, region)
+		if !ok || err != nil {
+			t.Errorf("empty read of %v = %v, %v; want true, nil", region, ok, err)
+		}
+		if got := img.CachedPixelsSizeForTesting(); got != 0 {
+			t.Errorf("empty read of %v cached %d bytes, want 0", region, got)
+		}
+		var pixel [4]byte
+		ok, err = img.ReadPixels(ui.Get().GraphicsDriverForTesting(), pixel[:], image.Rect(1, 1, 2, 2))
+		if !ok || err != nil {
+			t.Fatal("non-empty read failed")
+		}
+		if want := [4]byte{1, 2, 3, 255}; pixel != want {
+			t.Errorf("non-empty read = %v, want %v", pixel, want)
+		}
+	}
+}
