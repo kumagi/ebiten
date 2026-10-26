@@ -105,10 +105,14 @@ var (
 	builtinShadersM       sync.Mutex
 )
 
-func builtinShader(filter builtinshader.Filter, address builtinshader.Address, useColorM bool) *Shader {
+func validateFilter(filter builtinshader.Filter) {
 	if filter < 0 || filter >= builtinshader.FilterCount {
 		panic(fmt.Sprintf("ebiten: invalid filter: %d", filter))
 	}
+}
+
+func builtinShader(filter builtinshader.Filter, address builtinshader.Address, useColorM bool) *Shader {
+	validateFilter(filter)
 	if address < 0 || address >= builtinshader.AddressCount {
 		panic(fmt.Sprintf("ebiten: invalid address: %d", address))
 	}

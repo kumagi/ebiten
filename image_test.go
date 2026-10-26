@@ -5664,3 +5664,54 @@ func TestImageDrawTrianglesWithNilImageAndEmptyIndices(t *testing.T) {
 	vs := make([]ebiten.Vertex, 3)
 	dst.DrawTriangles(vs, nil, nil, nil)
 }
+
+func TestDrawValidationWithSingularTransform(t *testing.T) {
+	dst := ebiten.NewImage(2, 2)
+	defer dst.Deallocate()
+	src := ebiten.NewImage(2, 2)
+	defer src.Deallocate()
+	shader, err := ebiten.NewShader([]byte(`//kage:unit pixels
+package main
+var U vec4
+func Fragment(dst vec4, src vec2, color vec4) vec4 { return U }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer shader.Deallocate()
+
+	for _, singular := range []bool{false, true} {
+		var geoM ebiten.GeoM
+		if singular {
+			geoM.Scale(0, 1)
+		}
+		for _, filter := range []ebiten.Filter{-1, 3} {
+			t.Run(fmt.Sprintf("Filter/%v/%v", singular, filter), func(t *testing.T) {
+				defer func() {
+					if recover() == nil {
+						t.Error("invalid filter did not panic")
+					}
+				}()
+				dst.DrawImage(src, &ebiten.DrawImageOptions{
+					GeoM:   geoM,
+					Filter: filter,
+				})
+			})
+		}
+		for _, uniform := range []any{"invalid", []float32{1, 2, 3}} {
+			t.Run(fmt.Sprintf("Uniform/%v/%T", singular, uniform), func(t *testing.T) {
+				defer func() {
+					if recover() == nil {
+						t.Error("invalid uniform did not panic")
+					}
+				}()
+				dst.DrawRectShader(2, 2, shader, &ebiten.DrawRectShaderOptions{
+					GeoM: geoM,
+					Uniforms: map[string]any{
+						"U": uniform,
+					},
+				})
+			})
+		}
+	}
+}

@@ -319,6 +319,7 @@ func (i *Image) DrawImage(img *Image, options *DrawImageOptions) {
 		blend = options.CompositeMode.blend().internalBlend()
 	}
 	filter := builtinshader.Filter(options.Filter)
+	validateFilter(filter)
 
 	geoM := options.GeoM
 	if offsetX, offsetY := i.adjustPosition(0, 0); offsetX != 0 || offsetY != 0 {
@@ -343,6 +344,7 @@ func (i *Image) DrawImage(img *Image, options *DrawImageOptions) {
 
 	useColorM := !colorm.IsIdentity()
 	shader := builtinShader(filter, builtinshader.AddressUnsafe, useColorM)
+
 	i.tmpUniforms = i.tmpUniforms[:0]
 	if useColorM {
 		var body [16]float32
@@ -1140,6 +1142,7 @@ func (i *Image) DrawRectShader(width, height int, shader *Shader, options *DrawR
 		geoM.Translate(float64(offsetX), float64(offsetY))
 	}
 	a, b, c, d, tx, ty := geoM.elements32()
+	i.tmpUniforms = shader.appendUniforms(i.tmpUniforms[:0], options.Uniforms)
 	if det := a*d - b*c; det == 0 {
 		return
 	}
@@ -1152,9 +1155,6 @@ func (i *Image) DrawRectShader(width, height int, shader *Shader, options *DrawR
 		float32(srcRegions[0].Min.X+width), float32(srcRegions[0].Min.Y+height),
 		a, b, c, d, tx, ty, cr, cg, cb, ca)
 	is := graphics.QuadIndices()
-
-	i.tmpUniforms = i.tmpUniforms[:0]
-	i.tmpUniforms = shader.appendUniforms(i.tmpUniforms, options.Uniforms)
 
 	dr := i.adjustedBounds()
 
