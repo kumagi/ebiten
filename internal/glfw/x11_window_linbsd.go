@@ -464,6 +464,20 @@ func convertLatin1toUTF8(source string) string {
 	return string(codepoints)
 }
 
+// convertUTF8ToLatin1 converts the specified UTF-8 string to Latin-1.
+// A code point that Latin-1 cannot represent is replaced with '?'.
+func convertUTF8ToLatin1(source string) string {
+	latin1 := make([]byte, 0, len(source))
+	for _, r := range source {
+		if r < 0x100 {
+			latin1 = append(latin1, byte(r))
+		} else {
+			latin1 = append(latin1, '?')
+		}
+	}
+	return string(latin1)
+}
+
 // updateCursorImage updates the cursor image according to its cursor mode.
 func updateCursorImage(window *Window) {
 	if window.cursorMode == CursorNormal {
@@ -1139,7 +1153,14 @@ func writeTargetToProperty(request *_XSelectionRequestEvent) _Atom {
 	if request.Selection == _glfw.platformWindow.PRIMARY {
 		selectionString = _glfw.platformWindow.primarySelectionString
 	}
-	selectionBytes := []byte(selectionString)
+	// selectionBytes returns the bytes of the selection string in the format of the given target.
+	selectionBytes := func(target _Atom) []byte {
+		if target == _XA_STRING {
+			// The ICCCM defines the STRING target as ISO Latin-1.
+			return []byte(convertUTF8ToLatin1(selectionString))
+		}
+		return []byte(selectionString)
+	}
 
 	if request.Property == _None {
 		// The requester is a legacy client (ICCCM section 2.2)
@@ -1199,7 +1220,7 @@ func writeTargetToProperty(request *_XSelectionRequestEvent) _Atom {
 					targets[i+1],
 					targets[i],
 					_PropModeReplace,
-					selectionBytes)
+					selectionBytes(targets[i]))
 			} else {
 				targets[i+1] = _None
 			}
@@ -1240,7 +1261,7 @@ func writeTargetToProperty(request *_XSelectionRequestEvent) _Atom {
 				request.Property,
 				request.Target,
 				_PropModeReplace,
-				selectionBytes)
+				selectionBytes(request.Target))
 
 			return request.Property
 		}
