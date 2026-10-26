@@ -218,7 +218,7 @@ func (cs *compileState) parseStmt(block *block, fname string, stmt ast.Stmt, inP
 			}
 
 			if (op == shaderir.LeftShift || op == shaderir.RightShift) && rhs[0].Const != nil {
-				if _, ok := cs.shiftCount(stmt.Pos(), stmt.Tok, rhs[0].Const); !ok {
+				if _, ok := cs.shiftCount(stmt.Pos(), stmt.Tok, rhs[0].Const, true); !ok {
 					return nil, false
 				}
 			}

@@ -55,10 +55,14 @@ func argCountErrorPos(e *ast.CallExpr, argPositions []token.Pos, n int) token.Po
 // enormous number (e.g. 1<<(1<<40)) and exhaust memory.
 const maxConstShift = 1 << 16
 
+// maxShaderShiftCount bounds emitted constant shifts to the portable 32-bit range.
+const maxShaderShiftCount = 31
+
 var textureVariableRe = regexp.MustCompile(`\A__t(\d+)\z`)
 
-// shiftCount validates the constant shift count c of the operator op and returns it.
-func (cs *compileState) shiftCount(pos token.Pos, op token.Token, c gconstant.Value) (uint, bool) {
+// shiftCount validates the constant shift count c of the operator op and returns it. emitted reports
+// whether the shift is output as an operation instead of being folded at compile time.
+func (cs *compileState) shiftCount(pos token.Pos, op token.Token, c gconstant.Value, emitted bool) (uint, bool) {
 	if c.Kind() != gconstant.Int {
 		cs.addError(pos, fmt.Sprintf("unexpected %s type for: %s", c.String(), op))
 		return 0, false
@@ -70,6 +74,11 @@ func (cs *compileState) shiftCount(pos token.Pos, op token.Token, c gconstant.Va
 	shift, ok := gconstant.Int64Val(c)
 	if !ok || shift > maxConstShift {
 		cs.addError(pos, fmt.Sprintf("shift count too large: %s", c.String()))
+		return 0, false
+	}
+	// Folded shifts keep arbitrary precision; emitted shifts use the backend's 32-bit integers.
+	if emitted && shift > maxShaderShiftCount {
+		cs.addError(pos, fmt.Sprintf("shift count out of range for a 32-bit int: %d", shift))
 		return 0, false
 	}
 	return uint(shift), true
@@ -206,7 +215,7 @@ func (cs *compileState) parseExpr(block *block, fname string, expr ast.Expr, mar
 			case token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ:
 				v = gconstant.MakeBool(gconstant.Compare(lhs[0].Const, op, rhs[0].Const))
 			case token.SHL, token.SHR:
-				shift, ok := cs.shiftCount(e.Pos(), e.Op, rhs[0].Const)
+				shift, ok := cs.shiftCount(e.Pos(), e.Op, rhs[0].Const, false)
 				if !ok {
 					return nil, nil, nil, false
 				}
@@ -224,7 +233,7 @@ func (cs *compileState) parseExpr(block *block, fname string, expr ast.Expr, mar
 		}
 
 		if (e.Op == token.SHL || e.Op == token.SHR) && rhs[0].Const != nil {
-			if _, ok := cs.shiftCount(e.Pos(), e.Op, rhs[0].Const); !ok {
+			if _, ok := cs.shiftCount(e.Pos(), e.Op, rhs[0].Const, true); !ok {
 				return nil, nil, nil, false
 			}
 		}

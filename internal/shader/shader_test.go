@@ -662,11 +662,31 @@ func TestCompileShiftCountWithVariable(t *testing.T) {
 			err:  true,
 		},
 		{
+			stmt: "x := 1; _ = x << 32",
+			err:  true,
+		},
+		{
+			stmt: "x := ivec2(1); _ = x << 33",
+			err:  true,
+		},
+		{
+			stmt: "x := 1; x <<= 40",
+			err:  true,
+		},
+		{
 			stmt: "x := 1; _ = x >> 1",
 			err:  false,
 		},
 		{
 			stmt: "x := 1; _ = x << 2",
+			err:  false,
+		},
+		{
+			stmt: "x := 1; _ = x << 31",
+			err:  false,
+		},
+		{
+			stmt: "x := 1; x <<= 31",
 			err:  false,
 		},
 		{
@@ -683,6 +703,42 @@ func TestCompileShiftCountWithVariable(t *testing.T) {
 		},
 		{
 			stmt: "x := 1; y := 2; _ = x << y",
+			err:  false,
+		},
+		{
+			stmt: "x := 1; _ = x >> 32",
+			err:  true,
+		},
+		{
+			stmt: "x := ivec2(1); _ = x >> 32",
+			err:  true,
+		},
+		{
+			stmt: "x := 1; x >>= 32",
+			err:  true,
+		},
+		{
+			stmt: "x := ivec2(1); x <<= 32",
+			err:  true,
+		},
+		{
+			stmt: "const Count = 40; x := 1; _ = x << Count",
+			err:  true,
+		},
+		{
+			stmt: "x := 1; _ = x >> 31",
+			err:  false,
+		},
+		{
+			stmt: "x := 1; x >>= 31",
+			err:  false,
+		},
+		{
+			stmt: "x := (1 << 40) >> 40; _ = x",
+			err:  false,
+		},
+		{
+			stmt: "x := -1 >> 40; _ = x",
 			err:  false,
 		},
 	}
