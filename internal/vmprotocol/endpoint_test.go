@@ -42,6 +42,14 @@ func TestEndpointRoundTrip(t *testing.T) {
 		{"tcp", "example.com:7000", "tcp://example.com:7000"},
 	}
 
+	if runtime.GOOS == "windows" {
+		cases = append(cases, struct {
+			network string
+			address string
+			wantURL string
+		}{"unix", `\\server\share\ebiten-vg\g.sock`, "unix:////server/share/ebiten-vg/g.sock"})
+	}
+
 	for _, c := range cases {
 		e := vmprotocol.Endpoint{Network: c.network, Address: c.address}
 		url, err := e.URL()
