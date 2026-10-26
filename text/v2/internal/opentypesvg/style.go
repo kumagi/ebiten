@@ -553,6 +553,9 @@ func dashArray(text string, context lengthContext) ([]float64, error) {
 		return nil, nil
 	}
 	if len(values)%2 != 0 {
+		if len(values)*2 > maxDashEntries {
+			return nil, errLimit
+		}
 		values = append(values, values...)
 	}
 	return values, nil

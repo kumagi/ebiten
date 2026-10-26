@@ -38,7 +38,8 @@ const (
 	maxColorDepth     = 16
 	maxGradientStops  = 1 << 16
 	maxPaletteEntries = 1 << 16
-	maxDashEntries    = 1024
+	// maxDashEntries bounds the normalized array, including odd-length repetition.
+	maxDashEntries = 1024
 	// maxStyleWork bounds charged bytes and matching/traversal operations.
 	maxStyleWork = 1 << 24
 	// maxCachedStyleValues bounds records across specified and source styles.
