@@ -701,6 +701,9 @@ func initializeGCGamepads() {
 		return
 	}
 
+	pool := cocoa.NSAutoreleasePool_new()
+	defer pool.Release()
+
 	// Queue all currently connected controllers. initializeGCGamepads is called from gamepads.update
 	// with theGamepads.m held, so the gamepad list must not be touched until the drain in
 	// nativeGamepadsGC.update, which the same gamepads.update call reaches right after.
