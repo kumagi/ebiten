@@ -68,6 +68,8 @@ const (
 	pipeStartOffsetX = 8
 	pipeIntervalX    = 8
 	pipeGapY         = 5
+	gopherWidth      = 30
+	gopherHeight     = 60
 )
 
 var (
@@ -331,7 +333,10 @@ func (g *Game) pipeAt(tileX int) (tileY int, ok bool) {
 }
 
 func (g *Game) score() int {
-	x := floorDiv(g.x16, 16) / tileSize
+	// Count a pipe after the gopher's collision box clears its right edge.
+	w := gopherImage.Bounds().Dx()
+	x0 := floorDiv(g.x16, 16) + (w-gopherWidth)/2
+	x := floorDiv(x0-pipeWidth, tileSize)
 	if (x - pipeStartOffsetX) <= 0 {
 		return 0
 	}
@@ -342,10 +347,6 @@ func (g *Game) hit() bool {
 	if g.mode != ModeGame {
 		return false
 	}
-	const (
-		gopherWidth  = 30
-		gopherHeight = 60
-	)
 	w, h := gopherImage.Bounds().Dx(), gopherImage.Bounds().Dy()
 	x0 := floorDiv(g.x16, 16) + (w-gopherWidth)/2
 	y0 := floorDiv(g.y16, 16) + (h-gopherHeight)/2
