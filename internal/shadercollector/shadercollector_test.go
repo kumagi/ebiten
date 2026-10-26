@@ -37,6 +37,69 @@ func hasGoCommand() bool {
 	return true
 }
 
+func TestShaderErrorIdentity(t *testing.T) {
+	if !hasGoCommand() {
+		t.Skip("go command is missing")
+	}
+	tool := filepath.Join(t.TempDir(), "shadercollector.exe")
+	if out, err := exec.Command("go", "build", "-buildvcs=false", "-o", tool, ".").CombinedOutput(); err != nil {
+		t.Fatalf("building shadercollector: %v\n%s", err, out)
+	}
+	for _, kind := range []string{"constant", "file", "manifest", "compile"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			source := "package main\nfunc Fragment(p vec4, uv vec2, c vec4) vec4 { return c"
+			if kind == "compile" {
+				source = "package main\nfunc Fragment(p vec4, uv vec2, c vec4) vec4 { return missing }"
+			}
+			goSource := "package shadererrors\n//ebitengine:shaderfile bad.kage\n"
+			if kind == "constant" {
+				goSource = "package shadererrors\n//ebitengine:shadersource\nconst shader = `" + source + "`\n"
+			}
+			for name, content := range map[string]string{
+				"go.mod":        "module example.com/shadererrors\n\ngo 1.24\n",
+				"source.go":     goSource,
+				"bad.kage":      source,
+				"manifest.json": `{"ShaderFiles":["bad.kage"]}`,
+			} {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			args := []string{"."}
+			if kind == "manifest" {
+				args = []string{"-manifest", filepath.Join(dir, "manifest.json")}
+			} else if kind == "compile" {
+				args = []string{"-target", "glsl", "."}
+			}
+			cmd := exec.Command(tool, args...)
+			cmd.Dir = dir
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatal("invalid shader succeeded")
+			}
+			file, stage := "bad.kage", "hashing"
+			if kind == "constant" {
+				file = "source.go"
+			}
+			if kind == "compile" {
+				stage = "compiling"
+			}
+			for _, want := range []string{filepath.Join(dir, file), stage} {
+				if !strings.Contains(string(out), want) {
+					t.Errorf("error %q does not identify %q", out, want)
+				}
+			}
+			if kind != "manifest" && !strings.Contains(string(out), "example.com/shadererrors") {
+				t.Errorf("error %q does not identify package", out)
+			}
+			if !regexp.MustCompile(`\d+:\d+:`).Match(out) {
+				t.Errorf("error %q lost source position", out)
+			}
+		})
+	}
+}
+
 func TestRun(t *testing.T) {
 	if !hasGoCommand() {
 		t.Skip("go command is missing")

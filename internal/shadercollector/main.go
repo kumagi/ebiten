@@ -74,6 +74,21 @@ type Shader struct {
 	PSSL     *PSSL   `json:",omitempty"`
 }
 
+// identity describes where a shader comes from, to name it in an error message.
+func (s *Shader) identity() string {
+	file := s.KageFile
+	if file == "" {
+		file = s.GoFile
+	}
+	if s.Package == "" {
+		return file
+	}
+	if file == "" {
+		return s.Package
+	}
+	return fmt.Sprintf("%s (%s)", s.Package, file)
+}
+
 type GLSL struct {
 	Vertex   string
 	Fragment string
@@ -535,7 +550,7 @@ func hashAndCompileShaders(shaders []Shader, targets []string) error {
 		shader := &shaders[i]
 		hash, err := legacyshader.CalcSourceID([]byte(shader.Source))
 		if err != nil {
-			return err
+			return fmt.Errorf("hashing the shader %s failed: %w", shader.identity(), err)
 		}
 		shader.SourceID = hash.String()
 	}
@@ -555,7 +570,7 @@ func hashAndCompileShaders(shaders []Shader, targets []string) error {
 func compile(shader *Shader, targets []string) error {
 	ir, _, err := legacyshader.CompileShader([]byte(shader.Source))
 	if err != nil {
-		return fmt.Errorf("compiling shader failed: %w", err)
+		return fmt.Errorf("compiling the shader %s failed: %w", shader.identity(), err)
 	}
 
 	for _, target := range targets {
