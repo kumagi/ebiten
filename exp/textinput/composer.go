@@ -45,9 +45,10 @@ type Composer struct {
 	// (Update asks again later). Required.
 	OnNewSession func() *SessionOptions
 
-	// OnComposition is called when the IME's preedit changes, including
-	// when the session ends and the preedit should be cleared (the
-	// Composition is then the zero value). Optional.
+	// OnComposition reports the current preedit while a session is active,
+	// including unchanged preedit on subsequent Update calls. It is also
+	// called when the session ends and the preedit should be cleared
+	// (the Composition is then the zero value). Optional.
 	OnComposition func(c *Composition)
 
 	// OnCommit is called when the IME commits. The caller applies the
