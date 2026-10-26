@@ -71,7 +71,14 @@ func (m *mascot) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func (m *mascot) Update() error {
-	sw, sh := ebiten.Monitor().Size()
+	mo := ebiten.Monitor()
+	if mo == nil {
+		return nil
+	}
+	sw, sh := mo.Size()
+	if sw == 0 || sh == 0 {
+		return nil
+	}
 	ebiten.SetWindowPosition(m.x16/16, m.y16/16+sh-height)
 
 	if m.vx16 == 0 {
