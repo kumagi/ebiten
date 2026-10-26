@@ -2618,7 +2618,7 @@ func (u *glfwBackend) runMultiThread(game Game, options *RunOptions) error {
 	wg.Go(func() error {
 		defer cancel()
 
-		graphicscommand.LoopRenderThread(ctx.Done())
+		graphicscommand.LoopRenderThreadAndStop(ctx.Done())
 		return nil
 	})
 

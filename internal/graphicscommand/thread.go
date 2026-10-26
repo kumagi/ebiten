@@ -30,6 +30,12 @@ func LoopRenderThread(done <-chan struct{}) {
 	theRenderThread.Loop(done)
 }
 
+// LoopRenderThreadAndStop runs LoopRenderThread and then permanently stops the rendering thread.
+// Use this only when the loop covers the thread's entire lifetime, rather than a single mobile frame.
+func LoopRenderThreadAndStop(done <-chan struct{}) {
+	theRenderThread.LoopAndStop(done)
+}
+
 // runOnRenderThread calls f with arg on the rendering thread and returns its result.
 func runOnRenderThread[A, R any](f func(A) R, arg A) R {
 	return thread.CallWithArgAndResult(theRenderThread, f, arg)
