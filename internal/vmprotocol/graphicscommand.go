@@ -78,6 +78,11 @@ func (k GraphicsCommandKind) String() string {
 // they cross the wire, and the host replays them.
 //
 // Only the fields relevant to Kind are populated; the rest stay at their zero values.
+//
+// Commands delivered by a remote graphics driver to its Host are borrowed for the
+// duration of SendGraphicsCommands. Neither the command slice nor its payload slices
+// may be retained after the call returns. A host that needs to keep the data must copy
+// it before returning; the copies described below are owned by the driver.
 type GraphicsCommand struct {
 	Kind GraphicsCommandKind
 
