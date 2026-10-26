@@ -340,6 +340,9 @@ func (c *context) newProgram(shaders []shader, attributes []string) (program, er
 	}
 
 	c.ctx.LinkProgram(p)
+	for _, shader := range shaders {
+		c.ctx.DetachShader(p, uint32(shader))
+	}
 	return program(p), nil
 }
 
