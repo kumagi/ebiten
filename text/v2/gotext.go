@@ -456,7 +456,8 @@ func goTextGlyphImageInfo(face *GoTextFace, glyph *goTextGlyph, origin fixed.Poi
 	if glyph.render == nil {
 		return
 	}
-	if glyph.render.useBitmap && !glyph.render.hasSVG {
+	// Sideways bitmap glyphs use the rotated outline when realized.
+	if glyph.render.useBitmap && !glyph.render.sideways && !glyph.render.hasSVG {
 		// Bitmap glyph: dimensions come from rd.bounds (sourced from
 		// GlyphExtents via the sbix or CBDT/EBDT subtable, set during
 		// buildRenderData) so layout doesn't have to wait for the

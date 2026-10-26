@@ -16,6 +16,7 @@ package text_test
 
 import (
 	"bytes"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -122,6 +123,29 @@ func rotateClockwise(rows string) string {
 		sb.WriteByte('\n')
 	}
 	return sb.String()
+}
+
+func TestBitmapFontSidewaysImageBounds(t *testing.T) {
+	for _, size := range []float64{16, 32} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			source, err := text.NewGoTextFaceSource(bytes.NewReader(fonts.TerminusTTF_ttf))
+			if err != nil {
+				t.Fatal(err)
+			}
+			face := &text.GoTextFace{Source: source, Size: size, Direction: text.DirectionTopToBottomAndLeftToRight}
+			glyphs := text.AppendLazyGlyphs(nil, "F", face, nil)
+			if len(glyphs) != 1 {
+				t.Fatalf("got %d glyphs, want 1", len(glyphs))
+			}
+			img := glyphs[0].Image()
+			if img == nil {
+				t.Fatal("expected a glyph image")
+			}
+			if got, want := img.Bounds().Size(), glyphs[0].ImageBounds.Size(); got != want {
+				t.Errorf("image size = %v, layout bounds size = %v", got, want)
+			}
+		})
+	}
 }
 
 // TestBitmapFontSideways tests that a glyph of a bitmap font is rotated in a
