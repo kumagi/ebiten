@@ -1551,9 +1551,12 @@ func processEvent(event *_XEvent) error {
 
 				case _XI_DeviceChanged:
 					// The event carries the changed device's new classes; rebuild its scroll axes
-					// from them.
+					// from them, discarding any classes the device no longer has.
 					e := (*_XIDeviceChangedEvent)(unsafe.Pointer(cookie.Data))
-					xiScrollAxesFromClasses(e.NumClasses, e.Classes, _glfw.platformWindow.xi.scrollAxes)
+					xi := &_glfw.platformWindow.xi
+					delete(xi.scrollAxes, e.Deviceid)
+					delete(xi.scrollAxes, e.Sourceid)
+					xiScrollAxesFromClasses(e.NumClasses, e.Classes, xi.scrollAxes)
 				}
 			}
 
