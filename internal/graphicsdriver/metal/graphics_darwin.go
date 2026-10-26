@@ -165,6 +165,8 @@ func (g *Graphics) Begin() error {
 func (g *Graphics) End(mode graphicsdriver.FlushMode) error {
 	g.flushCommandBufferIfNeeded(mode == graphicsdriver.FlushModePresent)
 	if err := g.keepResidentIfIdle(); err != nil {
+		g.pool.Release()
+		g.pool.ID = 0
 		return err
 	}
 	// The residency set retains its resources until their removals are committed.
