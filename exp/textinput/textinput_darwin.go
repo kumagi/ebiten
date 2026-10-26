@@ -136,11 +136,19 @@ type nsRange struct {
 func (t *textInputImpl) start(bounds image.Rectangle) (<-chan textInputState, func()) {
 	t.endIfNeeded()
 
-	tc := getTextInputClient()
 	window := idNSApplication.Send(sel_sharedApplication).Send(sel_mainWindow)
+	if window == 0 {
+		return nil, nil
+	}
 	contentView := window.Send(sel_contentView)
+	if contentView == 0 {
+		return nil, nil
+	}
+	tc := getTextInputClient()
 	contentView.Send(sel_addSubview, tc)
-	window.Send(sel_makeFirstResponder, tc)
+	if window.Send(sel_makeFirstResponder, tc) == 0 {
+		return nil, nil
+	}
 
 	// Discard marked text left over from a previous session. The text input
 	// client is shared, so otherwise a previously focused field's uncommitted
