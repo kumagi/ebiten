@@ -253,16 +253,19 @@ func appendShaderSources(shaders []Shader, pkg *packages.Package, visitedPaths m
 					}
 					patterns := strings.TrimPrefix(line, m)
 					for pattern := range strings.FieldsFuncSeq(patterns, isAsciiSpace) {
-						pattern := filepath.Join(pkg.Dir, filepath.FromSlash(pattern))
-						if _, ok := visitedPatterns[pattern]; ok {
+						resolved := filepath.FromSlash(pattern)
+						if !filepath.IsAbs(resolved) {
+							resolved = filepath.Join(pkg.Dir, resolved)
+						}
+						if _, ok := visitedPatterns[resolved]; ok {
 							continue
 						}
-						visitedPatterns[pattern] = struct{}{}
-						if !includesGlobMetaChar(pattern) {
-							stat, err := os.Stat(pattern)
+						visitedPatterns[resolved] = struct{}{}
+						if !includesGlobMetaChar(resolved) {
+							stat, err := os.Stat(resolved)
 							if err == nil && stat.IsDir() {
 								// If the pattern is a directory, read all files in the directory recursively.
-								if err := filepath.WalkDir(pattern, func(path string, d os.DirEntry, err error) error {
+								if err := filepath.WalkDir(resolved, func(path string, d os.DirEntry, err error) error {
 									if err != nil {
 										return err
 									}
@@ -288,7 +291,7 @@ func appendShaderSources(shaders []Shader, pkg *packages.Package, visitedPaths m
 								return nil, err
 							}
 						}
-						paths, err := filepath.Glob(pattern)
+						paths, err := filepath.Glob(resolved)
 						if err != nil {
 							return nil, err
 						}

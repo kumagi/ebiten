@@ -37,6 +37,63 @@ func hasGoCommand() bool {
 	return true
 }
 
+func TestShaderFilePaths(t *testing.T) {
+	if !hasGoCommand() {
+		t.Skip("go command is missing")
+	}
+	tool := filepath.Join(t.TempDir(), "shadercollector.exe")
+	if out, err := exec.Command("go", "build", "-o", tool, ".").CombinedOutput(); err != nil {
+		t.Fatalf("building shadercollector: %v\n%s", err, out)
+	}
+	for _, kind := range []string{"file", "glob", "directory", "relative", "overlap"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			shaderDir := filepath.Join(dir, "shaders")
+			if err := os.Mkdir(shaderDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			shaderFile := filepath.Join(shaderDir, "shader.kage")
+			pattern := shaderFile
+			switch kind {
+			case "glob":
+				pattern = filepath.Join(shaderDir, "*.kage")
+			case "directory":
+				pattern = shaderDir
+			case "relative":
+				pattern = "shaders/shader.kage"
+			case "overlap":
+				pattern = filepath.ToSlash(shaderFile) + " shaders/shader.kage"
+			}
+			files := map[string]string{
+				"go.mod":              "module example.com/shaderpaths\n\ngo 1.24\n",
+				"source.go":           "package shaderpaths\n\n//ebitengine:shaderfile " + filepath.ToSlash(pattern) + "\n",
+				"shaders/shader.kage": "package main\nfunc Fragment(position vec4, texCoord vec2, color vec4) vec4 { return color }\n",
+			}
+			for name, content := range files {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cmd := exec.Command(tool, ".")
+			cmd.Dir = dir
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("collecting shaders: %v", err)
+			}
+			var shaders []struct{ Package, KageFile, Source string }
+			if err := json.Unmarshal(out, &shaders); err != nil {
+				t.Fatal(err)
+			}
+			if len(shaders) != 1 {
+				t.Fatalf("collected %d shaders, want 1", len(shaders))
+			}
+			if shaders[0].KageFile != shaderFile || shaders[0].Package != "example.com/shaderpaths" || shaders[0].Source != files["shaders/shader.kage"] {
+				t.Errorf("unexpected shader: %+v", shaders[0])
+			}
+		})
+	}
+}
+
 func TestRun(t *testing.T) {
 	if !hasGoCommand() {
 		t.Skip("go command is missing")
