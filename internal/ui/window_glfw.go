@@ -263,17 +263,18 @@ func (u *glfwBackend) applyWindowSettings() error {
 	}); err != nil {
 		return err
 	}
-	if err := w.windowSizeInDIP.apply(func(p image.Point) error {
+	if p := w.windowSizeInDIP.pending(); p != nil {
 		maximized, err := u.isWindowMaximized()
 		if err != nil {
 			return err
 		}
-		if maximized && runtime.GOOS != "darwin" {
-			return nil
+		// Keep the request pending while a maximized window cannot be resized.
+		if !maximized || runtime.GOOS == "darwin" {
+			if err := u.setWindowSizeInDIP(p.X, p.Y, true); err != nil {
+				return err
+			}
+			w.windowSizeInDIP.markApplied(p)
 		}
-		return u.setWindowSizeInDIP(p.X, p.Y, true)
-	}); err != nil {
-		return err
 	}
 	// Present the first frame before showing the window (#2725).
 	if u.bufferOnceSwapped || !w.isWindowVisible() {
