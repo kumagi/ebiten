@@ -14,6 +14,15 @@
 
 package ui
 
+import "syscall/js"
+
+func UpdateCanvasSizeForTest(c js.Value) {
+	previous := canvas
+	canvas = c
+	defer func() { canvas = previous }()
+	theUI.updateScreenSize()
+}
+
 func IsShortcutChordForTest(ctrl, alt, meta, altGraph, isApple bool) bool {
 	return isShortcutChord(ctrl, alt, meta, altGraph, isApple)
 }

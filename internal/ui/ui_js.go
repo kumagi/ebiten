@@ -376,9 +376,9 @@ func (u *UserInterface) updateImpl(force bool) (err error) {
 		return err
 	}
 
-	// TODO: If DeviceScaleFactor changes, call updateScreenSize.
-	// Now there is not a good way to detect the change.
-	// See also https://crbug.com/123694.
+	// Resize the drawing buffer inside the lock: assigning canvas width/height
+	// clears the buffer, which must not interleave with a rendering frame.
+	u.updateScreenSize()
 
 	w, h := u.outsideSize()
 	sw, sh := u.screenSize()
@@ -423,7 +423,9 @@ func (u *UserInterface) loopGame() error {
 	// Initialize the screen size first (#3034).
 	// If ebiten.SetRunnableOnUnfocused(false) and the canvas is not focused,
 	// suspended() returns true and the update routine cannot start.
+	u.mu.Lock()
 	u.updateScreenSize()
+	u.mu.Unlock()
 
 	// The loop ends with the first error from a frame or from the audio watcher.
 	g, ctx := errgroup.WithContext(stdcontext.Background())
@@ -670,8 +672,6 @@ func (u *UserInterface) setWindowEventHandlers(v js.Value) {
 }
 
 func (u *UserInterface) onResize() {
-	u.updateScreenSize()
-
 	// updateImpl can block. Use goroutine.
 	// See https://pkg.go.dev/syscall/js#FuncOf.
 	go func() {
@@ -977,14 +977,20 @@ func (u *UserInterface) screenSize() (int, int) {
 }
 
 func (u *UserInterface) updateScreenSize() {
-	if document.Truthy() {
-		body := document.Get("body")
-		f := theMonitor.DeviceScaleFactor()
-		bw := int(body.Get("clientWidth").Float() * f)
-		bh := int(body.Get("clientHeight").Float() * f)
-		canvas.Set("width", bw)
-		canvas.Set("height", bh)
+	if !document.Truthy() {
+		return
 	}
+	body := document.Get("body")
+	f := theMonitor.DeviceScaleFactor()
+	bw := int(body.Get("clientWidth").Float() * f)
+	bh := int(body.Get("clientHeight").Float() * f)
+	// Assigning width/height resets the drawing buffer even when the values
+	// are unchanged, so set them only when the size actually differs.
+	if canvas.Get("width").Int() == bw && canvas.Get("height").Int() == bh {
+		return
+	}
+	canvas.Set("width", bw)
+	canvas.Set("height", bh)
 }
 
 func (u *UserInterface) readInputState(inputState *InputState) {
