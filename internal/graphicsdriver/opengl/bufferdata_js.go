@@ -16,7 +16,19 @@
 
 package opengl
 
+import (
+	"fmt"
+
+	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/opengl/gl"
+)
+
 func (c *context) readBufferData(target uint32, offset int, dst []byte) error {
+	if len(dst) == 0 {
+		return nil
+	}
 	c.ctx.GetBufferSubData(target, offset, dst)
+	if e := c.ctx.GetError(); e != gl.NO_ERROR {
+		return fmt.Errorf("opengl: reading a buffer failed: (glGetError) %d", e)
+	}
 	return nil
 }
