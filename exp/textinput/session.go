@@ -232,8 +232,12 @@ func (s *session) drain() error {
 }
 
 // Composition returns the current preedit text and the IME-side selection
-// within it. Returns the zero value when no composition is in progress.
+// within it. Returns the zero value when no composition is in progress,
+// including after the session closes.
 func (s *session) Composition() Composition {
+	if s.IsClosed() {
+		return Composition{}
+	}
 	return s.loadComposition()
 }
 

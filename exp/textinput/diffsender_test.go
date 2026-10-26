@@ -414,3 +414,51 @@ func TestHandlePlatformStateBeforeSessionRegistration(t *testing.T) {
 		t.Errorf("CommitKind = %d, want %d", got, want)
 	}
 }
+
+func TestSessionCompositionAfterClose(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		close func(*textinput.DiffSender)
+	}{
+		{
+			name: "commit",
+			close: func(d *textinput.DiffSender) {
+				d.TrySend("ni", 2, 2, false, textinput.CommitRegular)
+			},
+		},
+		{
+			name:  "platform_end",
+			close: (*textinput.DiffSender).End,
+		},
+		{
+			name:  "user_end",
+			close: (*textinput.DiffSender).EndByUser,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := textinput.NewDiffSender("", "")
+			d.TrySend("ni", 0, 2, false, textinput.CommitNone)
+			if err := d.Update(); err != nil {
+				t.Fatal(err)
+			}
+			if got := d.Composition().Text(); got != "ni" {
+				t.Fatalf("open composition = %q, want ni", got)
+			}
+			tc.close(d)
+			if err := d.Update(); err != nil {
+				t.Fatal(err)
+			}
+			if !d.SessionClosed() {
+				t.Fatal("session did not close")
+			}
+			if got := *d.Composition(); got != (textinput.Composition{}) {
+				t.Errorf("closed composition = %v, want zero", got)
+			}
+			if tc.name == "commit" {
+				if c := d.Commit(); c == nil || c.Text() != "ni" {
+					t.Errorf("commit was lost: %v", c)
+				}
+			}
+		})
+	}
+}
