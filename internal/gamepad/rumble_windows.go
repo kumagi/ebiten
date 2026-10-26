@@ -101,6 +101,9 @@ func (x *xinputRumbler) stop() {
 }
 
 func (x *xinputRumbler) close() {
+	if x.vib {
+		x.stop()
+	}
 }
 
 func (x *xinputRumbler) available() bool {
