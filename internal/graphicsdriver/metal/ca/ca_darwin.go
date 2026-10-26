@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"sync"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -92,41 +93,65 @@ type MetalLayer struct {
 	metalLayer objc.ID
 }
 
+type coreGraphicsFunctions struct {
+	handle                     uintptr
+	cgColorSpaceCreateWithName uintptr
+	cgColorSpaceRelease        uintptr
+}
+
+// Keep one library reference for the lifetime of the cached function pointers.
+var loadCoreGraphics = sync.OnceValues(func() (f coreGraphicsFunctions, err error) {
+	coreGraphics, err := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
+	if err != nil {
+		return coreGraphicsFunctions{}, err
+	}
+	defer func() {
+		if err != nil {
+			_ = purego.Dlclose(coreGraphics)
+		}
+	}()
+
+	createWithName, err := purego.Dlsym(coreGraphics, "CGColorSpaceCreateWithName")
+	if err != nil {
+		return coreGraphicsFunctions{}, err
+	}
+	release, err := purego.Dlsym(coreGraphics, "CGColorSpaceRelease")
+	if err != nil {
+		return coreGraphicsFunctions{}, err
+	}
+	return coreGraphicsFunctions{
+		handle:                     coreGraphics,
+		cgColorSpaceCreateWithName: createWithName,
+		cgColorSpaceRelease:        release,
+	}, nil
+})
+
 // NewMetalLayer creates a new Core Animation Metal layer.
 //
 // Reference: https://developer.apple.com/documentation/quartzcore/cametallayer?language=objc.
 func NewMetalLayer(colorSpace color.ColorSpace) (MetalLayer, error) {
-	coreGraphics, err := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
-	if err != nil {
-		return MetalLayer{}, err
-	}
-
-	cgColorSpaceCreateWithName, err := purego.Dlsym(coreGraphics, "CGColorSpaceCreateWithName")
-	if err != nil {
-		return MetalLayer{}, err
-	}
-
-	cgColorSpaceRelease, err := purego.Dlsym(coreGraphics, "CGColorSpaceRelease")
-	if err != nil {
-		return MetalLayer{}, err
-	}
-
-	var colorSpaceSym uintptr
+	var colorSpaceName string
 	switch colorSpace {
 	case color.ColorSpaceSRGB:
-		kCGColorSpaceSRGB, err := purego.Dlsym(coreGraphics, "kCGColorSpaceSRGB")
-		if err != nil {
-			return MetalLayer{}, err
-		}
-		colorSpaceSym = kCGColorSpaceSRGB
+		colorSpaceName = "kCGColorSpaceSRGB"
 	case color.ColorSpaceDisplayP3:
-		kCGColorSpaceDisplayP3, err := purego.Dlsym(coreGraphics, "kCGColorSpaceDisplayP3")
-		if err != nil {
-			return MetalLayer{}, err
-		}
-		colorSpaceSym = kCGColorSpaceDisplayP3
+		colorSpaceName = "kCGColorSpaceDisplayP3"
 	default:
 		return MetalLayer{}, fmt.Errorf("ca: unsupported color space: %d", colorSpace)
+	}
+
+	var f coreGraphicsFunctions
+	var colorSpaceSym uintptr
+	if runtime.GOOS != "ios" {
+		var err error
+		f, err = loadCoreGraphics()
+		if err != nil {
+			return MetalLayer{}, err
+		}
+		colorSpaceSym, err = purego.Dlsym(f.handle, colorSpaceName)
+		if err != nil {
+			return MetalLayer{}, err
+		}
 	}
 
 	layer := objc.ID(class_CAMetalLayer).Send(sel_new)
@@ -135,9 +160,9 @@ func NewMetalLayer(colorSpace color.ColorSpace) (MetalLayer, error) {
 	// TODO: Enable this on iOS as well.
 	if runtime.GOOS != "ios" {
 		// Dlsym returns pointer to symbol so dereference it.
-		colorspace, _, _ := purego.SyscallN(cgColorSpaceCreateWithName, **(**uintptr)(unsafe.Pointer(&colorSpaceSym)))
+		colorspace, _, _ := purego.SyscallN(f.cgColorSpaceCreateWithName, **(**uintptr)(unsafe.Pointer(&colorSpaceSym)))
 		layer.Send(sel_setColorspace, colorspace)
-		purego.SyscallN(cgColorSpaceRelease, colorspace)
+		purego.SyscallN(f.cgColorSpaceRelease, colorspace)
 	}
 	return MetalLayer{layer}, nil
 }
