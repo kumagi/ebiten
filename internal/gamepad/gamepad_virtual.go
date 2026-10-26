@@ -16,6 +16,7 @@ package gamepad
 
 import (
 	"maps"
+	"math"
 	"slices"
 	"time"
 
@@ -26,6 +27,8 @@ import (
 // VirtualGamepadState is the externally supplied state of one virtual gamepad. The raw axes and
 // buttons follow the public gamepad view, where hats are folded into buttons; the standard maps hold
 // the standard-layout view, with a present key meaning the standard axis or button is available.
+// Axis and analog button values and touch coordinates are clamped to their documented ranges;
+// NaN values are treated as zero.
 type VirtualGamepadState struct {
 	ID    ID
 	SDLID string
@@ -157,11 +160,29 @@ func (g *Gamepad) setVirtualState(s *VirtualGamepadState) {
 		// Copy into the gamepad's own (reused) storage so its state does not alias the caller's buffers,
 		// which Update is free to reuse or mutate after it returns.
 		n.axes = append(n.axes[:0], s.Axes...)
+		for i, a := range n.axes {
+			n.axes[i] = clampAxis(a)
+		}
 		n.buttons = append(n.buttons[:0], s.Buttons...)
 		n.standardAxes = copyMap(n.standardAxes, s.StandardAxes)
+		for k, a := range n.standardAxes {
+			n.standardAxes[k] = clampAxis(a)
+		}
 		n.standardButtons = copyMap(n.standardButtons, s.StandardButtons)
+		for k, b := range n.standardButtons {
+			b.Value = mathutil.Clamp01(b.Value)
+			n.standardButtons[k] = b
+		}
 		n.setTouches(s.TouchSurfaces)
 	})
+}
+
+// clampAxis clamps an axis to -1..1, treating NaN as zero.
+func clampAxis(v float64) float64 {
+	if math.IsNaN(v) {
+		return 0
+	}
+	return min(1, max(-1, v))
 }
 
 // copyMap returns a copy of src that reuses dst's storage; the result is nil when src is nil.
@@ -327,8 +348,8 @@ func (g *nativeGamepadVirtual) setTouches(surfaces [][]VirtualGamepadTouch) {
 			slots[j] = touchContact{
 				active: true,
 				id:     t.ID,
-				x:      t.X,
-				y:      t.Y,
+				x:      mathutil.Clamp01(t.X),
+				y:      mathutil.Clamp01(t.Y),
 			}
 		}
 	}

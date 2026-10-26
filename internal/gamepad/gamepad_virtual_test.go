@@ -15,6 +15,7 @@
 package gamepad_test
 
 import (
+	"fmt"
 	"math"
 	"slices"
 	"testing"
@@ -328,5 +329,131 @@ func TestVirtualGamepadVibrationAvailable(t *testing.T) {
 	}
 	if !g0.IsVibrationAvailable() {
 		t.Error("IsVibrationAvailable() = false; want true for a virtual gamepad")
+	}
+}
+
+func TestVirtualGamepadValueRanges(t *testing.T) {
+	defer updateVirtualGamepads(t, []gamepad.VirtualGamepadState{})
+	cases := []struct {
+		value    float64
+		wantAxis float64
+		wantUnit float64
+	}{
+		{
+			value:    -2,
+			wantAxis: -1,
+			wantUnit: 0,
+		},
+		{
+			value:    -1,
+			wantAxis: -1,
+			wantUnit: 0,
+		},
+		{
+			value:    -0.5,
+			wantAxis: -0.5,
+			wantUnit: 0,
+		},
+		{
+			value:    0,
+			wantAxis: 0,
+			wantUnit: 0,
+		},
+		{
+			value:    0.5,
+			wantAxis: 0.5,
+			wantUnit: 0.5,
+		},
+		{
+			value:    1,
+			wantAxis: 1,
+			wantUnit: 1,
+		},
+		{
+			value:    2,
+			wantAxis: 1,
+			wantUnit: 1,
+		},
+		{
+			value:    math.NaN(),
+			wantAxis: 0,
+			wantUnit: 0,
+		},
+		{
+			value:    math.Inf(-1),
+			wantAxis: -1,
+			wantUnit: 0,
+		},
+		{
+			value:    math.Inf(1),
+			wantAxis: 1,
+			wantUnit: 1,
+		},
+	}
+	var touchID gamepad.TouchID
+	for _, c := range cases {
+		t.Run(fmt.Sprint(c.value), func(t *testing.T) {
+			states := []gamepad.VirtualGamepadState{
+				{
+					ID:      0,
+					SDLID:   "value-ranges",
+					Name:    "Value Ranges",
+					Axes:    []float64{c.value},
+					Buttons: []bool{true},
+					StandardAxes: map[gamepaddb.StandardAxis]float64{
+						gamepaddb.StandardAxisLeftStickHorizontal: c.value,
+					},
+					StandardButtons: map[gamepaddb.StandardButton]gamepad.VirtualStandardGamepadButton{
+						gamepaddb.StandardButtonRightBottom: {
+							Pressed: true,
+							Value:   c.value,
+						},
+					},
+					TouchSurfaces: [][]gamepad.VirtualGamepadTouch{
+						{
+							{
+								ID: 1,
+								X:  c.value,
+								Y:  c.value,
+							},
+						},
+					},
+				},
+			}
+			updateVirtualGamepads(t, states)
+			g := gamepad.Get(0)
+			if g == nil {
+				t.Fatal("gamepad 0 is not connected")
+			}
+			if got := g.Axis(0); got != c.wantAxis {
+				t.Errorf("raw axis = %v, want %v", got, c.wantAxis)
+			}
+			if got := g.StandardAxisValue(gamepaddb.StandardAxisLeftStickHorizontal); got != c.wantAxis {
+				t.Errorf("standard axis = %v, want %v", got, c.wantAxis)
+			}
+			if got := g.StandardButtonValue(gamepaddb.StandardButtonRightBottom); got != c.wantUnit {
+				t.Errorf("standard button = %v, want %v", got, c.wantUnit)
+			}
+			if !g.Button(0) || !g.IsStandardButtonPressed(gamepaddb.StandardButtonRightBottom) {
+				t.Error("pressed flag changed")
+			}
+			id := onlyTouchID(t, g, 0)
+			if touchID != 0 && id != touchID {
+				t.Errorf("touch ID = %d, want %d", id, touchID)
+			}
+			touchID = id
+			checkTouchPosition(t, g, id, c.wantUnit, c.wantUnit)
+			for _, value := range []float64{
+				states[0].Axes[0],
+				states[0].StandardAxes[gamepaddb.StandardAxisLeftStickHorizontal],
+				states[0].StandardButtons[gamepaddb.StandardButtonRightBottom].Value,
+				states[0].TouchSurfaces[0][0].X,
+				states[0].TouchSurfaces[0][0].Y,
+			} {
+				if math.Float64bits(value) != math.Float64bits(c.value) {
+					t.Error("input snapshot was modified")
+				}
+			}
+		})
 	}
 }
