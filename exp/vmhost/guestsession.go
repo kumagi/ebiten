@@ -96,7 +96,6 @@ type GuestSession struct {
 	textInput *GuestTextInput
 
 	// The following fields are owned by the host goroutine; no lock guards them.
-	outsideScreen     *ebiten.Image
 	sentOutsideWidth  float64
 	sentOutsideHeight float64
 	sentScreenWidth   int
@@ -108,6 +107,9 @@ type GuestSession struct {
 
 	// The following fields are guarded by mu.
 	//
+	// outsideScreen can be replaced by SetOutsideScreen from another goroutine.
+	outsideScreen *ebiten.Image
+
 	// ops is the ordered request queue (ticks coalesced into a count, plus input and size messages),
 	// drained by the session goroutine in submission order.
 	ops []op
@@ -1140,13 +1142,21 @@ func (g *GuestSession) CompositeFrame() bool {
 	// The frame is taken; free the mirror for the next render whether it is presented or dropped.
 	defer g.markComposited()
 
+	// SetOutsideScreen may be called from another goroutine, so take a snapshot under the lock.
+	g.mu.Lock()
+	screen := g.outsideScreen
+	g.mu.Unlock()
+	if screen == nil {
+		return false
+	}
+
 	// Drop the frame if its size no longer matches the outside screen (a resize happened after it was
 	// rendered).
-	b := g.outsideScreen.Bounds()
+	b := screen.Bounds()
 	if frame.width != b.Dx() || frame.height != b.Dy() {
 		return false
 	}
-	dst, dstRegion := ui.ImageFromEbitenImage(g.outsideScreen)
+	dst, dstRegion := ui.ImageFromEbitenImage(screen)
 	if dst == nil {
 		// A disposed outside screen draws nothing.
 		return false
