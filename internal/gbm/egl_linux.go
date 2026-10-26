@@ -175,7 +175,10 @@ func (c *Context) SwapBuffers() error {
 		}
 		r := drml.PageFlip(c.d.fd, c.d.crtcID, fb, flags, 0)
 		if r != 0 && async {
-			c.asyncPageFlipUnsupported = true
+			// A temporary failure does not mean that the async flag is unsupported.
+			if r == -int32(unix.EINVAL) || r == -int32(unix.EOPNOTSUPP) {
+				c.asyncPageFlipUnsupported = true
+			}
 			r = drml.PageFlip(c.d.fd, c.d.crtcID, fb, _DRM_MODE_PAGE_FLIP_EVENT, 0)
 		}
 		if r != 0 {
