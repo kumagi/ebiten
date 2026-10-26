@@ -213,6 +213,16 @@ var (
 	tmpVerticesForStencilBuffer []Vertex
 )
 
+// Retain scratch for uint16-indexed batches, without keeping a larger DrawTriangles32 peak.
+const maxRetainedStencilVertices = 1 << 16
+
+func resetTmpVerticesForStencilBuffer() {
+	tmpVerticesForStencilBuffer = tmpVerticesForStencilBuffer[:0]
+	if cap(tmpVerticesForStencilBuffer) > maxRetainedStencilVertices {
+		tmpVerticesForStencilBuffer = nil
+	}
+}
+
 // doDrawTrianglesWithAntialias draws triangles with antialiasing.
 //
 // doDrawTrianglesWithAntialias doesn't batch draw calls, so this might not be efficient.
@@ -221,6 +231,7 @@ var (
 func doDrawTrianglesWithAntialias(dst *Image, vertices []Vertex, indices []uint32, img *Image, dtOptions *DrawTrianglesOptions, shader *Shader, dtsOptions *DrawTrianglesShaderOptions) {
 	stencilBufferM.Lock()
 	defer stencilBufferM.Unlock()
+	defer resetTmpVerticesForStencilBuffer()
 
 	dstMin := dst.Bounds().Min
 	bounds := dst.Bounds().Sub(dstMin)
@@ -296,6 +307,7 @@ func doDrawTrianglesWithAntialias(dst *Image, vertices []Vertex, indices []uint3
 func doDrawTrianglesShaderWithStencilBuffer(dst *Image, vertices []Vertex, indices []uint32, img *Image, dtOptions *DrawTrianglesOptions, shader *Shader, dtsOptions *DrawTrianglesShaderOptions) {
 	stencilBufferM.Lock()
 	defer stencilBufferM.Unlock()
+	defer resetTmpVerticesForStencilBuffer()
 
 	dstMin := dst.Bounds().Min
 	bounds := dst.Bounds().Sub(dstMin)
