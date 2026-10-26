@@ -262,10 +262,10 @@ func swapBuffersWGL(window *Window) error {
 		enabled := winver.IsWindows8OrGreater()
 
 		if !enabled {
-			var err error
-			enabled, err = _DwmIsCompositionEnabled()
-			if err != nil {
-				return err
+			e, err := _DwmIsCompositionEnabled()
+			// Ignore an error from DWM functions as they might not be implemented e.g. on Proton (#2113).
+			if err == nil {
+				enabled = e
 			}
 		}
 
