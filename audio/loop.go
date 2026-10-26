@@ -76,6 +76,7 @@ func NewInfiniteLoopF32(src io.ReadSeeker, length int64) *InfiniteLoop {
 
 // NewInfiniteLoopWithIntro creates a new infinite loop stream with an intro part.
 // NewInfiniteLoopWithIntro accepts a source stream src, introLength in bytes and loopLength in bytes.
+// NewInfiniteLoopWithIntro panics if introLength is negative.
 //
 // src is a signed 16bit integer little endian stream, 2 channels (stereo).
 //
@@ -90,6 +91,7 @@ func NewInfiniteLoopWithIntro(src io.ReadSeeker, introLength int64, loopLength i
 
 // NewInfiniteLoopWithIntroF32 creates a new infinite loop stream with an intro part.
 // NewInfiniteLoopWithIntroF32 accepts a source stream src, introLength in bytes and loopLength in bytes.
+// NewInfiniteLoopWithIntroF32 panics if introLength is negative.
 //
 // src is a 32bit float little endian stream, 2 channels (stereo).
 //
@@ -104,6 +106,9 @@ func NewInfiniteLoopWithIntroF32(src io.ReadSeeker, introLength int64, loopLengt
 
 func newInfiniteLoopWithIntro(src io.ReadSeeker, introLength int64, loopLength int64, bitDepthInBytes int) *InfiniteLoop {
 	bytesPerSample := bitDepthInBytes * channelCount
+	if introLength < 0 {
+		panic(fmt.Sprintf("audio: intro length must not be negative but was %d", introLength))
+	}
 	lstart := introLength / int64(bytesPerSample) * int64(bytesPerSample)
 	llength := loopLength / int64(bytesPerSample) * int64(bytesPerSample)
 	if llength <= 0 {

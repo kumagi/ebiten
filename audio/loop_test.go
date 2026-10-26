@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"testing"
@@ -651,6 +652,33 @@ func TestInfiniteLoopZeroLoopLength(t *testing.T) {
 			}()
 			audio.NewInfiniteLoopWithIntro(bytes.NewReader(make([]byte, 64)), tc.introLength, tc.loopLength)
 		})
+	}
+}
+
+func TestInfiniteLoopNegativeIntro(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		newLoop func(io.ReadSeeker, int64, int64) *audio.InfiniteLoop
+	}{
+		{
+			name:    "PCM16",
+			newLoop: audio.NewInfiniteLoopWithIntro,
+		},
+		{
+			name:    "Float32",
+			newLoop: audio.NewInfiniteLoopWithIntroF32,
+		},
+	} {
+		for _, introLength := range []int64{-1, -4, -8} {
+			t.Run(fmt.Sprintf("%s/intro=%d", tc.name, introLength), func(t *testing.T) {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("expected a panic for a negative intro length")
+					}
+				}()
+				tc.newLoop(bytes.NewReader(make([]byte, 64)), introLength, 16)
+			})
+		}
 	}
 }
 
