@@ -72,7 +72,12 @@ type AddStrokeOptions struct {
 	// StrokeOptions is options for the stroke.
 	StrokeOptions
 
-	// GeoM is a geometry matrix to apply to the path.
+	// GeoM is a geometry matrix to apply to the generated stroke outline.
+	//
+	// The stroke is generated in the source path's coordinate space before applying GeoM,
+	// so scaling GeoM also scales the stroke width.
+	// To transform the source path while keeping Width in the destination space,
+	// first use [Path.AddPath], then add its stroke with an identity GeoM.
 	//
 	// The default (zero) value is an identity matrix.
 	GeoM ebiten.GeoM
