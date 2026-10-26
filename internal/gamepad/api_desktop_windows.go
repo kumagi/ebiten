@@ -174,6 +174,7 @@ func loadDInput8() error {
 func loadXInput() error {
 	// TODO: Loading xinput1_4.dll or xinput9_1_0.dll should be enough.
 	// See https://source.chromium.org/chromium/chromium/src/+/main:device/gamepad/xinput_data_fetcher_win.cc;l=75-84;drc=643cdf61903e99f27c3d80daee67e217e9d280e0
+	var lastErr error
 	for _, name := range []string{
 		"xinput1_4.dll",
 		"xinput1_3.dll",
@@ -188,25 +189,31 @@ func loadXInput() error {
 
 		getCapabilities := xinput.NewProc("XInputGetCapabilities")
 		if err := getCapabilities.Find(); err != nil {
-			return err
+			lastErr = err
+			_ = windows.FreeLibrary(windows.Handle(xinput.Handle()))
+			continue
 		}
 		getState := xinput.NewProc("XInputGetState")
 		if err := getState.Find(); err != nil {
-			return err
+			lastErr = err
+			_ = windows.FreeLibrary(windows.Handle(xinput.Handle()))
+			continue
 		}
 		setState := xinput.NewProc("XInputSetState")
 		if err := setState.Find(); err != nil {
-			return err
+			lastErr = err
+			_ = windows.FreeLibrary(windows.Handle(xinput.Handle()))
+			continue
 		}
 
 		procXInputGetCapabilities = getCapabilities
 		procXInputGetState = getState
 		procXInputSetState = setState
 
-		break
+		return nil
 	}
 
-	return nil
+	return lastErr
 }
 
 func isDInput8DLLAvailable() bool {
