@@ -291,6 +291,14 @@ func (g *graphics11) Initialize() error {
 	return nil
 }
 
+// Terminate releases idle resources cached for pixel read-backs.
+func (g *graphics11) Terminate() error {
+	for _, t := range g.stagingTextures.Clear() {
+		t.Release()
+	}
+	return nil
+}
+
 func (g *graphics11) ColorSpace() color.ColorSpace {
 	return color.ColorSpaceSRGB
 }

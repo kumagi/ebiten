@@ -508,6 +508,14 @@ func (g *graphics12) Initialize() (err error) {
 	return nil
 }
 
+// Terminate releases idle resources cached for pixel read-backs.
+func (g *graphics12) Terminate() error {
+	for _, b := range g.readbackBuffers.Clear() {
+		b.Release()
+	}
+	return nil
+}
+
 func createBuffer(device *_ID3D12Device, bufferSize uint64, heapType _D3D12_HEAP_TYPE) (*_ID3D12Resource, error) {
 	state := _D3D12_RESOURCE_STATE_GENERIC_READ()
 	if heapType == _D3D12_HEAP_TYPE_READBACK {
