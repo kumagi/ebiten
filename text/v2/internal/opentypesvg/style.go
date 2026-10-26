@@ -515,7 +515,7 @@ func styleLength(text string, context lengthContext) (float64, error) {
 	// The generic geometry helper accepts supplied font metrics; this style
 	// layer enforces OpenType's exclusion of relative font units.
 	// https://learn.microsoft.com/en-us/typography/opentype/spec/svg#svg-capability-requirements-and-restrictions
-	if strings.HasSuffix(text, "em") || strings.HasSuffix(text, "ex") {
+	if hasFontRelativeUnit(text) {
 		return 0, errUnsupported
 	}
 	return resolveLength(text, context, diagonal)

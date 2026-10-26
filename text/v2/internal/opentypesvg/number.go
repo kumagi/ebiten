@@ -152,6 +152,12 @@ const (
 	diagonal
 )
 
+// hasFontRelativeUnit checks the OpenType restriction on em and ex regardless of case.
+func hasFontRelativeUnit(text string) bool {
+	text = strings.TrimRight(text, xmlWhitespace)
+	return len(text) >= 2 && (strings.EqualFold(text[len(text)-2:], "em") || strings.EqualFold(text[len(text)-2:], "ex"))
+}
+
 // resolveLength resolves an SVG attribute length to user units using an explicit percentage axis.
 func resolveLength(text string, context lengthContext, axis lengthAxis) (float64, error) {
 	if len(text) > maxBytes {

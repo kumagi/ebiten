@@ -486,6 +486,18 @@ func TestStyleCommentsAndKeywordCase(t *testing.T) {
 	}
 }
 
+func TestStyleFontRelativeUnitsAreCaseInsensitive(t *testing.T) {
+	for _, unit := range []string{"em", "eM", "Em", "EM", "ex", "eX", "Ex", "EX"} {
+		for _, property := range []string{"stroke-width", "stroke-dasharray", "stroke-dashoffset"} {
+			css := "rect{" + property + ":1" + unit + " }"
+			d := parse(t, svgStart+`<style>`+css+`</style><rect/></svg>`)
+			if _, err := newStyleResolver(d, opentypesvg.ColorContext{Foreground: black}); !errors.Is(err, opentypesvg.ErrUnsupported) {
+				t.Errorf("%s: %v", css, err)
+			}
+		}
+	}
+}
+
 func TestStyleSharedGlyphInstances(t *testing.T) {
 	d, r := styles(t, string(read(t, "testdata/real/noto-2-3.svg")), opentypesvg.ColorContext{
 		Foreground: blue,

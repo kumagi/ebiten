@@ -201,7 +201,7 @@ func (r *styleResolver) gradient(e *element, active map[*element]bool, depth int
 }
 
 func gradientLength(text string, context lengthContext, axis lengthAxis) (float64, error) {
-	if strings.HasSuffix(text, "em") || strings.HasSuffix(text, "ex") {
+	if hasFontRelativeUnit(text) {
 		return 0, errUnsupported
 	}
 	return resolveLength(text, context, axis)

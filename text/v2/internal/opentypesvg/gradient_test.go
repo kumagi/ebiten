@@ -336,3 +336,15 @@ func TestGradientEffectiveFocalRadius(t *testing.T) {
 		t.Errorf("inherited nonzero radius: %v", err)
 	}
 }
+
+func TestGradientFontRelativeUnitsAreCaseInsensitive(t *testing.T) {
+	for _, unit := range []string{"em", "eM", "Em", "EM", "ex", "eX", "Ex", "EX"} {
+		for _, attr := range []string{"r", "cx"} {
+			d, r := styles(t, svgStart+`<radialGradient id="g" `+attr+`="1`+unit+` "/><rect fill="url(#g)"/></svg>`, opentypesvg.ColorContext{Foreground: black})
+			s := computed(t, r, d.Root().Child(1), nil)
+			if _, err := r.Paint(s, false, opentypesvg.PaintContext{}); !errors.Is(err, opentypesvg.ErrUnsupported) {
+				t.Errorf("%s=1%s: %v", attr, unit, err)
+			}
+		}
+	}
+}
