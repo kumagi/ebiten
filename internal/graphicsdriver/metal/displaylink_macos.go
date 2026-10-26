@@ -300,10 +300,16 @@ func (v *view) initCADisplayLink() error {
 		return nil
 	}
 	v.handleToSelf = newViewHandle(v)
-	cvDisplayLinkSetOutputCallback(displayLinkRef, displayLinkOutputCallbackPtr, uintptr(v.handleToSelf))
-	cvDisplayLinkStart(displayLinkRef)
-
 	v.caDisplayLink = displayLinkRef
+	if ret := cvDisplayLinkSetOutputCallback(displayLinkRef, displayLinkOutputCallbackPtr, uintptr(v.handleToSelf)); ret != kCVReturnSuccess {
+		v.releaseDisplayLink()
+		return fmt.Errorf("metal: setting display link callback failed: %d", ret)
+	}
+	if ret := cvDisplayLinkStart(displayLinkRef); ret != kCVReturnSuccess {
+		v.releaseDisplayLink()
+		return fmt.Errorf("metal: starting display link failed: %d", ret)
+	}
+
 	return nil
 }
 
