@@ -65,6 +65,13 @@ func (s *GamepadScene) Update(state *GameState) error {
 		return nil
 	}
 
+	// A nonpositive TPS (e.g. SyncWithFPS) does not start the delay.
+	// Stop scanning once every button is assigned.
+	if len(virtualGamepadButtons) <= s.currentIndex {
+		state.SceneManager.GoTo(&TitleScene{})
+		return nil
+	}
+
 	b := virtualGamepadButtons[s.currentIndex]
 	if state.Input.gamepadConfig.Scan(b) {
 		s.currentIndex++
