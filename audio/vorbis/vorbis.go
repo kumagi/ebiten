@@ -102,7 +102,8 @@ func DecodeF32(src io.Reader) (*Stream, error) {
 		sampleRate: r.SampleRate(),
 	}
 	// Read some data for performance (#297).
-	if seekable {
+	// With an unknown length, oggvorbis treats even a rewind to zero as EOF.
+	if seekable && r.Length() > 0 {
 		if _, err := stream.Read(make([]byte, 65536)); err != nil && err != io.EOF {
 			return nil, err
 		}
@@ -196,7 +197,8 @@ func decodeI16(in io.Reader) (*i16Stream, error) {
 		vorbisReader: r,
 	}
 	// Read some data for performance (#297).
-	if seekable {
+	// With an unknown length, oggvorbis treats even a rewind to zero as EOF.
+	if seekable && r.Length() > 0 {
 		if _, err := s.Read(make([]byte, 65536)); err != nil && err != io.EOF {
 			return nil, err
 		}

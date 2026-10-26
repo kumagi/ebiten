@@ -1234,3 +1234,46 @@ func TestSeekEndWithUnknownLength(t *testing.T) {
 		}
 	}
 }
+
+func TestDecodeUnknownLengthPreservesPCM(t *testing.T) {
+	for idx, source := range [][]byte{test_mono_ogg, test_stereo_ogg} {
+		source := truncateLastPage(source)
+		for _, decode := range []struct {
+			name string
+			f    func(io.Reader) (*vorbis.Stream, error)
+		}{
+			{name: "Int16", f: vorbis.DecodeWithoutResampling},
+			{name: "Float32", f: vorbis.DecodeF32},
+			{name: "Resampled", f: func(r io.Reader) (*vorbis.Stream, error) { return vorbis.DecodeWithSampleRate(32000, r) }},
+		} {
+			t.Run(fmt.Sprintf("%s/source=%d", decode.name, idx), func(t *testing.T) {
+				// A reader-only source skips prefetch and keeps the decodable prefix.
+				reference, err := decode.f(struct{ io.Reader }{bytes.NewReader(source)})
+				if err != nil {
+					t.Fatal(err)
+				}
+				want, wantErr := io.ReadAll(reference)
+				if !errors.Is(wantErr, io.ErrUnexpectedEOF) {
+					t.Fatalf("truncated reference error = %v, want unexpected EOF", wantErr)
+				}
+				if len(want) == 0 {
+					t.Fatal("reference contains no decodable PCM")
+				}
+				stream, err := decode.f(bytes.NewReader(source))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if stream.Length() != 0 {
+					t.Fatal("fixture must have an unknown decoded length")
+				}
+				got, err := io.ReadAll(stream)
+				if !errors.Is(err, wantErr) {
+					t.Errorf("read error = %v, want %v", err, wantErr)
+				}
+				if !bytes.Equal(got, want) {
+					t.Errorf("PCM differs from the reader-only source: got %d bytes, want %d", len(got), len(want))
+				}
+			})
+		}
+	}
+}
