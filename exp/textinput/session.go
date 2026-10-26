@@ -83,6 +83,8 @@ type session struct {
 // setComposition updates the composition state. It must be called from the
 // user goroutine.
 func (s *session) setComposition(text string, selStart, selEnd int) {
+	selStart = min(max(selStart, 0), len(text))
+	selEnd = min(max(selEnd, selStart), len(text))
 	s.compositionM.Lock()
 	defer s.compositionM.Unlock()
 	s.composition.text = text
