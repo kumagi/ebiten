@@ -917,9 +917,14 @@ func (g *GuestSession) answerMaxImageSize() error {
 
 // answerDeviceScaleFactor answers with the host's current device scale factor.
 func (g *GuestSession) answerDeviceScaleFactor() error {
+	// Before RunGame, Monitor must be called on the main thread, not this session's goroutine.
+	scale := 1.0
+	if ui.Get().IsRunning() {
+		scale = hostDeviceScaleFactor()
+	}
 	return g.enc.EncodeHostMessage(&vmprotocol.HostMessage{
 		Kind:        vmprotocol.HostMessageKindAnswerDeviceScaleFactor,
-		ScaleFactor: hostDeviceScaleFactor(),
+		ScaleFactor: scale,
 	})
 }
 
