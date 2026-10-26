@@ -23,6 +23,7 @@ package gamepad
 import "C"
 
 import (
+	"slices"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/gamepaddb"
@@ -66,17 +67,19 @@ func (g *nativeGamepadsImpl) update(gamepads *gamepads) error {
 		gamepad := gamepads.find(func(gamepad *Gamepad) bool {
 			return gamepad.native.(*nativeGamepadImpl).id == int(gp.id)
 		})
+		axes := min(max(int(gp.axis_count), 0), len(gp.axis_values))
+		buttons := min(max(int(gp.button_count), 0), len(gp.button_values), len(gp.button_pressed))
 		if gamepad == nil {
 			gamepad = gamepads.add("", "")
 			gamepad.native = &nativeGamepadImpl{
-				id:            int(gp.id),
-				axisValues:    make([]float64, gp.axis_count),
-				buttonPressed: make([]bool, gp.button_count),
-				buttonValues:  make([]float64, gp.button_count),
+				id: int(gp.id),
 			}
 		}
 
 		withNative(gamepad, func(n *nativeGamepadImpl) {
+			n.axisValues = slices.Grow(n.axisValues[:0], axes)[:axes]
+			n.buttonValues = slices.Grow(n.buttonValues[:0], buttons)[:buttons]
+			n.buttonPressed = slices.Grow(n.buttonPressed[:0], buttons)[:buttons]
 			for i := range n.axisValues {
 				n.axisValues[i] = float64(gp.axis_values[i])
 			}
