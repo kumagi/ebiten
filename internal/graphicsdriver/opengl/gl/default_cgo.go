@@ -631,7 +631,7 @@ func (c *defaultContext) BufferInit(target uint32, size int, usage uint32) {
 }
 
 func (c *defaultContext) BufferSubData(target uint32, offset int, data []byte) {
-	C.glowBufferSubData(c.gpBufferSubData, C.GLenum(target), C.GLintptr(offset), C.GLsizeiptr(len(data)), unsafe.Pointer(&data[0]))
+	C.glowBufferSubData(c.gpBufferSubData, C.GLenum(target), C.GLintptr(offset), C.GLsizeiptr(len(data)), sliceDataPtr(data))
 	runtime.KeepAlive(data)
 }
 
@@ -823,11 +823,11 @@ func (c *defaultContext) PixelStorei(pname uint32, param int32) {
 }
 
 func (c *defaultContext) ReadPixels(dst []byte, x int32, y int32, width int32, height int32, format uint32, xtype uint32) {
-	if dst == nil {
-		C.glowReadPixels(c.gpReadPixels, C.GLint(x), C.GLint(y), C.GLsizei(width), C.GLsizei(height), C.GLenum(format), C.GLenum(xtype), nil)
-		return
+	// A nil destination is a pixel-pack-buffer offset, but an empty client slice is not.
+	if dst != nil && len(dst) == 0 && width > 0 && height > 0 {
+		panic("gl: empty client destination for a non-empty pixel read")
 	}
-	C.glowReadPixels(c.gpReadPixels, C.GLint(x), C.GLint(y), C.GLsizei(width), C.GLsizei(height), C.GLenum(format), C.GLenum(xtype), unsafe.Pointer(&dst[0]))
+	C.glowReadPixels(c.gpReadPixels, C.GLint(x), C.GLint(y), C.GLsizei(width), C.GLsizei(height), C.GLenum(format), C.GLenum(xtype), sliceDataPtr(dst))
 	runtime.KeepAlive(dst)
 }
 
@@ -855,12 +855,15 @@ func (c *defaultContext) TexParameteri(target uint32, pname uint32, param int32)
 }
 
 func (c *defaultContext) TexSubImage2D(target uint32, level int32, xoffset int32, yoffset int32, width int32, height int32, format uint32, xtype uint32, pixels []byte) {
-	C.glowTexSubImage2D(c.gpTexSubImage2D, C.GLenum(target), C.GLint(level), C.GLint(xoffset), C.GLint(yoffset), C.GLsizei(width), C.GLsizei(height), C.GLenum(format), C.GLenum(xtype), unsafe.Pointer(&pixels[0]))
+	if len(pixels) == 0 && width > 0 && height > 0 {
+		panic("gl: empty pixels for a non-empty texture update")
+	}
+	C.glowTexSubImage2D(c.gpTexSubImage2D, C.GLenum(target), C.GLint(level), C.GLint(xoffset), C.GLint(yoffset), C.GLsizei(width), C.GLsizei(height), C.GLenum(format), C.GLenum(xtype), sliceDataPtr(pixels))
 	runtime.KeepAlive(pixels)
 }
 
 func (c *defaultContext) Uniform1fv(location int32, value []float32) {
-	C.glowUniform1fv(c.gpUniform1fv, C.GLint(location), C.GLsizei(len(value)), (*C.GLfloat)(unsafe.Pointer(&value[0])))
+	C.glowUniform1fv(c.gpUniform1fv, C.GLint(location), C.GLsizei(len(value)), (*C.GLfloat)(sliceDataPtr(value)))
 	runtime.KeepAlive(value)
 }
 
@@ -869,52 +872,52 @@ func (c *defaultContext) Uniform1i(location int32, v0 int32) {
 }
 
 func (c *defaultContext) Uniform1iv(location int32, value []int32) {
-	C.glowUniform1iv(c.gpUniform1iv, C.GLint(location), C.GLsizei(len(value)), (*C.GLint)(unsafe.Pointer(&value[0])))
+	C.glowUniform1iv(c.gpUniform1iv, C.GLint(location), C.GLsizei(len(value)), (*C.GLint)(sliceDataPtr(value)))
 	runtime.KeepAlive(value)
 }
 
 func (c *defaultContext) Uniform2fv(location int32, value []float32) {
-	C.glowUniform2fv(c.gpUniform2fv, C.GLint(location), C.GLsizei(len(value)/2), (*C.GLfloat)(unsafe.Pointer(&value[0])))
+	C.glowUniform2fv(c.gpUniform2fv, C.GLint(location), C.GLsizei(len(value)/2), (*C.GLfloat)(sliceDataPtr(value)))
 	runtime.KeepAlive(value)
 }
 
 func (c *defaultContext) Uniform2iv(location int32, value []int32) {
-	C.glowUniform2iv(c.gpUniform2iv, C.GLint(location), C.GLsizei(len(value)/2), (*C.GLint)(unsafe.Pointer(&value[0])))
+	C.glowUniform2iv(c.gpUniform2iv, C.GLint(location), C.GLsizei(len(value)/2), (*C.GLint)(sliceDataPtr(value)))
 	runtime.KeepAlive(value)
 }
 
 func (c *defaultContext) Uniform3fv(location int32, value []float32) {
-	C.glowUniform3fv(c.gpUniform3fv, C.GLint(location), C.GLsizei(len(value)/3), (*C.GLfloat)(unsafe.Pointer(&value[0])))
+	C.glowUniform3fv(c.gpUniform3fv, C.GLint(location), C.GLsizei(len(value)/3), (*C.GLfloat)(sliceDataPtr(value)))
 	runtime.KeepAlive(value)
 }
 
 func (c *defaultContext) Uniform3iv(location int32, value []int32) {
-	C.glowUniform3iv(c.gpUniform3iv, C.GLint(location), C.GLsizei(len(value)/3), (*C.GLint)(unsafe.Pointer(&value[0])))
+	C.glowUniform3iv(c.gpUniform3iv, C.GLint(location), C.GLsizei(len(value)/3), (*C.GLint)(sliceDataPtr(value)))
 	runtime.KeepAlive(value)
 }
 
 func (c *defaultContext) Uniform4fv(location int32, value []float32) {
-	C.glowUniform4fv(c.gpUniform4fv, C.GLint(location), C.GLsizei(len(value)/4), (*C.GLfloat)(unsafe.Pointer(&value[0])))
+	C.glowUniform4fv(c.gpUniform4fv, C.GLint(location), C.GLsizei(len(value)/4), (*C.GLfloat)(sliceDataPtr(value)))
 	runtime.KeepAlive(value)
 }
 
 func (c *defaultContext) Uniform4iv(location int32, value []int32) {
-	C.glowUniform4iv(c.gpUniform4iv, C.GLint(location), C.GLsizei(len(value)/4), (*C.GLint)(unsafe.Pointer(&value[0])))
+	C.glowUniform4iv(c.gpUniform4iv, C.GLint(location), C.GLsizei(len(value)/4), (*C.GLint)(sliceDataPtr(value)))
 	runtime.KeepAlive(value)
 }
 
 func (c *defaultContext) UniformMatrix2fv(location int32, value []float32) {
-	C.glowUniformMatrix2fv(c.gpUniformMatrix2fv, C.GLint(location), C.GLsizei(len(value)/4), 0, (*C.GLfloat)(unsafe.Pointer(&value[0])))
+	C.glowUniformMatrix2fv(c.gpUniformMatrix2fv, C.GLint(location), C.GLsizei(len(value)/4), 0, (*C.GLfloat)(sliceDataPtr(value)))
 	runtime.KeepAlive(value)
 }
 
 func (c *defaultContext) UniformMatrix3fv(location int32, value []float32) {
-	C.glowUniformMatrix3fv(c.gpUniformMatrix3fv, C.GLint(location), C.GLsizei(len(value)/9), 0, (*C.GLfloat)(unsafe.Pointer(&value[0])))
+	C.glowUniformMatrix3fv(c.gpUniformMatrix3fv, C.GLint(location), C.GLsizei(len(value)/9), 0, (*C.GLfloat)(sliceDataPtr(value)))
 	runtime.KeepAlive(value)
 }
 
 func (c *defaultContext) UniformMatrix4fv(location int32, value []float32) {
-	C.glowUniformMatrix4fv(c.gpUniformMatrix4fv, C.GLint(location), C.GLsizei(len(value)/16), 0, (*C.GLfloat)(unsafe.Pointer(&value[0])))
+	C.glowUniformMatrix4fv(c.gpUniformMatrix4fv, C.GLint(location), C.GLsizei(len(value)/16), 0, (*C.GLfloat)(sliceDataPtr(value)))
 	runtime.KeepAlive(value)
 }
 
@@ -1006,4 +1009,12 @@ func (c *defaultContext) LoadFunctions() error {
 	c.gpViewport = C.uintptr_t(g.get("glViewport"))
 
 	return g.error()
+}
+
+// sliceDataPtr returns nil for empty slices used by zero-element OpenGL operations.
+func sliceDataPtr[T any](s []T) unsafe.Pointer {
+	if len(s) == 0 {
+		return nil
+	}
+	return unsafe.Pointer(&s[0])
 }

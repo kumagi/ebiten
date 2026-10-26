@@ -210,9 +210,13 @@ func (c *defaultContext) BufferInit(target uint32, size int, usage uint32) {
 }
 
 func (c *defaultContext) BufferSubData(target uint32, offset int, data []byte) {
-	c.pinner.Pin(&data[0])
-	defer c.pinner.Unpin()
-	c.call(c.gpBufferSubData, uintptr(target), uintptr(offset), uintptr(len(data)), uintptr(unsafe.Pointer(&data[0])))
+	var ptr *byte
+	if len(data) > 0 {
+		ptr = &data[0]
+		c.pinner.Pin(ptr)
+		defer c.pinner.Unpin()
+	}
+	c.call(c.gpBufferSubData, uintptr(target), uintptr(offset), uintptr(len(data)), uintptr(unsafe.Pointer(ptr)))
 }
 
 func (c *defaultContext) CheckFramebufferStatus(target uint32) uint32 {
@@ -409,13 +413,17 @@ func (c *defaultContext) PixelStorei(pname uint32, param int32) {
 }
 
 func (c *defaultContext) ReadPixels(dst []byte, x int32, y int32, width int32, height int32, format uint32, xtype uint32) {
-	if dst == nil {
-		c.call(c.gpReadPixels, uintptr(x), uintptr(y), uintptr(width), uintptr(height), uintptr(format), uintptr(xtype), 0)
-		return
+	// A nil destination is a pixel-pack-buffer offset, but an empty client slice is not.
+	if dst != nil && len(dst) == 0 && width > 0 && height > 0 {
+		panic("gl: empty client destination for a non-empty pixel read")
 	}
-	c.pinner.Pin(&dst[0])
-	defer c.pinner.Unpin()
-	c.call(c.gpReadPixels, uintptr(x), uintptr(y), uintptr(width), uintptr(height), uintptr(format), uintptr(xtype), uintptr(unsafe.Pointer(&dst[0])))
+	var ptr *byte
+	if len(dst) > 0 {
+		ptr = &dst[0]
+		c.pinner.Pin(ptr)
+		defer c.pinner.Unpin()
+	}
+	c.call(c.gpReadPixels, uintptr(x), uintptr(y), uintptr(width), uintptr(height), uintptr(format), uintptr(xtype), uintptr(unsafe.Pointer(ptr)))
 }
 
 func (c *defaultContext) Scissor(x int32, y int32, width int32, height int32) {
@@ -446,9 +454,16 @@ func (c *defaultContext) TexParameteri(target uint32, pname uint32, param int32)
 }
 
 func (c *defaultContext) TexSubImage2D(target uint32, level int32, xoffset int32, yoffset int32, width int32, height int32, format uint32, xtype uint32, pixels []byte) {
-	c.pinner.Pin(&pixels[0])
-	defer c.pinner.Unpin()
-	c.call(c.gpTexSubImage2D, uintptr(target), uintptr(level), uintptr(xoffset), uintptr(yoffset), uintptr(width), uintptr(height), uintptr(format), uintptr(xtype), uintptr(unsafe.Pointer(&pixels[0])))
+	if len(pixels) == 0 && width > 0 && height > 0 {
+		panic("gl: empty pixels for a non-empty texture update")
+	}
+	var ptr *byte
+	if len(pixels) > 0 {
+		ptr = &pixels[0]
+		c.pinner.Pin(ptr)
+		defer c.pinner.Unpin()
+	}
+	c.call(c.gpTexSubImage2D, uintptr(target), uintptr(level), uintptr(xoffset), uintptr(yoffset), uintptr(width), uintptr(height), uintptr(format), uintptr(xtype), uintptr(unsafe.Pointer(ptr)))
 }
 
 func (c *defaultContext) Uniform1fv(location int32, value []float32) {
