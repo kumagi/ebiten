@@ -22,6 +22,7 @@ package shaderprecomp
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir"
@@ -94,6 +95,8 @@ type glslShader struct {
 
 // registry holds all the registered precompiled shaders.
 // Registration usually happens once at initialization, so a single mutex guarding all the maps is sufficient.
+//
+// Registration copies the bytes so callers can reuse their buffers before a driver reads them.
 type registry struct {
 	mu sync.Mutex
 
@@ -116,7 +119,7 @@ func (r *registry) registerDXBCsForWindows(id shaderir.SourceID, vertex, pixel [
 	if f.windows.vertex != nil || f.windows.pixel != nil {
 		panic(fmt.Sprintf("shaderprecomp: Windows DXBCs for the shader source ID %s are already registered", id))
 	}
-	f.windows = dxbcBinaries{vertex: vertex, pixel: pixel}
+	f.windows = dxbcBinaries{vertex: slices.Clone(vertex), pixel: slices.Clone(pixel)}
 	r.dxbcs[id] = f
 }
 
@@ -131,7 +134,7 @@ func (r *registry) registerDXBCsForXbox(id shaderir.SourceID, vertex, pixel []by
 	if f.xbox.vertex != nil || f.xbox.pixel != nil {
 		panic(fmt.Sprintf("shaderprecomp: Xbox DXBCs for the shader source ID %s are already registered", id))
 	}
-	f.xbox = dxbcBinaries{vertex: vertex, pixel: pixel}
+	f.xbox = dxbcBinaries{vertex: slices.Clone(vertex), pixel: slices.Clone(pixel)}
 	r.dxbcs[id] = f
 }
 
@@ -163,7 +166,7 @@ func (r *registry) registerMetalLibraryForMacOS(id shaderir.SourceID, library []
 	if lib.macOS != nil {
 		panic(fmt.Sprintf("shaderprecomp: a macOS Metal library for the shader source ID %s is already registered", id))
 	}
-	lib.macOS = library
+	lib.macOS = slices.Clone(library)
 	r.metalLibraries[id] = lib
 }
 
@@ -178,7 +181,7 @@ func (r *registry) registerMetalLibraryForIOS(id shaderir.SourceID, library []by
 	if lib.iOS != nil {
 		panic(fmt.Sprintf("shaderprecomp: an iOS Metal library for the shader source ID %s is already registered", id))
 	}
-	lib.iOS = library
+	lib.iOS = slices.Clone(library)
 	r.metalLibraries[id] = lib
 }
 
@@ -210,10 +213,10 @@ func (r *registry) registerPlayStation5Shader(id shaderir.SourceID, vertexHeader
 		panic(fmt.Sprintf("shaderprecomp: a PlayStation 5 shader for the shader source ID %s is already registered", id))
 	}
 	r.playStation5Shaders[id] = playStation5Shader{
-		vertexHeader: vertexHeader,
-		vertexText:   vertexText,
-		pixelHeader:  pixelHeader,
-		pixelText:    pixelText,
+		vertexHeader: slices.Clone(vertexHeader),
+		vertexText:   slices.Clone(vertexText),
+		pixelHeader:  slices.Clone(pixelHeader),
+		pixelText:    slices.Clone(pixelText),
 	}
 }
 
@@ -236,10 +239,10 @@ func (r *registry) registerGLSL(id shaderir.SourceID, vertex, fragment, esVertex
 		panic(fmt.Sprintf("shaderprecomp: GLSL shaders for the shader source ID %s are already registered", id))
 	}
 	r.glslShaders[id] = glslShader{
-		vertex:     vertex,
-		fragment:   fragment,
-		esVertex:   esVertex,
-		esFragment: esFragment,
+		vertex:     slices.Clone(vertex),
+		fragment:   slices.Clone(fragment),
+		esVertex:   slices.Clone(esVertex),
+		esFragment: slices.Clone(esFragment),
 	}
 }
 

@@ -35,8 +35,14 @@ func TestDXBCs(t *testing.T) {
 		t.Fatal("Xbox DXBCs must not be registered yet")
 	}
 
-	shaderprecomp.RegisterDXBCsForWindows(i, []byte("winvs"), []byte("winps"))
-	shaderprecomp.RegisterDXBCsForXbox(i, []byte("xboxvs"), []byte("xboxps"))
+	winVS, winPS := []byte("winvs"), []byte("winps")
+	xboxVS, xboxPS := []byte("xboxvs"), []byte("xboxps")
+	shaderprecomp.RegisterDXBCsForWindows(i, winVS, winPS)
+	shaderprecomp.RegisterDXBCsForXbox(i, xboxVS, xboxPS)
+	clear(winVS)
+	clear(winPS)
+	clear(xboxVS)
+	clear(xboxPS)
 
 	vs, ps, ok := shaderprecomp.DXBCs(i, shaderprecomp.DXBCPlatformWindows)
 	if !ok {
@@ -86,8 +92,11 @@ func TestMetalLibrary(t *testing.T) {
 		t.Fatal("an iOS Metal library must not be registered yet")
 	}
 
-	shaderprecomp.RegisterMetalLibraryForMacOS(i, []byte("maclib"))
-	shaderprecomp.RegisterMetalLibraryForIOS(i, []byte("ioslib"))
+	macLibrary, iosLibrary := []byte("maclib"), []byte("ioslib")
+	shaderprecomp.RegisterMetalLibraryForMacOS(i, macLibrary)
+	shaderprecomp.RegisterMetalLibraryForIOS(i, iosLibrary)
+	clear(macLibrary)
+	clear(iosLibrary)
 
 	lib, ok := shaderprecomp.MetalLibrary(i, shaderprecomp.MetalLibraryPlatformMacOS)
 	if !ok {
@@ -150,7 +159,13 @@ func TestPlayStation5Shader(t *testing.T) {
 	if _, _, _, _, ok := shaderprecomp.PlayStation5Shader(i); ok {
 		t.Fatal("a PlayStation 5 shader must not be registered yet")
 	}
-	shaderprecomp.RegisterPlayStation5Shader(i, []byte("vh"), []byte("vt"), []byte("ph"), []byte("pt"))
+	vertexHeader, vertexText := []byte("vh"), []byte("vt")
+	pixelHeader, pixelText := []byte("ph"), []byte("pt")
+	shaderprecomp.RegisterPlayStation5Shader(i, vertexHeader, vertexText, pixelHeader, pixelText)
+	clear(vertexHeader)
+	clear(vertexText)
+	clear(pixelHeader)
+	clear(pixelText)
 	vh, vt, ph, pt, ok := shaderprecomp.PlayStation5Shader(i)
 	if !ok {
 		t.Fatal("a PlayStation 5 shader must be registered")
@@ -171,7 +186,13 @@ func TestPlayStation5Shader(t *testing.T) {
 
 func TestGLSL(t *testing.T) {
 	i := id("glsl")
-	shaderprecomp.RegisterGLSL(i, []byte("vs"), []byte("fs"), []byte("esvs"), []byte("esfs"))
+	vertex, fragment := []byte("vs"), []byte("fs")
+	esVertex, esFragment := []byte("esvs"), []byte("esfs")
+	shaderprecomp.RegisterGLSL(i, vertex, fragment, esVertex, esFragment)
+	clear(vertex)
+	clear(fragment)
+	clear(esVertex)
+	clear(esFragment)
 
 	vs, fs, ok := shaderprecomp.GLSL(i, false)
 	if !ok {

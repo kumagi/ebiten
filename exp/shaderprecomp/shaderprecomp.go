@@ -69,6 +69,8 @@ func MustParseShaderSourceID(str string) ShaderSourceID {
 //
 // RegisterDXBCsForWindows panics if Windows DXBCs for id are already registered.
 //
+// RegisterDXBCsForWindows copies the provided bytes.
+//
 // RegisterDXBCsForWindows is concurrent-safe.
 func RegisterDXBCsForWindows(id ShaderSourceID, vertexDXBC, pixelDXBC []byte) {
 	internalshaderprecomp.RegisterDXBCsForWindows(id.id, vertexDXBC, pixelDXBC)
@@ -81,6 +83,8 @@ func RegisterDXBCsForWindows(id ShaderSourceID, vertexDXBC, pixelDXBC []byte) {
 // See [RegisterDXBCsForWindows] for why Windows and Xbox are registered separately.
 //
 // RegisterDXBCsForXbox panics if Xbox DXBCs for id are already registered.
+//
+// RegisterDXBCsForXbox copies the provided bytes.
 //
 // RegisterDXBCsForXbox is concurrent-safe.
 func RegisterDXBCsForXbox(id ShaderSourceID, vertexDXBC, pixelDXBC []byte) {
@@ -95,6 +99,8 @@ func RegisterDXBCsForXbox(id ShaderSourceID, vertexDXBC, pixelDXBC []byte) {
 // libraries; register each with the matching function.
 //
 // RegisterMetalLibraryForMacOS panics if a macOS Metal library for id is already registered.
+//
+// RegisterMetalLibraryForMacOS copies the provided bytes.
 //
 // RegisterMetalLibraryForMacOS is concurrent-safe.
 func RegisterMetalLibraryForMacOS(id ShaderSourceID, library []byte) {
@@ -111,6 +117,8 @@ func RegisterMetalLibraryForMacOS(id ShaderSourceID, library []byte) {
 //
 // RegisterMetalLibraryForIOS panics if an iOS Metal library for id is already registered.
 //
+// RegisterMetalLibraryForIOS copies the provided bytes.
+//
 // RegisterMetalLibraryForIOS is concurrent-safe.
 func RegisterMetalLibraryForIOS(id ShaderSourceID, library []byte) {
 	internalshaderprecomp.RegisterMetalLibraryForIOS(id.id, library)
@@ -120,6 +128,8 @@ func RegisterMetalLibraryForIOS(id ShaderSourceID, library []byte) {
 // identified by id, so that Ebitengine uses it instead of compiling the shader at runtime.
 //
 // RegisterPlayStation5Shader panics if a PlayStation 5 shader for id is already registered.
+//
+// RegisterPlayStation5Shader copies the provided bytes.
 //
 // RegisterPlayStation5Shader is concurrent-safe.
 func RegisterPlayStation5Shader(id ShaderSourceID, vertexHeader, vertexText, pixelHeader, pixelText []byte) {
@@ -135,6 +145,8 @@ func RegisterPlayStation5Shader(id ShaderSourceID, vertexHeader, vertexText, pix
 // back to converting the shader source at runtime when that flavor is needed.
 //
 // RegisterGLSL panics if GLSL shaders for id are already registered.
+//
+// RegisterGLSL copies the provided bytes.
 //
 // RegisterGLSL is concurrent-safe.
 func RegisterGLSL(id ShaderSourceID, vertex, fragment, esVertex, esFragment []byte) {
