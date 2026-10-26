@@ -178,22 +178,36 @@ func (c *Context) Unbind() {
 	}
 }
 
-// Close releases the EGL context, surface, and display.
+// Close attempts to release the EGL context, surface, and display.
+// Cleanup errors are joined after all release calls have been attempted.
+// The recorded handles are cleared even when cleanup fails.
 func (c *Context) Close() error {
-	if c.display != 0 {
-		c.Unbind()
-		if c.context != 0 {
-			eglDestroyContext(c.display, c.context)
-			c.context = 0
-		}
-		if c.surface != 0 {
-			eglDestroySurface(c.display, c.surface)
-			c.surface = 0
-		}
-		eglTerminate(c.display)
-		c.display = 0
+	if c.display == 0 {
+		return nil
 	}
-	return nil
+	var errs []error
+	if c.context != 0 || c.surface != 0 {
+		if err := c.ClearCurrentContext(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if c.context != 0 {
+		if !eglDestroyContext(c.display, c.context) {
+			errs = append(errs, fmt.Errorf("egl: eglDestroyContext failed: %w", c.LastError()))
+		}
+		c.context = 0
+	}
+	if c.surface != 0 {
+		if !eglDestroySurface(c.display, c.surface) {
+			errs = append(errs, fmt.Errorf("egl: eglDestroySurface failed: %w", c.LastError()))
+		}
+		c.surface = 0
+	}
+	if !eglTerminate(c.display) {
+		errs = append(errs, fmt.Errorf("egl: eglTerminate failed: %w", c.LastError()))
+	}
+	c.display = 0
+	return errors.Join(errs...)
 }
 
 type eglError int32
