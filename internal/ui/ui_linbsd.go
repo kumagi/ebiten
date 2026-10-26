@@ -22,7 +22,6 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"unsafe"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/color"
 	"github.com/hajimehoshi/ebiten/v2/internal/colormode"
@@ -159,23 +158,12 @@ func glfwMonitorSizeInGLFWPixels(m *glfw.Monitor) (int, int, error) {
 	// for Ebitengine's `(*Monitor).Size()` public API.
 	// Also at the moment we need this prior to switching to fullscreen, but that might be replaceable.
 	// So this function computes the ratio of physical per logical pixels.
-	if !ensureX11() {
-		// No X11 connection? Assume we're on pure Wayland then.
-		// GLFW/Wayland shouldn't be having this issue.
-		return physWidth, physHeight, nil
-	}
-
-	display, err := glfw.GetX11Display()
-	if err != nil || display == 0 {
-		return physWidth, physHeight, nil
-	}
-
 	crtc, err := m.GetX11Adapter()
 	if err != nil || crtc == 0 {
 		return physWidth, physHeight, nil
 	}
 
-	w, h, ok := x11CrtcSize(display, uint(crtc))
+	w, h, ok := glfw.GetX11CrtcSize(crtc)
 	if !ok {
 		// Monitor not known to XRandR. Weird.
 		return physWidth, physHeight, nil
@@ -335,28 +323,6 @@ func (u *glfwBackend) syncLockKeysFromOS() {
 	caps := NewLockKeyStateFromBool(mask&xLockMask != 0)
 	num := NewLockKeyStateFromBool(mask&xMod2Mask != 0)
 	u.input.setLockKeys(caps, num)
-}
-
-// x11CrtcSize returns the pixel size of the given CRTC. ok is false when RandR
-// is unavailable or the CRTC cannot be queried.
-func x11CrtcSize(display uintptr, crtc xID) (width, height int, ok bool) {
-	if !xrandrLoaded {
-		return 0, 0, false
-	}
-	resources := xrrGetScreenResourcesCurrent(display, x11RootWindow(display))
-	if resources == 0 {
-		return 0, 0, false
-	}
-	defer xrrFreeScreenResources(resources)
-
-	info := xrrGetCrtcInfo(display, resources, crtc)
-	if info == 0 {
-		return 0, 0, false
-	}
-	defer xrrFreeCrtcInfo(info)
-
-	ci := (*xrrCrtcInfo)(unsafe.Pointer(info))
-	return int(ci.width), int(ci.height), true
 }
 
 // x11SetWindowThemeVariant sets the _GTK_THEME_VARIANT property on the window,

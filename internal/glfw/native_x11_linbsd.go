@@ -9,6 +9,7 @@ package glfw
 
 import (
 	"fmt"
+	"unsafe"
 )
 
 func GetX11Display() (uintptr, error) {
@@ -18,6 +19,26 @@ func GetX11Display() (uintptr, error) {
 // GetX11Adapter returns the RRCrtc of the monitor.
 func (m *Monitor) GetX11Adapter() (_RRCrtc, error) {
 	return m.platform.crtc, nil
+}
+
+// GetX11CrtcSize returns the current pixel size of crtc, or false if it is unavailable.
+func GetX11CrtcSize(crtc _RRCrtc) (width, height int, ok bool) {
+	randr := &_glfw.platformWindow.randr
+	if !randr.available || _glfw.platformWindow.display == 0 || crtc == 0 {
+		return 0, 0, false
+	}
+	resources := randr.GetScreenResourcesCurrent(_glfw.platformWindow.display, _glfw.platformWindow.root)
+	if resources == 0 {
+		return 0, 0, false
+	}
+	defer randr.FreeScreenResources(resources)
+	info := getCrtcInfoX11(resources, crtc)
+	if info == 0 {
+		return 0, 0, false
+	}
+	defer randr.FreeCrtcInfo(info)
+	ci := (*_XRRCrtcInfo)(unsafe.Pointer(info))
+	return int(ci.Width), int(ci.Height), true
 }
 
 // GetX11Monitor returns the RROutput of the monitor.
