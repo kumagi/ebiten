@@ -240,3 +240,95 @@ func TestKeyedBySourceID(t *testing.T) {
 		t.Errorf("got %q, want %q", lib, "b")
 	}
 }
+
+func TestRegisterNilDuplicatePanics(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		register  func(shaderir.SourceID, []byte)
+		available func(shaderir.SourceID) bool
+	}{
+		{
+			name: "Windows",
+			register: func(i shaderir.SourceID, b []byte) {
+				shaderprecomp.RegisterDXBCsForWindows(i, b, b)
+			},
+			available: func(i shaderir.SourceID) bool {
+				_, _, ok := shaderprecomp.DXBCs(i, shaderprecomp.DXBCPlatformWindows)
+				return ok
+			},
+		},
+		{
+			name: "Xbox",
+			register: func(i shaderir.SourceID, b []byte) {
+				shaderprecomp.RegisterDXBCsForXbox(i, b, b)
+			},
+			available: func(i shaderir.SourceID) bool {
+				_, _, ok := shaderprecomp.DXBCs(i, shaderprecomp.DXBCPlatformXbox)
+				return ok
+			},
+		},
+		{
+			name:     "macOS",
+			register: shaderprecomp.RegisterMetalLibraryForMacOS,
+			available: func(i shaderir.SourceID) bool {
+				_, ok := shaderprecomp.MetalLibrary(i, shaderprecomp.MetalLibraryPlatformMacOS)
+				return ok
+			},
+		},
+		{
+			name:     "iOS",
+			register: shaderprecomp.RegisterMetalLibraryForIOS,
+			available: func(i shaderir.SourceID) bool {
+				_, ok := shaderprecomp.MetalLibrary(i, shaderprecomp.MetalLibraryPlatformIOS)
+				return ok
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, initial := range []struct {
+				name string
+				data []byte
+			}{
+				{name: "nil"},
+				{name: "empty", data: []byte{}},
+			} {
+				t.Run(initial.name, func(t *testing.T) {
+					i := id(t.Name())
+					tc.register(i, initial.data)
+					if got, want := tc.available(i), initial.data != nil; got != want {
+						t.Fatalf("availability = %v, want %v", got, want)
+					}
+					func() {
+						defer func() {
+							if recover() == nil {
+								t.Error("registering an ID twice must panic")
+							}
+						}()
+						tc.register(i, []byte("replacement"))
+					}()
+					if got, want := tc.available(i), initial.data != nil; got != want {
+						t.Errorf("duplicate changed availability = %v, want %v", got, want)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestNilRegistrationsAreIndependent(t *testing.T) {
+	i := id(t.Name())
+	shaderprecomp.RegisterDXBCsForWindows(i, nil, nil)
+	shaderprecomp.RegisterDXBCsForXbox(i, nil, nil)
+	shaderprecomp.RegisterMetalLibraryForMacOS(i, nil)
+	shaderprecomp.RegisterMetalLibraryForIOS(i, nil)
+	for _, platform := range []shaderprecomp.DXBCPlatform{shaderprecomp.DXBCPlatformWindows, shaderprecomp.DXBCPlatformXbox} {
+		if _, _, ok := shaderprecomp.DXBCs(i, platform); ok {
+			t.Errorf("nil DXBC registration for %v must fall back to runtime compilation", platform)
+		}
+	}
+	for _, platform := range []shaderprecomp.MetalLibraryPlatform{shaderprecomp.MetalLibraryPlatformMacOS, shaderprecomp.MetalLibraryPlatformIOS} {
+		if _, ok := shaderprecomp.MetalLibrary(i, platform); ok {
+			t.Errorf("nil Metal registration for %v must fall back to runtime compilation", platform)
+		}
+	}
+}

@@ -45,6 +45,9 @@ const (
 type dxbcBinaries struct {
 	vertex []byte
 	pixel  []byte
+
+	// registered distinguishes nil binaries from an unregistered platform.
+	registered bool
 }
 
 type dxbc struct {
@@ -76,6 +79,9 @@ const (
 type metalLibrary struct {
 	macOS []byte
 	iOS   []byte
+
+	macOSRegistered bool
+	iOSRegistered   bool
 }
 
 type playStation5Shader struct {
@@ -113,10 +119,10 @@ func (r *registry) registerDXBCsForWindows(id shaderir.SourceID, vertex, pixel [
 		r.dxbcs = map[shaderir.SourceID]dxbc{}
 	}
 	f := r.dxbcs[id]
-	if f.windows.vertex != nil || f.windows.pixel != nil {
+	if f.windows.registered {
 		panic(fmt.Sprintf("shaderprecomp: Windows DXBCs for the shader source ID %s are already registered", id))
 	}
-	f.windows = dxbcBinaries{vertex: vertex, pixel: pixel}
+	f.windows = dxbcBinaries{vertex: vertex, pixel: pixel, registered: true}
 	r.dxbcs[id] = f
 }
 
@@ -128,10 +134,10 @@ func (r *registry) registerDXBCsForXbox(id shaderir.SourceID, vertex, pixel []by
 		r.dxbcs = map[shaderir.SourceID]dxbc{}
 	}
 	f := r.dxbcs[id]
-	if f.xbox.vertex != nil || f.xbox.pixel != nil {
+	if f.xbox.registered {
 		panic(fmt.Sprintf("shaderprecomp: Xbox DXBCs for the shader source ID %s are already registered", id))
 	}
-	f.xbox = dxbcBinaries{vertex: vertex, pixel: pixel}
+	f.xbox = dxbcBinaries{vertex: vertex, pixel: pixel, registered: true}
 	r.dxbcs[id] = f
 }
 
@@ -160,10 +166,11 @@ func (r *registry) registerMetalLibraryForMacOS(id shaderir.SourceID, library []
 		r.metalLibraries = map[shaderir.SourceID]metalLibrary{}
 	}
 	lib := r.metalLibraries[id]
-	if lib.macOS != nil {
+	if lib.macOSRegistered {
 		panic(fmt.Sprintf("shaderprecomp: a macOS Metal library for the shader source ID %s is already registered", id))
 	}
 	lib.macOS = library
+	lib.macOSRegistered = true
 	r.metalLibraries[id] = lib
 }
 
@@ -175,10 +182,11 @@ func (r *registry) registerMetalLibraryForIOS(id shaderir.SourceID, library []by
 		r.metalLibraries = map[shaderir.SourceID]metalLibrary{}
 	}
 	lib := r.metalLibraries[id]
-	if lib.iOS != nil {
+	if lib.iOSRegistered {
 		panic(fmt.Sprintf("shaderprecomp: an iOS Metal library for the shader source ID %s is already registered", id))
 	}
 	lib.iOS = library
+	lib.iOSRegistered = true
 	r.metalLibraries[id] = lib
 }
 
@@ -276,7 +284,7 @@ func RegisterDXBCsForXbox(id shaderir.SourceID, vertex, pixel []byte) {
 }
 
 // DXBCs returns the precompiled DXBC binaries registered for the shader source ID id and platform.
-// ok is false when no binaries are registered for the platform, in which case the shader is compiled at runtime.
+// ok is false when both binaries for the platform are nil, in which case the shader is compiled at runtime.
 func DXBCs(id shaderir.SourceID, platform DXBCPlatform) (vertex, pixel []byte, ok bool) {
 	return theRegistry.getDXBCs(id, platform)
 }
@@ -294,7 +302,7 @@ func RegisterMetalLibraryForIOS(id shaderir.SourceID, library []byte) {
 }
 
 // MetalLibrary returns the precompiled Metal library registered for the shader source ID id and platform.
-// ok is false when no library is registered for the platform, in which case the shader is compiled at runtime.
+// ok is false when the library for the platform is nil, in which case the shader is compiled at runtime.
 func MetalLibrary(id shaderir.SourceID, platform MetalLibraryPlatform) (library []byte, ok bool) {
 	return theRegistry.getMetalLibrary(id, platform)
 }
