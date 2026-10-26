@@ -240,6 +240,7 @@ func (f *ComposerForwarder) initComposerCallbacks() {
 	f.composer.OnNewSession = f.onNewSession
 	f.composer.OnComposition = f.onComposition
 	f.composer.OnCommit = f.onCommit
+	f.composer.OnEndByUser = f.onEndByUser
 }
 
 // reset releases the host session, if any, and forgets the target and any bridge. The host's
@@ -334,4 +335,11 @@ func (f *ComposerForwarder) onCommit(c *textinput.Commit) {
 	f.predictedBefore = before + c.Text()
 	f.predictedAfter = after
 	f.bridgeUpdates = 0
+}
+
+func (f *ComposerForwarder) onEndByUser() {
+	if t := f.target; t != nil && !t.IsClosed() {
+		t.End()
+	}
+	f.reset()
 }
