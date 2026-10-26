@@ -597,6 +597,10 @@ func (i *_IDXGISwapChain) Present(syncInterval uint32, flags uint32) (occluded b
 		if uint32(r) == uint32(windows.DXGI_STATUS_OCCLUDED) {
 			return true, nil
 		}
+		// DXGI_STATUS_MODE_CHANGED is a successful notification.
+		if uint32(r) == uint32(windows.DXGI_STATUS_MODE_CHANGED) {
+			return false, nil
+		}
 		return false, fmt.Errorf("directx: IDXGISwapChain::Present failed: %w", handleError(windows.Handle(uint32(r))))
 	}
 	return false, nil
