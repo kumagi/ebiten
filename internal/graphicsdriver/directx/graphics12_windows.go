@@ -120,7 +120,9 @@ type graphics12 struct {
 
 	suspendingCh chan struct{}
 	suspendedCh  chan struct{}
-	resumeCh     chan struct{}
+	// resumeCh is buffered so that a resume notification that arrives without a
+	// suspend in flight does not block the GDK notification thread forever.
+	resumeCh chan struct{}
 
 	pipelineStates
 }
@@ -309,14 +311,22 @@ func (g *graphics12) initializeXbox(useWARP bool, useDebugLayer bool) (err error
 
 	g.suspendingCh = make(chan struct{})
 	g.suspendedCh = make(chan struct{})
-	g.resumeCh = make(chan struct{})
+	g.resumeCh = make(chan struct{}, 1)
 	if _, err := _RegisterAppStateChangeNotification(func(quiesced bool, context unsafe.Pointer) uintptr {
 		if quiesced {
+			// A previous resume must not satisfy this suspension.
+			select {
+			case <-g.resumeCh:
+			default:
+			}
 			g.suspendingCh <- struct{}{}
 			// Confirm the suspension completed before the callback ends.
 			<-g.suspendedCh
 		} else {
-			g.resumeCh <- struct{}{}
+			select {
+			case g.resumeCh <- struct{}{}:
+			default:
+			}
 		}
 		return 0
 	}, nil); err != nil {
