@@ -238,6 +238,10 @@ type asyncPixelReadback struct {
 	results []*graphicscommand.PixelReadback
 }
 
+// maxOutstandingReadbacks bounds retained read-back results, including completed results
+// the guest has not disposed of yet.
+const maxOutstandingReadbacks = 64
+
 // guestEventKind discriminates a guest event queued for handler delivery.
 type guestEventKind int
 
@@ -685,6 +689,9 @@ func (g *GuestSession) startReadPixelsAsync(query *vmprotocol.GuestMessage) (uin
 	mirror, total, err := g.validateReadPixels(query)
 	if err != nil {
 		return 0, err
+	}
+	if len(g.readbacks) >= maxOutstandingReadbacks {
+		return 0, fmt.Errorf("vmhost: too many outstanding read-backs: %d", len(g.readbacks))
 	}
 	pixels := slices.Grow(g.readbackPixelsBuf[:0], int(total))[:int(total)]
 	g.readbackPixelsBuf = nil
