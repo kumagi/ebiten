@@ -17,6 +17,7 @@
 package glfw
 
 import (
+	"errors"
 	"fmt"
 	"structs"
 	"unsafe"
@@ -193,15 +194,18 @@ type _XrmValue struct {
 
 // openX11Library dlopens the first available of the given sonames.
 func openX11Library(names ...string) (uintptr, error) {
+	if len(names) == 0 {
+		return 0, fmt.Errorf("glfw: no library name to load: %w", InvalidValue)
+	}
 	var errs []error
 	for _, name := range names {
 		lib, err := purego.Dlopen(name, purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 		if err == nil {
 			return lib, nil
 		}
-		errs = append(errs, err)
+		errs = append(errs, fmt.Errorf("%s: %w", name, err))
 	}
-	return 0, fmt.Errorf("glfw: failed to load any of %v: %w", names, errs[0])
+	return 0, fmt.Errorf("glfw: failed to load any of %v: %w", names, errors.Join(errs...))
 }
 
 // initLibX11 loads libX11 and registers its functions. It must be called
@@ -214,7 +218,6 @@ func initLibX11() error {
 	if err != nil {
 		return err
 	}
-	libX11 = lib
 
 	purego.RegisterLibFunc(&xConnectionNumber, lib, "XConnectionNumber")
 	purego.RegisterLibFunc(&xDefaultDepth, lib, "XDefaultDepth")
@@ -328,6 +331,7 @@ func initLibX11() error {
 
 	setlocaleSym, err := purego.Dlsym(purego.RTLD_DEFAULT, "setlocale")
 	if err != nil {
+		_ = purego.Dlclose(lib)
 		return err
 	}
 	purego.RegisterFunc(&setlocale, setlocaleSym)
@@ -337,6 +341,8 @@ func initLibX11() error {
 		purego.RegisterFunc(&mbstowcs, mbstowcsSym)
 	}
 
+	// Publish the handle only after every required function is registered.
+	libX11 = lib
 	return nil
 }
 
