@@ -1046,7 +1046,7 @@ func (g *GoTextFaceSource) buildRenderData(gl shaping.Glyph, size fixed.Int26_6,
 		}
 	}
 	if bounds.Empty() && !useBitmap && !hasSVG {
-		return nil, false
+		return nil, true
 	}
 
 	// variations is a caller-owned snapshot — taken by buildGlyphs
@@ -1185,7 +1185,7 @@ func (g *GoTextFaceSource) fetchGlyphData(gid font.GID, variationsString string,
 	return g.glyphDataCache.getOrCreate(key, func() (font.GlyphData, bool) {
 		d := g.glyphDataWithoutSVG(gid)
 		if d == nil {
-			return nil, false
+			return nil, true
 		}
 		if sideways {
 			// A sideways run rasterizes the outline (or the fallback
