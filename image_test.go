@@ -5664,3 +5664,15 @@ func TestImageDrawTrianglesWithNilImageAndEmptyIndices(t *testing.T) {
 	vs := make([]ebiten.Vertex, 3)
 	dst.DrawTriangles(vs, nil, nil, nil)
 }
+
+func TestScratchImagesDoNotUnionDisjointBounds(t *testing.T) {
+	ebiten.ResetStencilBufferImagesForTesting()
+	t.Cleanup(ebiten.ResetStencilBufferImagesForTesting)
+	for _, bounds := range []image.Rectangle{image.Rect(0, 0, 64, 1), image.Rect(0, 0, 1, 64), image.Rect(30, 40, 38, 48)} {
+		for i, got := range ebiten.ScratchImageBoundsForTesting(bounds) {
+			if got != bounds {
+				t.Errorf("scratch %d: got %v, want %v", i, got, bounds)
+			}
+		}
+	}
+}

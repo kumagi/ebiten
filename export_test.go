@@ -14,7 +14,11 @@
 
 package ebiten
 
-import "github.com/hajimehoshi/ebiten/v2/internal/builtinshader"
+import (
+	"image"
+
+	"github.com/hajimehoshi/ebiten/v2/internal/builtinshader"
+)
 
 var (
 	ImageToBytes = imageToBytes
@@ -39,5 +43,16 @@ func ResetStencilBufferImagesForTesting() {
 	if offscreenImage2 != nil {
 		offscreenImage2.Deallocate()
 		offscreenImage2 = nil
+	}
+}
+
+func ScratchImageBoundsForTesting(bounds image.Rectangle) [3]image.Rectangle {
+	stencilBufferM.Lock()
+	defer stencilBufferM.Unlock()
+
+	return [3]image.Rectangle{
+		ensureStencilBufferImage(bounds).Bounds(),
+		ensureOffscreenImage1(bounds).Bounds(),
+		ensureOffscreenImage2(bounds).Bounds(),
 	}
 }

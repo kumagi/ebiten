@@ -123,15 +123,14 @@ var (
 	offscreenImage2    *Image
 )
 
+// Replacement scratch images only need the new bounds; their previous contents are discarded.
 func ensureStencilBufferImage(bounds image.Rectangle) *Image {
-	var prevBounds image.Rectangle
 	if stencilBufferImage != nil && !bounds.In(stencilBufferImage.Bounds()) {
-		prevBounds = stencilBufferImage.Bounds()
 		stencilBufferImage.Deallocate()
 		stencilBufferImage = nil
 	}
 	if stencilBufferImage == nil {
-		stencilBufferImage = NewImageWithOptions(bounds.Union(prevBounds), nil)
+		stencilBufferImage = NewImageWithOptions(bounds, nil)
 	} else {
 		stencilBufferImage.Clear()
 	}
@@ -139,14 +138,12 @@ func ensureStencilBufferImage(bounds image.Rectangle) *Image {
 }
 
 func ensureOffscreenImage1(bounds image.Rectangle) *Image {
-	var prevBounds image.Rectangle
 	if offscreenImage1 != nil && !bounds.In(offscreenImage1.Bounds()) {
-		prevBounds = offscreenImage1.Bounds()
 		offscreenImage1.Deallocate()
 		offscreenImage1 = nil
 	}
 	if offscreenImage1 == nil {
-		offscreenImage1 = NewImageWithOptions(bounds.Union(prevBounds), nil)
+		offscreenImage1 = NewImageWithOptions(bounds, nil)
 	} else {
 		offscreenImage1.Clear()
 	}
@@ -154,14 +151,12 @@ func ensureOffscreenImage1(bounds image.Rectangle) *Image {
 }
 
 func ensureOffscreenImage2(bounds image.Rectangle) *Image {
-	var prevBounds image.Rectangle
 	if offscreenImage2 != nil && !bounds.In(offscreenImage2.Bounds()) {
-		prevBounds = offscreenImage2.Bounds()
 		offscreenImage2.Deallocate()
 		offscreenImage2 = nil
 	}
 	if offscreenImage2 == nil {
-		offscreenImage2 = NewImageWithOptions(bounds.Union(prevBounds), nil)
+		offscreenImage2 = NewImageWithOptions(bounds, nil)
 	} else {
 		offscreenImage2.Clear()
 	}
