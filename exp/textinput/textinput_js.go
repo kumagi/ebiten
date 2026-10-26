@@ -303,8 +303,8 @@ func (t *textInputImpl) Start(bounds image.Rectangle, textBeforeCaret, textAfter
 		style.Set("font-size", fmt.Sprintf("%dpx", bounds.Dy()))
 		style.Set("line-height", fmt.Sprintf("%dpx", bounds.Dy()))
 
-		t.events.start()
-		return t.events.ch, func() {
+		ch, _ := t.events.start()
+		return ch, func() {
 			t.events.end()
 			// Reset the session explicitly, or a new session cannot be created above.
 		}
