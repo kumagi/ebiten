@@ -5664,3 +5664,122 @@ func TestImageDrawTrianglesWithNilImageAndEmptyIndices(t *testing.T) {
 	vs := make([]ebiten.Vertex, 3)
 	dst.DrawTriangles(vs, nil, nil, nil)
 }
+
+func TestImageDrawScratchConcurrent(t *testing.T) {
+	shader, err := ebiten.NewShader([]byte(`//kage:unit pixels
+package main
+var Tint vec4
+func Fragment(position vec4, texCoord vec2, color vec4) vec4 { return Tint }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer shader.Deallocate()
+
+	src := ebiten.NewImage(1, 1)
+	defer src.Deallocate()
+	src.Fill(color.White)
+
+	for _, aa := range []bool{false, true} {
+		t.Run(fmt.Sprintf("aa=%t", aa), func(t *testing.T) {
+			dst := ebiten.NewImage(8, 3)
+			defer dst.Deallocate()
+			r := image.Rect(1, 1, 7, 2)
+			var wg sync.WaitGroup
+			for method := range 6 {
+				sub := dst.SubImage(r).(*ebiten.Image)
+				wg.Go(func() {
+					x := float32(method + 1)
+					vertices := []ebiten.Vertex{
+						{
+							DstX:   x,
+							DstY:   1,
+							SrcX:   0,
+							SrcY:   0,
+							ColorR: 1,
+							ColorG: 1,
+							ColorB: 1,
+							ColorA: 1,
+						},
+						{
+							DstX:   x + 1,
+							DstY:   1,
+							SrcX:   1,
+							SrcY:   0,
+							ColorR: 1,
+							ColorG: 1,
+							ColorB: 1,
+							ColorA: 1,
+						},
+						{
+							DstX:   x,
+							DstY:   2,
+							SrcX:   0,
+							SrcY:   1,
+							ColorR: 1,
+							ColorG: 1,
+							ColorB: 1,
+							ColorA: 1,
+						},
+						{
+							DstX:   x + 1,
+							DstY:   2,
+							SrcX:   1,
+							SrcY:   1,
+							ColorR: 1,
+							ColorG: 1,
+							ColorB: 1,
+							ColorA: 1,
+						},
+					}
+					indices := []uint16{0, 1, 2, 1, 2, 3}
+					indices32 := []uint32{0, 1, 2, 1, 2, 3}
+					r := float32(method+1) / 8
+					u := map[string]any{"Tint": []float32{r, 0, 0, 1}}
+					var imageOp ebiten.DrawImageOptions
+					imageOp.GeoM.Translate(float64(x), 1)
+					imageOp.ColorM.Scale(0, 0, 0, 1)
+					imageOp.ColorM.Translate(float64(r), 0, 0, 0)
+					var triangleOp ebiten.DrawTrianglesOptions
+					triangleOp.AntiAlias = aa
+					triangleOp.Blend = ebiten.BlendSourceOver
+					triangleOp.ColorM = imageOp.ColorM
+					var shaderOp ebiten.DrawTrianglesShaderOptions
+					shaderOp.AntiAlias = aa
+					shaderOp.Blend = ebiten.BlendSourceOver
+					shaderOp.Uniforms = u
+					var rectOp ebiten.DrawRectShaderOptions
+					rectOp.GeoM.Translate(float64(x), 1)
+					rectOp.Uniforms = u
+					for range 20 {
+						switch method {
+						case 0:
+							sub.DrawImage(src, &imageOp)
+						case 1:
+							sub.DrawTriangles(vertices, indices, src, &triangleOp)
+						case 2:
+							sub.DrawTriangles32(vertices, indices32, src, &triangleOp)
+						case 3:
+							sub.DrawTrianglesShader(vertices, indices, shader, &shaderOp)
+						case 4:
+							sub.DrawTrianglesShader32(vertices, indices32, shader, &shaderOp)
+						case 5:
+							sub.DrawRectShader(1, 1, shader, &rectOp)
+						}
+					}
+				})
+			}
+			wg.Wait()
+
+			pix := make([]byte, 8*3*4)
+			dst.ReadPixels(pix)
+			for method := range 6 {
+				got := pix[4*(8+method+1) : 4*(8+method+2)]
+				wantR := byte((method + 1) * 255 / 8)
+				if d := int(got[0]) - int(wantR); d < -1 || d > 1 || got[1] != 0 || got[2] != 0 || got[3] != 255 {
+					t.Errorf("method %d: got %v, want red=%d alpha=255", method, got, wantR)
+				}
+			}
+		})
+	}
+}

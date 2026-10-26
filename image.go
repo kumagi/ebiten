@@ -46,6 +46,9 @@ type Image struct {
 	original *Image
 	bounds   image.Rectangle
 
+	// drawMu protects the draw scratch buffers until ui.Image consumes them.
+	drawMu sync.Mutex
+
 	// tmpVertices must not be reused until ui.Image.Draw* is called.
 	tmpVertices []float32
 
@@ -335,6 +338,8 @@ func (i *Image) DrawImage(img *Image, options *DrawImageOptions) {
 	sx1, sy1 := img.adjustPosition(bounds.Max.X, bounds.Max.Y)
 	colorm, cr, cg, cb, ca := colorMToScale(options.ColorM.affineColorM())
 	cr, cg, cb, ca = options.ColorScale.apply(cr, cg, cb, ca)
+	i.drawMu.Lock()
+	defer i.drawMu.Unlock()
 	vs := i.ensureTmpVertices(4 * graphics.VertexFloatCount)
 	graphics.QuadVerticesFromSrcAndMatrix(vs, float32(sx0), float32(sy0), float32(sx1), float32(sy1), a, b, c, d, tx, ty, cr, cg, cb, ca)
 	is := graphics.QuadIndices()
@@ -586,11 +591,7 @@ const MaxVertexCount = graphicscommand.MaxVertexCount
 //
 // When the image i is disposed and the given image is not, DrawTriangles does nothing.
 func (i *Image) DrawTriangles(vertices []Vertex, indices []uint16, img *Image, options *DrawTrianglesOptions) {
-	is := i.ensureTmpIndices(len(indices))
-	for i := range is {
-		is[i] = uint32(indices[i])
-	}
-	i.DrawTriangles32(vertices, is, img, options)
+	i.drawTriangles(vertices, indices, nil, img, options)
 }
 
 // DrawTriangles32 draws triangles with the specified vertices and their indices.
@@ -618,6 +619,10 @@ func (i *Image) DrawTriangles(vertices []Vertex, indices []uint16, img *Image, o
 //
 // When the image i is disposed and the given image is not, DrawTriangles32 does nothing.
 func (i *Image) DrawTriangles32(vertices []Vertex, indices []uint32, img *Image, options *DrawTrianglesOptions) {
+	i.drawTriangles(vertices, nil, indices, img, options)
+}
+
+func (i *Image) drawTriangles(vertices []Vertex, indices16 []uint16, indices []uint32, img *Image, options *DrawTrianglesOptions) {
 	i.copyCheck()
 
 	if img == nil {
@@ -630,7 +635,7 @@ func (i *Image) DrawTriangles32(vertices []Vertex, indices []uint32, img *Image,
 		return
 	}
 
-	if len(indices) == 0 {
+	if len(indices) == 0 && len(indices16) == 0 {
 		return
 	}
 
@@ -643,6 +648,12 @@ func (i *Image) DrawTriangles32(vertices []Vertex, indices []uint32, img *Image,
 	}
 
 	if options != nil && (options.FillRule != FillRuleFillAll || options.AntiAlias) && !i.Bounds().Empty() {
+		if len(indices16) > 0 {
+			indices = make([]uint32, len(indices16))
+			for j, index := range indices16 {
+				indices[j] = uint32(index)
+			}
+		}
 		drawTrianglesWithStencilBuffer(i, vertices, indices, img, options)
 		return
 	}
@@ -652,6 +663,16 @@ func (i *Image) DrawTriangles32(vertices []Vertex, indices []uint32, img *Image,
 
 	img.updateAccessTime()
 	i.updateAccessTime()
+
+	i.drawMu.Lock()
+	defer i.drawMu.Unlock()
+
+	if len(indices16) > 0 {
+		indices = i.ensureTmpIndices(len(indices16))
+		for j, index := range indices16 {
+			indices[j] = uint32(index)
+		}
+	}
 
 	if len(vertices) > graphicscommand.MaxVertexCount {
 		// The last part cannot be specified by indices. Just omit them.
@@ -821,11 +842,7 @@ var _ [len(DrawTrianglesShaderOptions{}.Images) - graphics.ShaderSrcImageCount]s
 //
 // When the image i is disposed and no disposed shader or image is given, DrawTrianglesShader does nothing.
 func (i *Image) DrawTrianglesShader(vertices []Vertex, indices []uint16, shader *Shader, options *DrawTrianglesShaderOptions) {
-	is := i.ensureTmpIndices(len(indices))
-	for i := range is {
-		is[i] = uint32(indices[i])
-	}
-	i.DrawTrianglesShader32(vertices, is, shader, options)
+	i.drawTrianglesShader(vertices, indices, nil, shader, options)
 }
 
 // DrawTrianglesShader32 draws triangles with the specified vertices and their indices with the specified shader.
@@ -859,6 +876,10 @@ func (i *Image) DrawTrianglesShader(vertices []Vertex, indices []uint16, shader 
 //
 // When the image i is disposed and no disposed shader or image is given, DrawTrianglesShader32 does nothing.
 func (i *Image) DrawTrianglesShader32(vertices []Vertex, indices []uint32, shader *Shader, options *DrawTrianglesShaderOptions) {
+	i.drawTrianglesShader(vertices, nil, indices, shader, options)
+}
+
+func (i *Image) drawTrianglesShader(vertices []Vertex, indices16 []uint16, indices []uint32, shader *Shader, options *DrawTrianglesShaderOptions) {
 	i.copyCheck()
 
 	if shader.isDisposed() {
@@ -880,11 +901,17 @@ func (i *Image) DrawTrianglesShader32(vertices []Vertex, indices []uint32, shade
 		return
 	}
 
-	if len(indices) == 0 {
+	if len(indices) == 0 && len(indices16) == 0 {
 		return
 	}
 
 	if options != nil && (options.FillRule != FillRuleFillAll || options.AntiAlias) && !i.Bounds().Empty() {
+		if len(indices16) > 0 {
+			indices = make([]uint32, len(indices16))
+			for j, index := range indices16 {
+				indices[j] = uint32(index)
+			}
+		}
 		drawTrianglesShaderWithStencilBuffer(i, vertices, indices, shader, options)
 		return
 	}
@@ -908,6 +935,16 @@ func (i *Image) DrawTrianglesShader32(vertices []Vertex, indices []uint32, shade
 		}
 	}
 	i.updateAccessTime()
+
+	i.drawMu.Lock()
+	defer i.drawMu.Unlock()
+
+	if len(indices16) > 0 {
+		indices = i.ensureTmpIndices(len(indices16))
+		for j, index := range indices16 {
+			indices[j] = uint32(index)
+		}
+	}
 
 	if len(vertices) > graphicscommand.MaxVertexCount {
 		// The last part cannot be specified by indices. Just omit them.
@@ -1143,6 +1180,8 @@ func (i *Image) DrawRectShader(width, height int, shader *Shader, options *DrawR
 	if det := a*d - b*c; det == 0 {
 		return
 	}
+	i.drawMu.Lock()
+	defer i.drawMu.Unlock()
 	cr, cg, cb, ca := options.ColorScale.elements()
 	vs := i.ensureTmpVertices(4 * graphics.VertexFloatCount)
 
