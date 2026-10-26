@@ -459,16 +459,27 @@ func supportsXInput(guid windows.GUID) (bool, error) {
 			continue
 		}
 
-		var name [256]uint16
 		// RIDI_DEVICENAME requires the buffer size in characters.
 		// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getrawinputdeviceinfow
-		size = uint32(len(name))
-		if _, err := _GetRawInputDeviceInfoW(ridl[i].hDevice, _RIDI_DEVICENAME, unsafe.Pointer(&name[0]), &size); err != nil {
-			// The device can be removed between listing and querying it. As in GLFW, treat this as not XInput.
-			return false, nil
+		var name [256]uint16
+		nameSlice := name[:]
+		size = 0
+		if _, err := _GetRawInputDeviceInfoW(ridl[i].hDevice, _RIDI_DEVICENAME, nil, &size); err != nil {
+			continue
+		}
+		if size == 0 {
+			continue
+		}
+		if size > uint32(len(nameSlice)) {
+			nameSlice = make([]uint16, size)
+		}
+		size = uint32(len(nameSlice))
+		if _, err := _GetRawInputDeviceInfoW(ridl[i].hDevice, _RIDI_DEVICENAME, unsafe.Pointer(&nameSlice[0]), &size); err != nil {
+			// A removed device must not prevent checking the remaining devices.
+			continue
 		}
 
-		if strings.Contains(windows.UTF16ToString(name[:]), "IG_") {
+		if strings.Contains(windows.UTF16ToString(nameSlice), "IG_") {
 			return true, nil
 		}
 	}
