@@ -216,7 +216,12 @@ func (u *UserInterface) updateInputFromEvent(e js.Value) error {
 	case t.Equal(stringKeydown), t.Equal(stringKeyup), t.Equal(stringMousedown), t.Equal(stringMouseup),
 		t.Equal(stringMousemove), t.Equal(stringWheel):
 		u.inputState.CapsLock = NewLockKeyStateFromBool(e.Call("getModifierState", stringCapsLock).Bool())
-		u.inputState.NumLock = NewLockKeyStateFromBool(e.Call("getModifierState", stringNumLock).Bool())
+		if isApple {
+			// Apple numeric keypads always produce digits, even when the event reports Num Lock off.
+			u.inputState.NumLock = LockKeyStateOn
+		} else {
+			u.inputState.NumLock = NewLockKeyStateFromBool(e.Call("getModifierState", stringNumLock).Bool())
+		}
 	}
 
 	u.forceUpdateOnMinimumFPSMode()
