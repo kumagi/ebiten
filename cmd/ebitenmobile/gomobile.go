@@ -150,6 +150,20 @@ import (
 	args := []string{"mod", "edit"}
 	for _, m := range info.Deps {
 		args = append(args, "-require="+m.Path+"@"+m.Version)
+		if m.Path == "github.com/ebitengine/gomobile" && os.Getenv("EBITENMOBILE_GOMOBILE") != "" {
+			// The explicit override below takes precedence over build information.
+			continue
+		}
+		if r := m.Replace; r != nil {
+			replacement := r.Path
+			if r.Version != "" && r.Version != "(devel)" {
+				replacement += "@" + r.Version
+			} else if !filepath.IsAbs(replacement) {
+				// Build information does not retain the directory relative paths refer to.
+				return tmp, fmt.Errorf("ebitenmobile: cannot resolve relative replacement %q for %s; rebuild ebitenmobile with an absolute replacement path", replacement, m.Path)
+			}
+			args = append(args, "-replace="+m.Path+"="+replacement)
+		}
 	}
 	if err := runGo(args...); err != nil {
 		return tmp, err
