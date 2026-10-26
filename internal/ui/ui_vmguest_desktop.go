@@ -954,10 +954,16 @@ func (r *vmPixelReadback) readPixels(kind vmprotocol.GuestMessageKind) (bool, er
 	if !answer.ReadbackDone {
 		return false, nil
 	}
+	if got, want := len(answer.Pixels), len(r.args); got != want {
+		return false, fmt.Errorf("ui: host returned %d pixel buffers for %d regions", got, want)
+	}
 	for j, a := range r.args {
-		if j < len(answer.Pixels) {
-			copy(a.Pixels, answer.Pixels[j])
+		if got, want := len(answer.Pixels[j]), len(a.Pixels); got != want {
+			return false, fmt.Errorf("ui: host returned %d bytes for region %d; want %d", got, j, want)
 		}
+	}
+	for j, a := range r.args {
+		copy(a.Pixels, answer.Pixels[j])
 	}
 	return true, nil
 }
