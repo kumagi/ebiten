@@ -679,30 +679,69 @@ func xsyncValuePassableAsWord() bool {
 	return strconv.IntSize == 64
 }
 
+type x11Func struct {
+	name string
+	fptr any
+}
+
+// registerX11Funcs resolves every entry point before publishing any bindings.
+// Missing entry points disable an optional extension instead of causing a panic.
+func registerX11Funcs(handle uintptr, funcs ...x11Func) bool {
+	symbols := make([]uintptr, len(funcs))
+	for i, f := range funcs {
+		sym, err := purego.Dlsym(handle, f.name)
+		if err != nil || sym == 0 {
+			return false
+		}
+		symbols[i] = sym
+	}
+	for i, f := range funcs {
+		purego.RegisterFunc(f.fptr, symbols[i])
+	}
+	return true
+}
+
 // initExtensions looks for and initializes supported X11 extensions.
 func initExtensions() error {
 	display := _glfw.platformWindow.display
 
 	if handle, err := openX11Library("libXi.so.6", "libXi.so"); err == nil {
 		xi := &_glfw.platformWindow.xi
-		xi.handle = handle
-		purego.RegisterLibFunc(&xi.QueryVersion, handle, "XIQueryVersion")
-		purego.RegisterLibFunc(&xi.SelectEvents, handle, "XISelectEvents")
-		purego.RegisterLibFunc(&xi.QueryDevice, handle, "XIQueryDevice")
-		purego.RegisterLibFunc(&xi.FreeDeviceInfo, handle, "XIFreeDeviceInfo")
+		if !registerX11Funcs(handle,
+			x11Func{
+				name: "XIQueryVersion",
+				fptr: &xi.QueryVersion,
+			},
+			x11Func{
+				name: "XISelectEvents",
+				fptr: &xi.SelectEvents,
+			},
+			x11Func{
+				name: "XIQueryDevice",
+				fptr: &xi.QueryDevice,
+			},
+			x11Func{
+				name: "XIFreeDeviceInfo",
+				fptr: &xi.FreeDeviceInfo,
+			},
+		) {
+			_ = purego.Dlclose(handle)
+		} else {
+			xi.handle = handle
 
-		if xQueryExtension(display, "XInputExtension", &xi.majorOpcode, &xi.eventBase, &xi.errorBase) {
-			// The server clamps the version down to what it supports, so requesting 2.1 keeps
-			// working on servers that only offer the 2.0 features (raw motion).
-			xi.major = 2
-			xi.minor = 1
-			if xi.QueryVersion(display, &xi.major, &xi.minor) == _Success {
-				xi.available = true
-				if xi.major > 2 || xi.minor >= 1 {
-					xi.scrollAvailable = true
-					xi.scrollAxes = map[int32][]xiScrollAxis{}
-					xi.pendingScroll = map[int32]xiPendingScroll{}
-					refreshXIScrollAxes()
+			if xQueryExtension(display, "XInputExtension", &xi.majorOpcode, &xi.eventBase, &xi.errorBase) {
+				// The server clamps the version down to what it supports, so requesting 2.1 keeps
+				// working on servers that only offer the 2.0 features (raw motion).
+				xi.major = 2
+				xi.minor = 1
+				if xi.QueryVersion(display, &xi.major, &xi.minor) == _Success {
+					xi.available = true
+					if xi.major > 2 || xi.minor >= 1 {
+						xi.scrollAvailable = true
+						xi.scrollAxes = map[int32][]xiScrollAxis{}
+						xi.pendingScroll = map[int32]xiPendingScroll{}
+						refreshXIScrollAxes()
+					}
 				}
 			}
 		}
@@ -710,25 +749,66 @@ func initExtensions() error {
 
 	if handle, err := openX11Library("libXrandr.so.2", "libXrandr.so"); err == nil {
 		randr := &_glfw.platformWindow.randr
-		randr.handle = handle
-		purego.RegisterLibFunc(&randr.FreeCrtcInfo, handle, "XRRFreeCrtcInfo")
-		purego.RegisterLibFunc(&randr.FreeOutputInfo, handle, "XRRFreeOutputInfo")
-		purego.RegisterLibFunc(&randr.FreeScreenResources, handle, "XRRFreeScreenResources")
-		purego.RegisterLibFunc(&randr.GetCrtcInfo, handle, "XRRGetCrtcInfo")
-		purego.RegisterLibFunc(&randr.GetOutputInfo, handle, "XRRGetOutputInfo")
-		purego.RegisterLibFunc(&randr.GetOutputPrimary, handle, "XRRGetOutputPrimary")
-		purego.RegisterLibFunc(&randr.GetScreenResourcesCurrent, handle, "XRRGetScreenResourcesCurrent")
-		purego.RegisterLibFunc(&randr.QueryExtension, handle, "XRRQueryExtension")
-		purego.RegisterLibFunc(&randr.QueryVersion, handle, "XRRQueryVersion")
-		purego.RegisterLibFunc(&randr.SelectInput, handle, "XRRSelectInput")
-		purego.RegisterLibFunc(&randr.SetCrtcConfig, handle, "XRRSetCrtcConfig")
-		purego.RegisterLibFunc(&randr.UpdateConfiguration, handle, "XRRUpdateConfiguration")
+		if !registerX11Funcs(handle,
+			x11Func{
+				name: "XRRFreeCrtcInfo",
+				fptr: &randr.FreeCrtcInfo,
+			},
+			x11Func{
+				name: "XRRFreeOutputInfo",
+				fptr: &randr.FreeOutputInfo,
+			},
+			x11Func{
+				name: "XRRFreeScreenResources",
+				fptr: &randr.FreeScreenResources,
+			},
+			x11Func{
+				name: "XRRGetCrtcInfo",
+				fptr: &randr.GetCrtcInfo,
+			},
+			x11Func{
+				name: "XRRGetOutputInfo",
+				fptr: &randr.GetOutputInfo,
+			},
+			x11Func{
+				name: "XRRGetOutputPrimary",
+				fptr: &randr.GetOutputPrimary,
+			},
+			x11Func{
+				name: "XRRGetScreenResourcesCurrent",
+				fptr: &randr.GetScreenResourcesCurrent,
+			},
+			x11Func{
+				name: "XRRQueryExtension",
+				fptr: &randr.QueryExtension,
+			},
+			x11Func{
+				name: "XRRQueryVersion",
+				fptr: &randr.QueryVersion,
+			},
+			x11Func{
+				name: "XRRSelectInput",
+				fptr: &randr.SelectInput,
+			},
+			x11Func{
+				name: "XRRSetCrtcConfig",
+				fptr: &randr.SetCrtcConfig,
+			},
+			x11Func{
+				name: "XRRUpdateConfiguration",
+				fptr: &randr.UpdateConfiguration,
+			},
+		) {
+			_ = purego.Dlclose(handle)
+		} else {
+			randr.handle = handle
 
-		if randr.QueryExtension(display, &randr.eventBase, &randr.errorBase) {
-			if randr.QueryVersion(display, &randr.major, &randr.minor) != 0 {
-				// The GLFW RandR path requires at least version 1.3
-				if randr.major > 1 || randr.minor >= 3 {
-					randr.available = true
+			if randr.QueryExtension(display, &randr.eventBase, &randr.errorBase) {
+				if randr.QueryVersion(display, &randr.major, &randr.minor) != 0 {
+					// The GLFW RandR path requires at least version 1.3
+					if randr.major > 1 || randr.minor >= 3 {
+						randr.available = true
+					}
 				}
 			}
 		}
@@ -756,25 +836,62 @@ func initExtensions() error {
 
 	if handle, err := openX11Library("libXcursor.so.1", "libXcursor.so"); err == nil {
 		xcursor := &_glfw.platformWindow.xcursor
-		xcursor.handle = handle
-		purego.RegisterLibFunc(&xcursor.ImageCreate, handle, "XcursorImageCreate")
-		purego.RegisterLibFunc(&xcursor.ImageDestroy, handle, "XcursorImageDestroy")
-		purego.RegisterLibFunc(&xcursor.ImageLoadCursor, handle, "XcursorImageLoadCursor")
-		purego.RegisterLibFunc(&xcursor.GetTheme, handle, "XcursorGetTheme")
-		purego.RegisterLibFunc(&xcursor.GetDefaultSize, handle, "XcursorGetDefaultSize")
-		purego.RegisterLibFunc(&xcursor.LibraryLoadImage, handle, "XcursorLibraryLoadImage")
+		if !registerX11Funcs(handle,
+			x11Func{
+				name: "XcursorImageCreate",
+				fptr: &xcursor.ImageCreate,
+			},
+			x11Func{
+				name: "XcursorImageDestroy",
+				fptr: &xcursor.ImageDestroy,
+			},
+			x11Func{
+				name: "XcursorImageLoadCursor",
+				fptr: &xcursor.ImageLoadCursor,
+			},
+			x11Func{
+				name: "XcursorGetTheme",
+				fptr: &xcursor.GetTheme,
+			},
+			x11Func{
+				name: "XcursorGetDefaultSize",
+				fptr: &xcursor.GetDefaultSize,
+			},
+			x11Func{
+				name: "XcursorLibraryLoadImage",
+				fptr: &xcursor.LibraryLoadImage,
+			},
+		) {
+			_ = purego.Dlclose(handle)
+		} else {
+			xcursor.handle = handle
+		}
 	}
 
 	if handle, err := openX11Library("libXinerama.so.1", "libXinerama.so"); err == nil {
 		xinerama := &_glfw.platformWindow.xinerama
-		xinerama.handle = handle
-		purego.RegisterLibFunc(&xinerama.IsActive, handle, "XineramaIsActive")
-		purego.RegisterLibFunc(&xinerama.QueryExtension, handle, "XineramaQueryExtension")
-		purego.RegisterLibFunc(&xinerama.QueryScreens, handle, "XineramaQueryScreens")
+		if !registerX11Funcs(handle,
+			x11Func{
+				name: "XineramaIsActive",
+				fptr: &xinerama.IsActive,
+			},
+			x11Func{
+				name: "XineramaQueryExtension",
+				fptr: &xinerama.QueryExtension,
+			},
+			x11Func{
+				name: "XineramaQueryScreens",
+				fptr: &xinerama.QueryScreens,
+			},
+		) {
+			_ = purego.Dlclose(handle)
+		} else {
+			xinerama.handle = handle
 
-		if xinerama.QueryExtension(display, &xinerama.major, &xinerama.minor) {
-			if xinerama.IsActive(display) {
-				xinerama.available = true
+			if xinerama.QueryExtension(display, &xinerama.major, &xinerama.minor) {
+				if xinerama.IsActive(display) {
+					xinerama.available = true
+				}
 			}
 		}
 	}
@@ -803,48 +920,102 @@ func initExtensions() error {
 
 	if handle, err := openX11Library("libXrender.so.1", "libXrender.so"); err == nil {
 		xrender := &_glfw.platformWindow.xrender
-		xrender.handle = handle
-		purego.RegisterLibFunc(&xrender.QueryExtension, handle, "XRenderQueryExtension")
-		purego.RegisterLibFunc(&xrender.QueryVersion, handle, "XRenderQueryVersion")
-		purego.RegisterLibFunc(&xrender.FindVisualFormat, handle, "XRenderFindVisualFormat")
+		if !registerX11Funcs(handle,
+			x11Func{
+				name: "XRenderQueryExtension",
+				fptr: &xrender.QueryExtension,
+			},
+			x11Func{
+				name: "XRenderQueryVersion",
+				fptr: &xrender.QueryVersion,
+			},
+			x11Func{
+				name: "XRenderFindVisualFormat",
+				fptr: &xrender.FindVisualFormat,
+			},
+		) {
+			_ = purego.Dlclose(handle)
+		} else {
+			xrender.handle = handle
 
-		if xrender.QueryExtension(display, &xrender.errorBase, &xrender.eventBase) {
-			if xrender.QueryVersion(display, &xrender.major, &xrender.minor) != 0 {
-				xrender.available = true
+			if xrender.QueryExtension(display, &xrender.errorBase, &xrender.eventBase) {
+				if xrender.QueryVersion(display, &xrender.major, &xrender.minor) != 0 {
+					xrender.available = true
+				}
 			}
 		}
 	}
 
 	if handle, err := openX11Library("libXext.so.6", "libXext.so"); err == nil {
 		xshape := &_glfw.platformWindow.xshape
-		xshape.handle = handle
-		purego.RegisterLibFunc(&xshape.QueryExtension, handle, "XShapeQueryExtension")
-		purego.RegisterLibFunc(&xshape.CombineRegion, handle, "XShapeCombineRegion")
-		purego.RegisterLibFunc(&xshape.QueryVersion, handle, "XShapeQueryVersion")
-		purego.RegisterLibFunc(&xshape.CombineMask, handle, "XShapeCombineMask")
-
-		if xshape.QueryExtension(display, &xshape.errorBase, &xshape.eventBase) {
-			if xshape.QueryVersion(display, &xshape.major, &xshape.minor) != 0 {
-				xshape.available = true
-			}
-		}
-
+		shapeRegistered := registerX11Funcs(handle,
+			x11Func{
+				name: "XShapeQueryExtension",
+				fptr: &xshape.QueryExtension,
+			},
+			x11Func{
+				name: "XShapeCombineRegion",
+				fptr: &xshape.CombineRegion,
+			},
+			x11Func{
+				name: "XShapeQueryVersion",
+				fptr: &xshape.QueryVersion,
+			},
+			x11Func{
+				name: "XShapeCombineMask",
+				fptr: &xshape.CombineMask,
+			},
+		)
 		// The X Sync extension lives in libXext too. XSyncCreateCounter and
 		// XSyncSetCounter take an XSyncValue struct (two 32-bit ints) by value; it
 		// is passed here as a single machine word instead, which matches the
 		// struct's ABI only on 64-bit architectures. On 32-bit ones the X Sync
 		// path stays disabled and _NET_WM_SYNC_REQUEST is left unadvertised.
+		xsync := &_glfw.platformWindow.xsync
+		xsyncRegistered := false
 		if xsyncValuePassableAsWord() {
-			xsync := &_glfw.platformWindow.xsync
-			purego.RegisterLibFunc(&xsync.QueryExtension, handle, "XSyncQueryExtension")
-			purego.RegisterLibFunc(&xsync.Initialize, handle, "XSyncInitialize")
-			purego.RegisterLibFunc(&xsync.CreateCounter, handle, "XSyncCreateCounter")
-			purego.RegisterLibFunc(&xsync.SetCounter, handle, "XSyncSetCounter")
-			purego.RegisterLibFunc(&xsync.DestroyCounter, handle, "XSyncDestroyCounter")
+			xsyncRegistered = registerX11Funcs(handle,
+				x11Func{
+					name: "XSyncQueryExtension",
+					fptr: &xsync.QueryExtension,
+				},
+				x11Func{
+					name: "XSyncInitialize",
+					fptr: &xsync.Initialize,
+				},
+				x11Func{
+					name: "XSyncCreateCounter",
+					fptr: &xsync.CreateCounter,
+				},
+				x11Func{
+					name: "XSyncSetCounter",
+					fptr: &xsync.SetCounter,
+				},
+				x11Func{
+					name: "XSyncDestroyCounter",
+					fptr: &xsync.DestroyCounter,
+				},
+			)
+		}
+		if !shapeRegistered && !xsyncRegistered {
+			_ = purego.Dlclose(handle)
+		} else {
+			// The handle must be kept while the registered functions are in use.
+			xshape.handle = handle
 
-			if xsync.QueryExtension(display, &xsync.eventBase, &xsync.errorBase) {
-				if xsync.Initialize(display, &xsync.major, &xsync.minor) != 0 {
-					xsync.available = true
+			if shapeRegistered {
+				if xshape.QueryExtension(display, &xshape.errorBase, &xshape.eventBase) {
+					if xshape.QueryVersion(display, &xshape.major, &xshape.minor) != 0 {
+						xshape.available = true
+					}
+				}
+			}
+
+			if xsyncRegistered {
+				if xsync.QueryExtension(display, &xsync.eventBase, &xsync.errorBase) {
+					if xsync.Initialize(display, &xsync.major, &xsync.minor) != 0 {
+						xsync.available = true
+					}
 				}
 			}
 		}
