@@ -17,6 +17,7 @@
 package opengl
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"unsafe"
@@ -263,9 +264,13 @@ func pow2(x int) int {
 	return p2
 }
 
-func (s *openGLState) setVertices(context *context, vertices []float32, indices []uint32) {
+func (s *openGLState) setVertices(context *context, vertices []float32, indices []uint32) error {
 	if s.vertexArray == 0 {
-		s.vertexArray = context.ctx.CreateVertexArray()
+		va := context.ctx.CreateVertexArray()
+		if va == 0 {
+			return errors.New("opengl: creating a vertex array failed")
+		}
+		s.vertexArray = va
 	}
 	context.ctx.BindVertexArray(s.vertexArray)
 
@@ -299,6 +304,7 @@ func (s *openGLState) setVertices(context *context, vertices []float32, indices 
 	context.ctx.BufferSubData(gl.ARRAY_BUFFER, 0, vs)
 	is := unsafe.Slice((*byte)(unsafe.Pointer(&indices[0])), len(indices)*int(unsafe.Sizeof(indices[0])))
 	context.ctx.BufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, is)
+	return nil
 }
 
 func (s *openGLState) resetLastUniforms() {

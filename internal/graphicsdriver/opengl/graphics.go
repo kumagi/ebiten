@@ -203,8 +203,7 @@ func (g *Graphics) Reset() error {
 }
 
 func (g *Graphics) SetVertices(vertices []float32, indices []uint32) error {
-	g.state.setVertices(&g.context, vertices, indices)
-	return nil
+	return g.state.setVertices(&g.context, vertices, indices)
 }
 
 func (g *Graphics) DrawTriangles(dstID graphicsdriver.ImageID, srcIDs [graphics.ShaderSrcImageCount]graphicsdriver.ImageID, shaderID graphicsdriver.ShaderID, dstRegions []graphicsdriver.DstRegion, indexOffset int, blend graphicsdriver.Blend, uniforms []uint32) error {
