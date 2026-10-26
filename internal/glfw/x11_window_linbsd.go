@@ -479,6 +479,24 @@ func updateCursorImage(window *Window) {
 	}
 }
 
+// xChangePropertyToClient changes a property of another client's window.
+//
+// The other client may have destroyed the window before the request is processed.
+func xChangePropertyToClient[T byte | _Clong | _Culong](client _XID, property _Atom, typ _Atom, mode int32, data []T) int32 {
+	grabErrorHandlerX11()
+	defer releaseErrorHandlerX11()
+	return xChangePropertyGeneric(_glfw.platformWindow.display, client, property, typ, mode, data)
+}
+
+// xSendEventToClient sends an event to another client's window.
+//
+// The other client may have destroyed the window before the request is processed.
+func xSendEventToClient(client _XID, eventMask _Clong, event *_XEvent) int32 {
+	grabErrorHandlerX11()
+	defer releaseErrorHandlerX11()
+	return xSendEvent(_glfw.platformWindow.display, client, false, eventMask, event)
+}
+
 // captureCursor grabs the cursor and confines it to the window.
 func captureCursor(window *Window) {
 	xGrabPointer(_glfw.platformWindow.display, window.platform.handle, true,
@@ -1157,8 +1175,7 @@ func writeTargetToProperty(request *_XSelectionRequestEvent) _Atom {
 			_XA_STRING,
 		}
 
-		xChangePropertyGeneric(_glfw.platformWindow.display,
-			request.Requestor,
+		xChangePropertyToClient(request.Requestor,
 			request.Property,
 			_XA_ATOM,
 			_PropModeReplace,
@@ -1194,8 +1211,7 @@ func writeTargetToProperty(request *_XSelectionRequestEvent) _Atom {
 			}
 
 			if supported {
-				xChangePropertyGeneric(_glfw.platformWindow.display,
-					request.Requestor,
+				xChangePropertyToClient(request.Requestor,
 					targets[i+1],
 					targets[i],
 					_PropModeReplace,
@@ -1205,8 +1221,7 @@ func writeTargetToProperty(request *_XSelectionRequestEvent) _Atom {
 			}
 		}
 
-		xChangePropertyGeneric(_glfw.platformWindow.display,
-			request.Requestor,
+		xChangePropertyToClient(request.Requestor,
 			request.Property,
 			_glfw.platformWindow.ATOM_PAIR,
 			_PropModeReplace,
@@ -1219,8 +1234,7 @@ func writeTargetToProperty(request *_XSelectionRequestEvent) _Atom {
 		// The request is a check whether SAVE_TARGETS is supported
 		// It should be handled as a no-op side effect target
 
-		xChangePropertyGeneric(_glfw.platformWindow.display,
-			request.Requestor,
+		xChangePropertyToClient(request.Requestor,
 			request.Property,
 			_glfw.platformWindow.NULL_,
 			_PropModeReplace,
@@ -1235,8 +1249,7 @@ func writeTargetToProperty(request *_XSelectionRequestEvent) _Atom {
 		if request.Target == format {
 			// The requested target is one that is supported
 
-			xChangePropertyGeneric(_glfw.platformWindow.display,
-				request.Requestor,
+			xChangePropertyToClient(request.Requestor,
 				request.Property,
 				request.Target,
 				_PropModeReplace,
@@ -1265,7 +1278,7 @@ func handleSelectionRequest(event *_XEvent) {
 	selection.Target = request.Target
 	selection.Time = request.Time
 
-	xSendEvent(_glfw.platformWindow.display, request.Requestor, false, 0, &reply)
+	xSendEventToClient(request.Requestor, 0, &reply)
 }
 
 // getSelectionString returns the string held by the specified selection.
@@ -1951,8 +1964,8 @@ func processEvent(event *_XEvent) error {
 				replyClient.Data[1] = 0 // The drag was rejected
 				replyClient.Data[2] = _None
 
-				xSendEvent(_glfw.platformWindow.display, _glfw.platformWindow.xdnd.source,
-					false, _NoEventMask, &reply)
+				xSendEventToClient(_glfw.platformWindow.xdnd.source,
+					_NoEventMask, &reply)
 				xFlush(_glfw.platformWindow.display)
 			}
 		} else if client.MessageType == _glfw.platformWindow.XdndPosition {
@@ -1993,8 +2006,8 @@ func processEvent(event *_XEvent) error {
 				}
 			}
 
-			xSendEvent(_glfw.platformWindow.display, _glfw.platformWindow.xdnd.source,
-				false, _NoEventMask, &reply)
+			xSendEventToClient(_glfw.platformWindow.xdnd.source,
+				_NoEventMask, &reply)
 			xFlush(_glfw.platformWindow.display)
 		}
 
@@ -2027,8 +2040,8 @@ func processEvent(event *_XEvent) error {
 				replyClient.Data[1] = _Clong(result)
 				replyClient.Data[2] = _Clong(_glfw.platformWindow.XdndActionCopy)
 
-				xSendEvent(_glfw.platformWindow.display, _glfw.platformWindow.xdnd.source,
-					false, _NoEventMask, &reply)
+				xSendEventToClient(_glfw.platformWindow.xdnd.source,
+					_NoEventMask, &reply)
 				xFlush(_glfw.platformWindow.display)
 			}
 		}
