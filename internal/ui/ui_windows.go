@@ -352,6 +352,9 @@ func (u *glfwBackend) setWindowColorModeImpl(mode colormode.ColorMode) error {
 		return err
 	}
 
+	if mode == colormode.Unknown {
+		mode = colormode.SystemColorMode()
+	}
 	var useImmersiveDarkMode uint32
 	if mode == colormode.Dark {
 		useImmersiveDarkMode = 1
