@@ -36,24 +36,22 @@ func terminate() error {
 // from _glfw.windows, so the iteration runs over a snapshot to avoid skipping
 // entries.
 func destroyWindows() error {
+	var err error
 	for _, w := range slices.Clone(_glfw.windows) {
-		if err := w.Destroy(); err != nil {
-			return err
-		}
+		err = errors.Join(err, w.Destroy())
 	}
-	return nil
+	return err
 }
 
 // destroyCursors destroys every cursor. [Cursor.Destroy] removes the cursor
 // from _glfw.cursors, so the iteration runs over a snapshot to avoid skipping
 // an entry or revisiting one, the latter of which would free a cursor twice.
 func destroyCursors() error {
+	var err error
 	for _, c := range slices.Clone(_glfw.cursors) {
-		if err := c.Destroy(); err != nil {
-			return err
-		}
+		err = errors.Join(err, c.Destroy())
 	}
-	return nil
+	return err
 }
 
 func Init() (err error) {
