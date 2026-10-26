@@ -16,6 +16,8 @@ package vmhost_test
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"image"
 	"net"
 	"os"
@@ -392,5 +394,72 @@ func TestCloseWithPendingReadbackWait(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Error("Close blocked on a pending read-back wait")
 		ui.Get().FlushAndPollPixelReadbacks()
+	}
+}
+
+type deadlineFailConn struct {
+	*silentConn
+	deadlineErr error
+	closeErr    error
+	reading     chan struct{}
+	readOnce    sync.Once
+	closeCount  int
+}
+
+func (c *deadlineFailConn) Read(p []byte) (int, error) {
+	if n := c.takeHandshake(p); n > 0 {
+		return n, nil
+	}
+	c.readOnce.Do(func() { close(c.reading) })
+	return c.silentConn.Read(p)
+}
+
+func (c *deadlineFailConn) SetDeadline(time.Time) error {
+	return c.deadlineErr
+}
+
+func (c *deadlineFailConn) Close() error {
+	c.closeCount++
+	_ = c.silentConn.Close()
+	return c.closeErr
+}
+
+func TestCloseWithFailedDeadline(t *testing.T) {
+	skipIfVMUnsupported(t)
+	deadlineErr := errors.New("deadline unavailable")
+	for _, closeErr := range []error{nil, errors.New("close failed")} {
+		t.Run(fmt.Sprint(closeErr), func(t *testing.T) {
+			conn := &deadlineFailConn{
+				silentConn:  newSilentConn(),
+				deadlineErr: deadlineErr,
+				closeErr:    closeErr,
+				reading:     make(chan struct{}),
+			}
+			t.Cleanup(func() { _ = conn.silentConn.Close() })
+			guest, err := vmhost.NewGuestSession(conn, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := guest.SetOutsideScreen(ebiten.NewImage(320, 240)); err != nil {
+				t.Fatal(err)
+			}
+			conn.release()
+			<-conn.reading
+			done := make(chan error, 1)
+			go func() { done <- guest.Close() }()
+			select {
+			case err := <-done:
+				if !errors.Is(err, deadlineErr) || closeErr != nil && !errors.Is(err, closeErr) {
+					t.Errorf("Close error = %v, want deadline %v and close %v", err, deadlineErr, closeErr)
+				}
+			case <-time.After(time.Second):
+				_ = conn.silentConn.Close()
+				_ = <-done
+				t.Fatal("Close waited for a read whose deadline could not be set")
+			}
+			if conn.closeCount != 1 {
+				t.Errorf("connection closed %d times, want 1", conn.closeCount)
+			}
+		})
 	}
 }

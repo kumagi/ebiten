@@ -1738,13 +1738,19 @@ func (g *GuestSession) Close() error {
 		g.requestClose()
 		// Unblock the session goroutine if it is mid-read on a wedged guest. When it is idle this is a
 		// harmless no-op: it wakes from the broadcast and exits without touching the connection again.
-		_ = g.markConnClosing()
+		closeErr := g.markConnClosing()
+		if closeErr != nil {
+			closeErr = errors.Join(closeErr, g.conn.Close())
+		}
 		<-g.done
 
 		g.renderer.dispose()
 		g.readbacks = nil
 		g.readbackPixelsBuf = nil
-		g.closeErr = g.conn.Close()
+		if closeErr == nil {
+			closeErr = g.conn.Close()
+		}
+		g.closeErr = closeErr
 		ui.UnregisterVMHost()
 	})
 	return g.closeErr
