@@ -28,16 +28,12 @@ type Field struct {
 	onEndFlushAnimating func(int)
 }
 
-// IsBlocked returns a boolean value indicating whether
-// there is a block at position (x, y) on the field.
+// IsBlocked reports whether (x, y) is occupied or outside the field.
 func (f *Field) IsBlocked(x, y int) bool {
 	if x < 0 || fieldBlockCountX <= x {
 		return true
 	}
-	if y < 0 {
-		return false
-	}
-	if fieldBlockCountY <= y {
+	if y < 0 || fieldBlockCountY <= y {
 		return true
 	}
 	return f.blocks[x][y] != BlockTypeNone
