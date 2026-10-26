@@ -51,6 +51,16 @@ func quadVertices(w, h float32) []float32 {
 	return vs
 }
 
+func TestEmptyWritePixels(t *testing.T) {
+	var img graphicscommand.Image
+	for _, region := range []image.Rectangle{{}, image.Rect(1, 1, 1, 2)} {
+		img.WritePixels(nil, region)
+		if args := img.BufferedWritePixelsArgsForTesting(); len(args) != 0 {
+			t.Errorf("empty region %v queued %d writes", region, len(args))
+		}
+	}
+}
+
 func TestClear(t *testing.T) {
 	const w, h = 1024, 1024
 	src := graphicscommand.NewImage(w/2, h/2, false, "")

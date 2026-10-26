@@ -169,6 +169,13 @@ func (i *Image) ReadPixels(graphicsDriver graphicsdriver.Graphics, args []graphi
 // ReadPixelsAsync must not be called after the image is disposed.
 func (i *Image) ReadPixelsAsync(args []graphicsdriver.PixelsArgs) *PixelReadback {
 	i.flushBufferedWritePixels()
+	isEmpty := func(a graphicsdriver.PixelsArgs) bool { return a.Region.Empty() }
+	if slices.ContainsFunc(args, isEmpty) {
+		args = slices.DeleteFunc(slices.Clone(args), isEmpty)
+	}
+	if len(args) == 0 {
+		return NewCompletedPixelReadback(nil)
+	}
 	req := newReadPixelsRequest(args)
 	theCommandQueueManager.enqueueCommand(&readPixelsAsyncCommand{
 		img: i,
@@ -178,6 +185,13 @@ func (i *Image) ReadPixelsAsync(args []graphicsdriver.PixelsArgs) *PixelReadback
 }
 
 func (i *Image) WritePixels(pixels *graphics.ManagedBytes, region image.Rectangle) {
+	if region.Empty() {
+		if pixels != nil {
+			pixels.Release()
+		}
+		return
+	}
+
 	// Release the previous pixels if the region is included in the new region.
 	// Successive WritePixels calls might accumulate the pixels and never release,
 	// especially when the image is unmanaged (#3036).
