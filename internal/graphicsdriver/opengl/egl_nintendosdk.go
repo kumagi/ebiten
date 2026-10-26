@@ -105,6 +105,9 @@ func (e *egl) makeContextCurrent() error {
 	return nil
 }
 
-func (e *egl) swapBuffers() {
-	C.eglSwapBuffers(e.display, e.surface)
+func (e *egl) swapBuffers() error {
+	if r := C.eglSwapBuffers(e.display, e.surface); r == 0 {
+		return fmt.Errorf("opengl: eglSwapBuffers failed")
+	}
+	return nil
 }

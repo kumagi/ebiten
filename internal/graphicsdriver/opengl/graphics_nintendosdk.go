@@ -45,6 +45,5 @@ func (g *Graphics) makeContextCurrent() error {
 }
 
 func (g *Graphics) swapBuffers() error {
-	g.egl.swapBuffers()
-	return nil
+	return g.egl.swapBuffers()
 }
