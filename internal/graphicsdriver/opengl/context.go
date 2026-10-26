@@ -403,18 +403,24 @@ func (c *context) uniforms(p program, location string, v []uint32, typ shaderir.
 	return true
 }
 
-func (c *context) newArrayBuffer(size int) buffer {
+func (c *context) newArrayBuffer(size int) (buffer, error) {
 	b := c.ctx.CreateBuffer()
+	if b == 0 {
+		return 0, errors.New("opengl: creating an array buffer failed")
+	}
 	c.ctx.BindBuffer(gl.ARRAY_BUFFER, b)
 	c.ctx.BufferInit(gl.ARRAY_BUFFER, size, gl.DYNAMIC_DRAW)
-	return buffer(b)
+	return buffer(b), nil
 }
 
-func (c *context) newElementArrayBuffer(size int) buffer {
+func (c *context) newElementArrayBuffer(size int) (buffer, error) {
 	b := c.ctx.CreateBuffer()
+	if b == 0 {
+		return 0, errors.New("opengl: creating an element array buffer failed")
+	}
 	c.ctx.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, b)
 	c.ctx.BufferInit(gl.ELEMENT_ARRAY_BUFFER, size, gl.DYNAMIC_DRAW)
-	return buffer(b)
+	return buffer(b), nil
 }
 
 func (c *context) glslVersion() glsl.GLSLVersion {

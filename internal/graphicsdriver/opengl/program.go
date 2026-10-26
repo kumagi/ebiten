@@ -263,20 +263,23 @@ func pow2(x int) int {
 	return p2
 }
 
-func (s *openGLState) setVertices(context *context, vertices []float32, indices []uint32) {
+func (s *openGLState) setVertices(context *context, vertices []float32, indices []uint32) error {
 	if s.vertexArray == 0 {
 		s.vertexArray = context.ctx.CreateVertexArray()
 	}
 	context.ctx.BindVertexArray(s.vertexArray)
 
 	if size := len(vertices) * int(unsafe.Sizeof(vertices[0])); s.arrayBufferSizeInBytes < size {
+		newSize := pow2(size)
+		// newArrayBuffer calls BindBuffer.
+		b, err := context.newArrayBuffer(newSize)
+		if err != nil {
+			return err
+		}
 		if s.arrayBuffer != 0 {
 			context.ctx.DeleteBuffer(uint32(s.arrayBuffer))
 		}
-
-		newSize := pow2(size)
-		// newArrayBuffer calls BindBuffer.
-		s.arrayBuffer = context.newArrayBuffer(newSize)
+		s.arrayBuffer = b
 		s.arrayBufferSizeInBytes = newSize
 
 		// Reenable the array buffer layout explicitly after resetting the array buffer.
@@ -284,13 +287,16 @@ func (s *openGLState) setVertices(context *context, vertices []float32, indices 
 	}
 
 	if size := len(indices) * int(unsafe.Sizeof(indices[0])); s.elementArrayBufferSizeInBytes < size {
+		newSize := pow2(size)
+		// newElementArrayBuffer calls BindBuffer.
+		b, err := context.newElementArrayBuffer(newSize)
+		if err != nil {
+			return err
+		}
 		if s.elementArrayBuffer != 0 {
 			context.ctx.DeleteBuffer(uint32(s.elementArrayBuffer))
 		}
-
-		newSize := pow2(size)
-		// newElementArrayBuffer calls BindBuffer.
-		s.elementArrayBuffer = context.newElementArrayBuffer(newSize)
+		s.elementArrayBuffer = b
 		s.elementArrayBufferSizeInBytes = newSize
 	}
 
@@ -299,6 +305,7 @@ func (s *openGLState) setVertices(context *context, vertices []float32, indices 
 	context.ctx.BufferSubData(gl.ARRAY_BUFFER, 0, vs)
 	is := unsafe.Slice((*byte)(unsafe.Pointer(&indices[0])), len(indices)*int(unsafe.Sizeof(indices[0])))
 	context.ctx.BufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, is)
+	return nil
 }
 
 func (s *openGLState) resetLastUniforms() {
