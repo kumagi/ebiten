@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"runtime"
 	"structs"
+	"sync"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -534,16 +535,25 @@ var (
 	sel_addResidencySet                                                                                                                            = objc.RegisterName("addResidencySet:")
 )
 
+// mtlCreateSystemDefaultDeviceFunc keeps one library reference for the resolved function.
+var mtlCreateSystemDefaultDeviceFunc = sync.OnceValues(func() (uintptr, error) {
+	metal, err := purego.Dlopen("/System/Library/Frameworks/Metal.framework/Metal", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
+	if err != nil {
+		return 0, err
+	}
+	fn, err := purego.Dlsym(metal, "MTLCreateSystemDefaultDevice")
+	if err != nil {
+		_ = purego.Dlclose(metal)
+		return 0, err
+	}
+	return fn, nil
+})
+
 // CreateSystemDefaultDevice returns the preferred system default Metal device.
 //
 // Reference: https://developer.apple.com/documentation/metal/1433401-mtlcreatesystemdefaultdevice?language=objc.
 func CreateSystemDefaultDevice() (Device, error) {
-	metal, err := purego.Dlopen("/System/Library/Frameworks/Metal.framework/Metal", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
-	if err != nil {
-		return Device{}, err
-	}
-
-	mtlCreateSystemDefaultDevice, err := purego.Dlsym(metal, "MTLCreateSystemDefaultDevice")
+	mtlCreateSystemDefaultDevice, err := mtlCreateSystemDefaultDeviceFunc()
 	if err != nil {
 		return Device{}, err
 	}
