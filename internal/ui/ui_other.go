@@ -59,6 +59,9 @@ func (u *UserInterface) runMultiThread(game Game, options *RunOptions) error {
 	wg.Go(func() error {
 		defer cancel()
 
+		// initOnMainThread sets running before initialization can fail.
+		defer u.setRunning(false)
+
 		type args struct {
 			u       *UserInterface
 			options *RunOptions
@@ -70,9 +73,6 @@ func (u *UserInterface) runMultiThread(game Game, options *RunOptions) error {
 		}
 
 		defer atlas.AbortReadPixels()
-
-		// setRunning(true) should be called in initOnMainThread for each platform.
-		defer u.setRunning(false)
 
 		return u.loopGame()
 	})
