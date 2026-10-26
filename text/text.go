@@ -72,6 +72,9 @@ var (
 )
 
 func getGlyphImage(face *faceWithCache, r rune, offset fixed.Point26_6) *ebiten.Image {
+	if face.skipGlyphImageCache {
+		return newGlyphImage(face, r, offset)
+	}
 	if _, ok := glyphImageCache[face]; !ok {
 		glyphImageCache[face] = map[glyphImageCacheKey]*glyphImageCacheEntry{}
 	}
@@ -85,13 +88,18 @@ func getGlyphImage(face *faceWithCache, r rune, offset fixed.Point26_6) *ebiten.
 		return e.image
 	}
 
+	img := newGlyphImage(face, r, offset)
+	glyphImageCache[face][key] = &glyphImageCacheEntry{
+		image: img,
+		atime: ebiten.Tick(),
+	}
+	return img
+}
+
+func newGlyphImage(face *faceWithCache, r rune, offset fixed.Point26_6) *ebiten.Image {
 	b, _, _ := face.GlyphBounds(r)
 	w, h := (b.Max.X - b.Min.X).Ceil(), (b.Max.Y - b.Min.Y).Ceil()
 	if w == 0 || h == 0 {
-		glyphImageCache[face][key] = &glyphImageCacheEntry{
-			image: nil,
-			atime: ebiten.Tick(),
-		}
 		return nil
 	}
 
@@ -115,13 +123,7 @@ func getGlyphImage(face *faceWithCache, r rune, offset fixed.Point26_6) *ebiten.
 	d.Dot = fixed.Point26_6{X: x, Y: y}
 	d.DrawString(string(r))
 
-	img := ebiten.NewImageFromImage(rgba)
-	glyphImageCache[face][key] = &glyphImageCacheEntry{
-		image: img,
-		atime: ebiten.Tick(),
-	}
-
-	return img
+	return ebiten.NewImageFromImage(rgba)
 }
 
 var textM sync.Mutex
@@ -142,6 +144,7 @@ var textM sync.Mutex
 // Then old glyphs might be evicted from the cache.
 // As the cache capacity has limit, it is not guaranteed that all the glyphs for runes given at Draw are cached.
 // The cache is shared with CacheGlyphs.
+// Faces that cannot be compared are rendered without caching.
 //
 // It is OK to call Draw with the same text and the same face at every frame in terms of performance.
 //
@@ -178,6 +181,7 @@ func Draw(dst *ebiten.Image, text string, face font.Face, x, y int, clr color.Co
 // Then old glyphs might be evicted from the cache.
 // As the cache capacity has limit, it is not guaranteed that all the glyphs for runes given at DrawWithOptions are cached.
 // The cache is shared with CacheGlyphs.
+// Faces that cannot be compared are rendered without caching.
 //
 // It is OK to call DrawWithOptions with the same text and the same face at every frame in terms of performance.
 //
@@ -331,11 +335,15 @@ func BoundString(face font.Face, text string) image.Rectangle {
 //
 // One rune can have multiple variations of glyphs due to sub-pixels in X direction.
 // CacheGlyphs creates all such variations for one rune, while Draw creates only necessary glyphs.
+// If face cannot be compared, CacheGlyphs does nothing.
 func CacheGlyphs(face font.Face, text string) {
 	textM.Lock()
 	defer textM.Unlock()
 
 	fc := faceWithCacheFromFace(face)
+	if fc.skipGlyphImageCache {
+		return
+	}
 
 	var dx fixed.Int26_6
 	prevR := rune(-1)

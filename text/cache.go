@@ -16,6 +16,7 @@ package text
 
 import (
 	"image"
+	"reflect"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
@@ -41,6 +42,8 @@ type faceWithCache struct {
 	f       font.Face
 	metrics font.Metrics
 
+	skipGlyphImageCache bool
+
 	glyphBoundsCache  map[rune]glyphBoundsCacheValue
 	glyphAdvanceCache map[rune]glyphAdvanceCacheValue
 	kernCache         map[kernCacheKey]fixed.Int26_6
@@ -60,17 +63,23 @@ func (f *faceWithCache) Close() error {
 var faceWithCacheCache map[font.Face]*faceWithCache
 
 func faceWithCacheFromFace(face font.Face) *faceWithCache {
-	if f, ok := faceWithCacheCache[face]; ok {
-		return f
+	cacheable := reflect.ValueOf(face).Comparable()
+	if cacheable {
+		if f, ok := faceWithCacheCache[face]; ok {
+			return f
+		}
 	}
 
 	f := &faceWithCache{
-		f: face,
+		f:                   face,
+		skipGlyphImageCache: !cacheable,
 	}
-	if faceWithCacheCache == nil {
-		faceWithCacheCache = map[font.Face]*faceWithCache{}
+	if cacheable {
+		if faceWithCacheCache == nil {
+			faceWithCacheCache = map[font.Face]*faceWithCache{}
+		}
+		faceWithCacheCache[face] = f
 	}
-	faceWithCacheCache[face] = f
 	return f
 }
 

@@ -147,3 +147,75 @@ func TestNegativeKern(t *testing.T) {
 		}
 	}
 }
+
+func TestUncomparableFaces(t *testing.T) {
+	uncomparable := struct {
+		font.Face
+		data []byte
+	}{
+		Face: &testFace{},
+		data: []byte{1},
+	}
+	for _, tc := range []struct {
+		name      string
+		face      font.Face
+		cacheable bool
+	}{
+		{
+			name: "slice_field",
+			face: uncomparable,
+		},
+		{
+			name: "interface_field",
+			face: struct{ font.Face }{Face: uncomparable},
+		},
+		{
+			name: "array_interface_field",
+			face: struct {
+				font.Face
+				values [1]any
+			}{
+				Face:   &testFace{},
+				values: [1]any{[]int{1}},
+			},
+		},
+		{
+			name:      "pointer",
+			face:      &testFace{},
+			cacheable: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("font face caused a panic: %v", r)
+				}
+			}()
+			before := text.GlyphImageCacheFaceCount()
+			dst := ebiten.NewImage(testFaceSize, testFaceSize)
+			defer dst.Deallocate()
+			var previous *ebiten.Image
+			for range 3 {
+				if got, want := text.BoundString(tc.face, "b"), image.Rect(0, 0, testFaceSize, testFaceSize); got != want {
+					t.Errorf("bounds = %v, want %v", got, want)
+				}
+				text.CacheGlyphs(tc.face, "b")
+				text.Draw(dst, "b", tc.face, 0, 0, color.White)
+				if got := dst.RGBA64At(0, 0); got != (color.RGBA64{R: 0xffff, G: 0xffff, B: 0xffff, A: 0xffff}) {
+					t.Errorf("pixel = %v", got)
+				}
+				glyphs := text.AppendGlyphs(nil, tc.face, "b")
+				if len(glyphs) != 1 || glyphs[0].Image == nil {
+					t.Fatal("expected one glyph image")
+				}
+				if tc.cacheable && previous != nil && previous != glyphs[0].Image {
+					t.Error("comparable face did not reuse its glyph image")
+				}
+				previous = glyphs[0].Image
+			}
+			if after := text.GlyphImageCacheFaceCount(); !tc.cacheable && after != before {
+				t.Errorf("uncacheable faces retained in glyph cache: %d -> %d", before, after)
+			}
+		})
+	}
+}
