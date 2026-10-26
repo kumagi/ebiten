@@ -24,8 +24,9 @@ import (
 // UI, which shifts the rendering so that the keyboard does not cover the caret. Call it every
 // tick a session is live, and [clearVirtualKeyboardFromUI] once it ends.
 func reportVirtualKeyboardToUI(caretBounds image.Rectangle) {
-	_, region, ok := readVirtualKeyboard()
-	ui.Get().SetVirtualKeyboardVisibleRegion(region, ok)
+	// Ignore a hidden keyboard's region, which can still contain stale geometry.
+	visible, region, ok := readVirtualKeyboard()
+	ui.Get().SetVirtualKeyboardVisibleRegion(region, ok && visible)
 	ui.Get().SetTextInputCaretBounds(caretBounds)
 }
 
