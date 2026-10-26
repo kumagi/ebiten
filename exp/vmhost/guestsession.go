@@ -499,7 +499,10 @@ func (g *GuestSession) nextOp() (op, bool) {
 func (g *GuestSession) fail(err error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.setErrLocked(err)
+	// Close interrupts outstanding I/O by expiring the connection deadline.
+	if !g.closed {
+		g.setErrLocked(err)
+	}
 	g.cond.Broadcast()
 }
 
@@ -1265,10 +1268,11 @@ func (g *GuestSession) ProcessedTicks() int {
 	return int(g.consumedTicks)
 }
 
-// Err returns the error that ended the session, or nil if it is still running. It reports
+// Err returns the error that ended the session, or nil if no error has occurred. It reports
 // [ebiten.Termination] (matchable with [errors.Is]) when the guest's Update signaled a regular
 // termination, a timeout (matchable with [os.ErrDeadlineExceeded]), or any deferred error. Once it is
 // non-nil the session is unusable except for [GuestSession.Close].
+// Calling Close does not itself set an error; errors recorded before it remain available.
 func (g *GuestSession) Err() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()

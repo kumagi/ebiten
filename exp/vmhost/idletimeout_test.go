@@ -98,3 +98,63 @@ func TestIdleTimeoutMidOperation(t *testing.T) {
 		t.Errorf("a silent guest mid-tick: got %v, want %v", err, os.ErrDeadlineExceeded)
 	}
 }
+
+func TestCloseDuringOperation(t *testing.T) {
+	skipIfVMUnsupported(t)
+	hostConn, guestConn := net.Pipe()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	peerDone := make(chan error, 1)
+	t.Cleanup(func() {
+		close(release)
+		_ = hostConn.Close()
+		_ = guestConn.Close()
+		if err := <-peerDone; err != nil {
+			t.Errorf("peer: %v", err)
+		}
+	})
+	go func() {
+		peerDone <- func() error {
+			if err := vmprotocol.PerformHandshake(guestConn, false); err != nil {
+				return err
+			}
+			dec := vmprotocol.NewDecoder(guestConn)
+			enc := vmprotocol.NewEncoder(guestConn)
+			var msg vmprotocol.HostMessage
+			if err := dec.DecodeHostMessage(&msg); err != nil {
+				return err
+			}
+			if err := enc.EncodeGuestMessage(&vmprotocol.GuestMessage{Kind: vmprotocol.GuestMessageKindDone}); err != nil {
+				return err
+			}
+			if err := dec.DecodeHostMessage(&msg); err != nil {
+				return err
+			}
+			close(started)
+			<-release
+			return nil
+		}()
+	}()
+	guest, err := vmhost.NewGuestSession(hostConn, &vmhost.NewGuestSessionOptions{IdleTimeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = guest.Close() })
+	screen := ebiten.NewImage(1, 1)
+	defer screen.Deallocate()
+	if err := guest.SetOutsideScreen(screen); err != nil {
+		t.Fatal(err)
+	}
+	guest.AdvanceTicks(1)
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("peer did not receive the tick")
+	}
+	if err := guest.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := guest.Err(); err != nil {
+		t.Errorf("Close recorded its I/O interruption as a session error: %v", err)
+	}
+}
