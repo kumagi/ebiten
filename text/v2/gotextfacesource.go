@@ -1021,7 +1021,7 @@ func (g *GoTextFaceSource) buildRenderData(gl shaping.Glyph, size fixed.Int26_6,
 	// In bitmap mode it resolves through sbix or CBDT/EBDT and
 	// matches the dimensions of the bitmap that realize will decode.
 	var bounds fixed.Rectangle26_6
-	if ext, ok := g.glyphExtents(gl.GlyphID); ok {
+	if ext, ok := g.glyphExtents(gl.GlyphID, sideways); ok {
 		var yOffset float32
 		if sideways {
 			yOffset = fixed26_6ToFloat32(-gl.YOffset) / fixed26_6ToFloat32(size) * float32(g.f.Upem())
@@ -1070,16 +1070,15 @@ func (g *GoTextFaceSource) buildRenderData(gl shaping.Glyph, size fixed.Int26_6,
 	}, true
 }
 
-// glyphExtents returns the extents of gid. A COLRv0 color glyph
-// resolves to the union of its layers' extents: the layers, not the
-// base glyph's own outline, are what is rendered, and they may extend
-// beyond it. A COLRv1 color glyph resolves to its clip box, if any:
-// such glyphs typically have an empty base outline, and the clip box
-// is used for the fallback outline. SVG artwork has independent ink bounds.
+// glyphExtents returns the extents used to render gid. Sideways color
+// glyphs use their base outline. Otherwise, a COLRv0 color glyph uses
+// the union of its layers' extents, which may extend beyond the base
+// outline. A COLRv1 color glyph uses its clip box, if any, for its
+// fallback outline. SVG artwork has independent ink bounds.
 //
 // The caller must hold g.shapeMu.
-func (g *GoTextFaceSource) glyphExtents(gid font.GID) (font.GlyphExtents, bool) {
-	if g.f.COLR != nil {
+func (g *GoTextFaceSource) glyphExtents(gid font.GID, sideways bool) (font.GlyphExtents, bool) {
+	if g.f.COLR != nil && !sideways {
 		if c, ok := g.f.GlyphDataColor(gid); ok {
 			if layers, ok := c.Paint.(tables.PaintColrLayersResolved); ok {
 				if ext, ok := g.colrV0LayersExtents(layers); ok {
@@ -1259,14 +1258,17 @@ func (g *GoTextFaceSource) realizeRenderData(rd *glyphRenderData) {
 		// Only COLRv0 layer lists are supported. A COLRv1 paint graph
 		// (gradients, transforms, compositions) falls back to the SVG
 		// table, if any, and then to the base glyph's outline. A
-		// sideways color glyph would need a rotated rasterization,
-		// which is not supported either.
+		// sideways color glyph falls back to its rotated base outline.
 		if layers, ok := d.Paint.(tables.PaintColrLayersResolved); ok && !rd.sideways && rd.realizedCOLRV0Layers == nil {
 			scale := float32(g.scale(fixed26_6ToFloat64(rd.size)))
 			rd.realizedCOLRV0Layers = g.appendCOLRV0Layers(nil, layers, scale)
 		}
-		if len(rd.realizedCOLRV0Layers) == 0 && !rd.sideways {
+		if len(rd.realizedCOLRV0Layers) == 0 {
 			if o, ok := g.f.GlyphDataOutline(rd.gid); ok {
+				if rd.sideways {
+					yOffset := fixed26_6ToFloat32(-rd.yOffset) / fixed26_6ToFloat32(rd.size) * float32(g.f.Upem())
+					o.Sideways(yOffset)
+				}
 				rawSegs = o.Segments
 			}
 		}

@@ -23,9 +23,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-text/typesetting/font"
 	"github.com/go-text/typesetting/font/opentype"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/examples/resources/fonts"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 )
 
@@ -135,6 +137,86 @@ func TestDrawColorGlyph(t *testing.T) {
 				t.Errorf("Draw with a half alpha: got: %v, want: %v", gotDst, wantAlpha)
 			}
 		})
+	}
+}
+
+func TestSidewaysCOLRFallback(t *testing.T) {
+	outlineData := bitmapTablesRemoved(t, fonts.TerminusTTF_ttf)
+	ld, err := opentype.NewLoader(bytes.NewReader(outlineData))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := font.NewFont(ld)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gid, ok := f.NominalGlyph('F')
+	if !ok {
+		t.Fatal("F has no glyph")
+	}
+	layerGID, ok := f.NominalGlyph('.')
+	if !ok {
+		t.Fatal("period has no glyph")
+	}
+	colr := binary.BigEndian.AppendUint16(nil, 0)
+	colr = binary.BigEndian.AppendUint16(colr, 1)
+	colr = binary.BigEndian.AppendUint32(colr, 14)
+	colr = binary.BigEndian.AppendUint32(colr, 20)
+	colr = binary.BigEndian.AppendUint16(colr, 1)
+	colr = binary.BigEndian.AppendUint16(colr, uint16(gid))
+	colr = binary.BigEndian.AppendUint16(colr, 0)
+	colr = binary.BigEndian.AppendUint16(colr, 1)
+	colr = binary.BigEndian.AppendUint16(colr, uint16(layerGID))
+	colr = binary.BigEndian.AppendUint16(colr, 0)
+	cpal := []byte{0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 14, 0, 0, 0, 0, 255, 255}
+	fontTables := []opentype.Table{
+		{
+			Tag:     opentype.MustNewTag("COLR"),
+			Content: colr,
+		},
+		{
+			Tag:     opentype.MustNewTag("CPAL"),
+			Content: cpal,
+		},
+	}
+	for _, tag := range ld.Tables() {
+		content, err := ld.RawTable(tag)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fontTables = append(fontTables, opentype.Table{
+			Tag:     tag,
+			Content: content,
+		})
+	}
+	colorSource, err := text.NewGoTextFaceSource(bytes.NewReader(opentype.WriteTTF(fontTables)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	outlineSource, err := text.NewGoTextFaceSource(bytes.NewReader(outlineData))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := glyphInk(t, "F", &text.GoTextFace{
+		Source:    outlineSource,
+		Size:      16,
+		Direction: text.DirectionTopToBottomAndLeftToRight,
+	})
+	face := &text.GoTextFace{
+		Source:    colorSource,
+		Size:      16,
+		Direction: text.DirectionTopToBottomAndLeftToRight,
+	}
+	got := glyphInk(t, "F", face)
+	if got != want {
+		t.Errorf("sideways COLR fallback: got\n%swant\n%s", got, want)
+	}
+	glyphs := text.AppendGlyphs(nil, "F", face, nil)
+	if len(glyphs) != 1 {
+		t.Fatalf("glyph count = %d, want 1", len(glyphs))
+	}
+	if glyphs[0].Colored {
+		t.Error("sideways COLR fallback must be grayscale")
 	}
 }
 
