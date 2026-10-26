@@ -166,9 +166,6 @@ func (u *UserInterface) runMobile(game Game, options *RunOptions) (err error) {
 
 	graphicscommand.SetOSThreadAsRenderThread()
 
-	u.setRunning(true)
-	defer u.setRunning(false)
-
 	u.context = newContext(game, options.ScreenTransparent)
 
 	g, lib, err := newGraphicsDriver(&graphicsDriverCreatorImpl{
@@ -180,6 +177,9 @@ func (u *UserInterface) runMobile(game Game, options *RunOptions) (err error) {
 	u.graphicsDriver = g
 	u.setGraphicsLibrary(lib)
 	close(u.graphicsLibraryInitCh)
+
+	u.setRunning(true)
+	defer u.setRunning(false)
 
 	for {
 		if err := u.update(); err != nil {
