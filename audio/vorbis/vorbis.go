@@ -32,6 +32,21 @@ const (
 	bitDepthInBytesFloat32 = 4
 )
 
+func decodedLengthInBytes(frames, channels, bitDepthInBytes int64) int64 {
+	if frames <= 0 || channels <= 0 || bitDepthInBytes <= 0 {
+		return 0
+	}
+	length, ok := mathutil.Mul(frames, channels)
+	if !ok {
+		return 0
+	}
+	length, ok = mathutil.Mul(length, bitDepthInBytes)
+	if !ok {
+		return 0
+	}
+	return length
+}
+
 // Stream is a decoded audio stream.
 type Stream struct {
 	readSeeker io.ReadSeeker
@@ -61,7 +76,7 @@ func (s *Stream) Seek(offset int64, whence int) (int64, error) {
 
 // Length returns the size of decoded stream in bytes.
 //
-// If the source is not io.Seeker, Length returns 0.
+// If the source is not io.Seeker or the decoded length cannot be represented, Length returns 0.
 func (s *Stream) Length() int64 {
 	return s.length
 }
@@ -90,10 +105,9 @@ func DecodeF32(src io.Reader) (*Stream, error) {
 
 	_, seekable := src.(io.Seeker)
 	var s io.ReadSeeker = newFloat32BytesReadSeeker(r, seekable)
-	length := r.Length() * int64(r.Channels()) * bitDepthInBytesFloat32
+	length := decodedLengthInBytes(r.Length(), 2, bitDepthInBytesFloat32)
 	if r.Channels() == 1 {
 		s = convert.NewStereoF32(s, true)
-		length *= 2
 	}
 
 	stream := &Stream{
@@ -151,7 +165,7 @@ func (s *i16Stream) Seek(offset int64, whence int) (int64, error) {
 		}
 		base = s.posInBytes
 	case io.SeekEnd:
-		if s.totalBytes() == 0 {
+		if decodedLengthInBytes(s.vorbisReader.Length(), 2, bitDepthInBytesInt16) == 0 {
 			return 0, fmt.Errorf("vorbis: seeking from the end is not possible when the length is unknown: %w", errors.ErrUnsupported)
 		}
 		base = s.totalBytes()
@@ -172,11 +186,11 @@ func (s *i16Stream) Seek(offset int64, whence int) (int64, error) {
 	return s.posInBytes, nil
 }
 
-// totalBytes returns the length of the decoded 16bit stream in bytes, or 0 when oggvorbis cannot determine the length.
+// totalBytes returns the decoded 16bit stream length in bytes, or 0 if it is unknown or cannot be represented.
 //
 // TODO: Return -1 instead of 0 for an unknown length (#3395).
 func (s *i16Stream) totalBytes() int64 {
-	return s.vorbisReader.Length() * int64(s.vorbisReader.Channels()) * bitDepthInBytesInt16
+	return decodedLengthInBytes(s.vorbisReader.Length(), int64(s.vorbisReader.Channels()), bitDepthInBytesInt16)
 }
 
 // decodeI16 accepts an ogg stream and returns a decoded stream.
@@ -222,10 +236,9 @@ func DecodeWithoutResampling(src io.Reader) (*Stream, error) {
 	}
 
 	var s io.ReadSeeker = i16Stream
-	length := i16Stream.totalBytes()
+	length := decodedLengthInBytes(i16Stream.vorbisReader.Length(), 2, bitDepthInBytesInt16)
 	if i16Stream.vorbisReader.Channels() == 1 {
 		s = convert.NewStereoI16ReadSeeker(s, true, convert.FormatS16)
-		length *= 2
 	}
 
 	stream := &Stream{
@@ -259,16 +272,17 @@ func DecodeWithSampleRate(sampleRate int, src io.Reader) (*Stream, error) {
 	}
 
 	var s io.ReadSeeker = i16Stream
-	length := i16Stream.totalBytes()
+	length := decodedLengthInBytes(i16Stream.vorbisReader.Length(), 2, bitDepthInBytesInt16)
 	if i16Stream.vorbisReader.Channels() == 1 {
 		s = convert.NewStereoI16ReadSeeker(s, true, convert.FormatS16)
-		length *= 2
 	}
 	if i16Stream.vorbisReader.SampleRate() != sampleRate {
 		// totalBytes yields 0 when the length is unknown, and convert.NewResampling takes a negative value for that.
 		// TODO: Remove this conversion when totalBytes returns -1 for an unknown length (#3395).
 		srcLength := length
 		if srcLength == 0 {
+			srcLength = -1
+		} else if _, ok := mathutil.MulDiv(srcLength, int64(sampleRate), int64(i16Stream.vorbisReader.SampleRate())); !ok {
 			srcLength = -1
 		}
 		r := convert.NewResampling(s, srcLength, i16Stream.vorbisReader.SampleRate(), sampleRate, bitDepthInBytesInt16)

@@ -117,10 +117,10 @@ func (r *float32BytesReadSeeker) Seek(offset int64, whence int) (int64, error) {
 		}
 		base = r.pos
 	case io.SeekEnd:
-		if r.r.Length() == 0 {
+		if decodedLengthInBytes(r.r.Length(), 2, bitDepthInBytesFloat32) == 0 {
 			return 0, fmt.Errorf("vorbis: seeking from the end is not possible when the length is unknown: %w", errors.ErrUnsupported)
 		}
-		base = r.r.Length() * sampleSize
+		base = decodedLengthInBytes(r.r.Length(), int64(r.r.Channels()), bitDepthInBytesFloat32)
 	default:
 		return 0, fmt.Errorf("vorbis: whence must be io.SeekStart, io.SeekCurrent, or io.SeekEnd but was %d", whence)
 	}
