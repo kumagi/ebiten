@@ -128,7 +128,7 @@ func (t *textInputImpl) updateIMEState(bounds image.Rectangle) (discarded bool) 
 		return false
 	}
 	t.spotX, t.spotY = x, y
-	t.spotSet = true
+	t.spotSet = false
 	ebiten.RunOnMainThread(func() {
 		if discard {
 			ui.Get().ResetX11InputContextOnMainThread()
@@ -137,7 +137,7 @@ func (t *textInputImpl) updateIMEState(bounds image.Rectangle) (discarded bool) 
 		if ic == 0 {
 			return
 		}
-		setIMESpotLocation(ic, x, y)
+		t.spotSet = setIMESpotLocation(ic, x, y)
 	})
 	return discard
 }
@@ -153,17 +153,18 @@ var (
 
 // setIMESpotLocation sets the XIM spot location of the given X input context:
 // the position the input method places its preedit and candidate windows at.
+// It reports whether the location was set.
 //
 // setIMESpotLocation must be called from the main thread.
-func setIMESpotLocation(ic uintptr, x, y int) {
+func setIMESpotLocation(ic uintptr, x, y int) bool {
 	if ic == 0 || !ensureX11() {
-		return
+		return false
 	}
 	x11IMESpotLocation = xPoint{x: int16(x), y: int16(y)}
 	list := xVaCreateNestedList(0, &x11SpotLocationName[0], &x11IMESpotLocation, 0)
 	if list == 0 {
-		return
+		return false
 	}
-	xSetICValues(ic, "preeditAttributes", list, 0)
-	xFree(list)
+	defer xFree(list)
+	return xSetICValues(ic, "preeditAttributes", list, 0) == 0
 }
