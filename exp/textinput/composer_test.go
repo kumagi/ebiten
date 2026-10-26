@@ -15,6 +15,7 @@
 package textinput_test
 
 import (
+	"errors"
 	"slices"
 	"testing"
 
@@ -324,6 +325,49 @@ func TestComposerUpdateFromCallbacks(t *testing.T) {
 			}
 			if calls != 1 {
 				t.Errorf("callback calls = %d, want 1", calls)
+			}
+		})
+	}
+}
+
+func TestComposerEndPreservesError(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		end  func(*textinput.Composer)
+	}{
+		{
+			name: "Confirm",
+			end:  (*textinput.Composer).Confirm,
+		},
+		{
+			name: "Cancel",
+			end:  (*textinput.Composer).Cancel,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := textinput.NewComposerDriver("", "")
+			newSessions := 0
+			d.Composer.OnNewSession = func() *textinput.SessionOptions {
+				newSessions++
+				return nil
+			}
+			wantErr := errors.New("platform error")
+			if !d.Send(textinput.TextInputState{Error: wantErr}) {
+				t.Fatal("error state was not delivered")
+			}
+			tc.end(&d.Composer)
+			d.Composer.Cancel()
+			if handled, err := d.Composer.Update(); handled || !errors.Is(err, wantErr) {
+				t.Errorf("Update() = %v, %v; want false, %v", handled, err, wantErr)
+			}
+			if newSessions != 0 {
+				t.Errorf("OnNewSession calls before reporting error = %d, want 0", newSessions)
+			}
+			if handled, err := d.Composer.Update(); handled || err != nil {
+				t.Errorf("second Update() = %v, %v; want false, nil", handled, err)
+			}
+			if newSessions != 1 {
+				t.Errorf("OnNewSession calls after reporting error = %d, want 1", newSessions)
 			}
 		})
 	}

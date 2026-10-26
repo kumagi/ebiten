@@ -64,6 +64,9 @@ type Composer struct {
 
 	s          *session
 	inCallback bool
+
+	// pendingErr is reported by Update after Confirm or Cancel drained it.
+	pendingErr error
 }
 
 // SessionOptions describes the IME's view of the caret. It is returned
@@ -172,6 +175,9 @@ func (c *Commit) SurroundingText() (before, after string) {
 // A commit delivered with a key press that the game also receives leaves
 // handled false, so the caller still acts on that key.
 //
+// Update reports any error received while Confirm or Cancel ended the previous
+// session before starting a new one.
+//
 // Update may invoke OnCommit and OnComposition multiple times in one call
 // if the platform queued multiple compositions between ticks.
 //
@@ -181,6 +187,11 @@ func (c *Commit) SurroundingText() (before, after string) {
 func (c *Composer) Update() (handled bool, err error) {
 	if c.inCallback {
 		return false, errors.New("textinput: Composer.Update must not be called from a callback")
+	}
+	if c.pendingErr != nil {
+		err = c.pendingErr
+		c.pendingErr = nil
+		return false, err
 	}
 	for {
 		if c.s == nil {
@@ -284,7 +295,8 @@ func (c *Composer) Cancel() {
 }
 
 // end ends the current session if any, committing an in-progress
-// composition through OnCommit only when commit is true.
+// composition through OnCommit only when commit is true. An error the
+// platform reported while draining is reported by the next Update.
 func (c *Composer) end(commit bool) {
 	if c.s == nil {
 		return
@@ -293,7 +305,7 @@ func (c *Composer) end(commit bool) {
 	// that a delivered commit is not lost and the composition is current.
 	s := c.s
 	if !c.inCallback {
-		_, _, _ = c.drain()
+		_, _, c.pendingErr = c.drain()
 		if c.s == nil {
 			return
 		}
