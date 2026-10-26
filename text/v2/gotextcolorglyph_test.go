@@ -19,11 +19,14 @@ import (
 	"encoding/binary"
 	"fmt"
 	"image/color"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/go-text/typesetting/font"
 	"github.com/go-text/typesetting/font/opentype"
+	"github.com/go-text/typesetting/font/opentype/tables"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
@@ -287,4 +290,170 @@ func colorDiff(a, b color.RGBA) int {
 		return int(y - x)
 	}
 	return max(diff(a.R, b.R), diff(a.G, b.G), diff(a.B, b.B), diff(a.A, b.A))
+}
+
+func TestCOLRClipBoxVariations(t *testing.T) {
+	mapped := []tables.VariationStoreIndex{
+		{DeltaSetOuter: 1, DeltaSetInner: 3},
+		{DeltaSetOuter: 1, DeltaSetInner: 2},
+		{DeltaSetOuter: 1, DeltaSetInner: 1},
+		{DeltaSetOuter: 1, DeltaSetInner: 0},
+	}
+	wideMap := make([]tables.VariationStoreIndex, 65540)
+	copy(wideMap[65536:], mapped)
+	base := font.GlyphExtents{
+		XBearing: -10,
+		YBearing: 40,
+		Width:    40,
+		Height:   -60,
+	}
+	for _, tc := range []struct {
+		name    string
+		format  byte
+		base    uint32
+		mapping []tables.VariationStoreIndex
+		coord   tables.Coord
+		noStore bool
+		want    font.GlyphExtents
+	}{
+		{
+			name:   "identity",
+			format: 2,
+			base:   65536,
+			coord:  16384,
+			want: font.GlyphExtents{
+				XBearing: -12,
+				YBearing: 48,
+				Width:    48,
+				Height:   -72,
+			},
+		},
+		{
+			name:   "interpolation",
+			format: 2,
+			base:   65536,
+			coord:  8192,
+			want: font.GlyphExtents{
+				XBearing: -11,
+				YBearing: 44,
+				Width:    44,
+				Height:   -66,
+			},
+		},
+		{
+			name:   "default",
+			format: 2,
+			base:   65536,
+			want:   base,
+		},
+		{
+			name:    "mapping",
+			format:  2,
+			mapping: mapped,
+			coord:   16384,
+			want: font.GlyphExtents{
+				XBearing: -2,
+				YBearing: 38,
+				Width:    28,
+				Height:   -52,
+			},
+		},
+		{
+			name:    "wide mapping index",
+			format:  2,
+			base:    65536,
+			mapping: wideMap,
+			coord:   16384,
+			want: font.GlyphExtents{
+				XBearing: -2,
+				YBearing: 38,
+				Width:    28,
+				Height:   -52,
+			},
+		},
+		{
+			name:    "last mapping entry",
+			format:  2,
+			base:    65536,
+			mapping: mapped,
+			coord:   16384,
+			want: font.GlyphExtents{
+				XBearing: -12,
+				YBearing: 38,
+				Width:    40,
+				Height:   -60,
+			},
+		},
+		{
+			name:    "no variation sentinel",
+			format:  2,
+			base:    math.MaxUint32,
+			mapping: mapped,
+			coord:   16384,
+			want:    base,
+		},
+		{
+			name:    "no store",
+			format:  2,
+			mapping: mapped,
+			coord:   16384,
+			noStore: true,
+			want:    base,
+		},
+		{
+			name:    "static box",
+			format:  1,
+			mapping: mapped,
+			coord:   16384,
+			want:    base,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := []byte{1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 12, tc.format}
+			for _, x := range []int16{-10, -20, 30, 40} {
+				data = binary.BigEndian.AppendUint16(data, uint16(x))
+			}
+			if tc.format == 2 {
+				data = binary.BigEndian.AppendUint32(data, tc.base)
+			}
+			clips, _, err := tables.ParseClipList(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			colr := &tables.COLR1{
+				ClipList: clips,
+				ItemVariationStore: &tables.ItemVarStore{
+					VariationRegionList: tables.VariationRegionList{
+						VariationRegions: []tables.VariationRegion{
+							{
+								RegionAxes: []tables.RegionAxisCoordinates{
+									{
+										StartCoord: 0,
+										PeakCoord:  16384,
+										EndCoord:   16384,
+									},
+								},
+							},
+						},
+					},
+					ItemVariationDatas: []tables.ItemVariationData{
+						{},
+						{
+							RegionIndexes: []uint16{0},
+							DeltaSets:     [][]int16{{-2}, {-4}, {6}, {8}},
+						},
+					},
+				},
+			}
+			if tc.mapping != nil {
+				colr.VarIndexMap = &tables.DeltaSetMapping{Map: tc.mapping}
+			}
+			if tc.noStore {
+				colr.ItemVariationStore = nil
+			}
+			if got, ok := text.COLRClipBoxExtents(colr, 1, []tables.Coord{tc.coord}); !ok || got != tc.want {
+				t.Errorf("extents: got %v, %v; want %v, true", got, ok, tc.want)
+			}
+		})
+	}
 }

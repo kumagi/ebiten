@@ -1085,7 +1085,7 @@ func (g *GoTextFaceSource) glyphExtents(gid font.GID) (font.GlyphExtents, bool) 
 				if ext, ok := g.colrV0LayersExtents(layers); ok {
 					return ext, true
 				}
-			} else if ext, ok := colrClipBoxExtents(g.f.COLR.ClipList, gid); ok {
+			} else if ext, ok := colrClipBoxExtents(g.f.COLR, gid, g.f.Coords()); ok {
 				return ext, true
 			}
 		}
@@ -1128,29 +1128,49 @@ func (g *GoTextFaceSource) colrV0LayersExtents(layers tables.PaintColrLayersReso
 
 // colrClipBoxExtents returns the extents of gid's COLRv1 clip box, if
 // present in the clip list.
-func colrClipBoxExtents(clips tables.ClipList, gid font.GID) (font.GlyphExtents, bool) {
+func colrClipBoxExtents(colr *tables.COLR1, gid font.GID, coords []tables.Coord) (font.GlyphExtents, bool) {
 	if gid > math.MaxUint16 {
 		return font.GlyphExtents{}, false
 	}
-	box, ok := clips.Search(tables.GlyphID(gid))
+	box, ok := colr.ClipList.Search(tables.GlyphID(gid))
 	if !ok {
 		return font.GlyphExtents{}, false
 	}
-	var xMin, yMin, xMax, yMax int16
+	var xMin, yMin, xMax, yMax float32
 	switch b := box.(type) {
 	case tables.ClipBoxFormat1:
-		xMin, yMin, xMax, yMax = b.XMin, b.YMin, b.XMax, b.YMax
+		xMin, yMin, xMax, yMax = float32(b.XMin), float32(b.YMin), float32(b.XMax), float32(b.YMax)
 	case tables.ClipBoxFormat2:
-		// Variation deltas are not applied.
-		xMin, yMin, xMax, yMax = b.XMin, b.YMin, b.XMax, b.YMax
+		delta := func(i uint32) float32 {
+			if colr.ItemVariationStore == nil || b.VarIndexBase == math.MaxUint32 || b.VarIndexBase > math.MaxUint32-i {
+				return 0
+			}
+			n := b.VarIndexBase + i
+			index := tables.VariationStoreIndex{
+				DeltaSetOuter: uint16(n >> 16),
+				DeltaSetInner: uint16(n),
+			}
+			// COLR variation indices are 32-bit, unlike glyph IDs.
+			if colr.VarIndexMap != nil && len(colr.VarIndexMap.Map) > 0 {
+				index = colr.VarIndexMap.Map[min(uint64(n), uint64(len(colr.VarIndexMap.Map)-1))]
+			}
+			if index.DeltaSetOuter == math.MaxUint16 && index.DeltaSetInner == math.MaxUint16 {
+				return 0
+			}
+			return colr.ItemVariationStore.GetDelta(index, coords)
+		}
+		xMin = float32(b.XMin) + delta(0)
+		yMin = float32(b.YMin) + delta(1)
+		xMax = float32(b.XMax) + delta(2)
+		yMax = float32(b.YMax) + delta(3)
 	default:
 		return font.GlyphExtents{}, false
 	}
 	return font.GlyphExtents{
-		XBearing: float32(xMin),
-		YBearing: float32(yMax),
-		Width:    float32(xMax) - float32(xMin),
-		Height:   float32(yMin) - float32(yMax),
+		XBearing: xMin,
+		YBearing: yMax,
+		Width:    xMax - xMin,
+		Height:   yMin - yMax,
 	}, true
 }
 
