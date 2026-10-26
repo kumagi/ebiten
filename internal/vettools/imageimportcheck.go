@@ -68,6 +68,9 @@ func runImageImportCheck(pass *analysis.Pass) (any, error) {
 
 	var errs []imageImportCheckError
 	for _, f := range pass.Files {
+		if strings.HasSuffix(pass.Fset.File(f.Pos()).Name(), "_test.go") {
+			continue
+		}
 		for _, i := range f.Imports {
 			path, err := strconv.Unquote(i.Path.Value)
 			if err != nil {
