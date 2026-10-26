@@ -770,8 +770,13 @@ func keyNameToKeyCode(name string) (Key, bool) {
 }
 
 // MarshalText implements encoding.TextMarshaler.
+// It returns an error if k is not a defined key.
 func (k Key) MarshalText() ([]byte, error) {
-	return []byte(k.String()), nil
+	s := k.String()
+	if s == "" {
+		return nil, fmt.Errorf("ebiten: invalid key: %d", k)
+	}
+	return []byte(s), nil
 }
 
 // UnmarshalText implements encoding.TextUnmarshaler
