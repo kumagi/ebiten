@@ -146,6 +146,36 @@ func resetInput() {
 	clear(touches)
 }
 
+// androidGamepadKeys tracks held aliases so one key release does not release another.
+var androidGamepadKeys = map[int]map[int]int{}
+
+// updateAndroidGamepadKey publishes the state of one SDL button slot after a key code went down or
+// up. inputMu must be held.
+func updateAndroidGamepadKey(deviceID int, keyCode int, button int, pressed bool) {
+	keys := androidGamepadKeys[deviceID]
+	if pressed {
+		if keys == nil {
+			keys = map[int]int{}
+			androidGamepadKeys[deviceID] = keys
+		}
+		keys[keyCode] = button
+	} else {
+		delete(keys, keyCode)
+		if len(keys) == 0 {
+			delete(androidGamepadKeys, deviceID)
+		}
+	}
+
+	held := false
+	for _, b := range keys {
+		if b == button {
+			held = true
+			break
+		}
+	}
+	gamepad.UpdateAndroidGamepadButton(deviceID, gamepad.Button(button), held)
+}
+
 func UpdateTouchesOnAndroid(action int, id int, x, y float64) {
 	inputMu.Lock()
 	defer inputMu.Unlock()
@@ -172,7 +202,7 @@ func OnKeyDownOnAndroid(keyCode int, unicodeChar int, source int, deviceID int, 
 	case source&sourceGamepad == sourceGamepad:
 		// A gamepad can be detected as a keyboard. Detect the device as a gamepad first.
 		if button, ok := androidKeyToSDL[keyCode]; ok {
-			gamepad.UpdateAndroidGamepadButton(deviceID, gamepad.Button(button), true)
+			updateAndroidGamepadKey(deviceID, keyCode, button, true)
 		}
 	case source&sourceJoystick == sourceJoystick:
 		// DPAD keys can come here, but they are also treated as an axis in a motion event. Ignore them.
@@ -196,7 +226,7 @@ func OnKeyUpOnAndroid(keyCode int, source int, deviceID int, metaState int) {
 	case source&sourceGamepad == sourceGamepad:
 		// A gamepad can be detected as a keyboard. Detect the device as a gamepad first.
 		if button, ok := androidKeyToSDL[keyCode]; ok {
-			gamepad.UpdateAndroidGamepadButton(deviceID, gamepad.Button(button), false)
+			updateAndroidGamepadKey(deviceID, keyCode, button, false)
 		}
 	case source&sourceJoystick == sourceJoystick:
 		// DPAD keys can come here, but they are also treated as an axis in a motion event. Ignore them.
@@ -257,5 +287,9 @@ func OnGamepadAdded(deviceID int, name string, axisCount int, hatCount int, desc
 }
 
 func OnInputDeviceRemoved(deviceID int) {
+	inputMu.Lock()
+	defer inputMu.Unlock()
+
+	delete(androidGamepadKeys, deviceID)
 	gamepad.RemoveAndroidGamepad(deviceID)
 }
