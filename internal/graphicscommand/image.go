@@ -29,6 +29,9 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/internal/png"
 )
 
+// Queue accumulated writes even if the image itself has not been used.
+const maxBufferedWritePixelsArgs = 64
+
 // Image represents an image that is implemented with a graphics driver.
 type Image struct {
 	image          graphicsdriver.Image
@@ -198,6 +201,9 @@ func (i *Image) WritePixels(pixels *graphics.ManagedBytes, region image.Rectangl
 		pixels: pixels,
 		region: region,
 	})
+	if len(i.bufferedWritePixelsArgs) > maxBufferedWritePixelsArgs {
+		i.flushBufferedWritePixels()
+	}
 }
 
 func (i *Image) dumpName(path string) string {

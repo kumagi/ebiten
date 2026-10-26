@@ -485,3 +485,57 @@ func Fragment(dstPos vec4, src0Pos vec2, color vec4) vec4 {
 		}
 	}
 }
+
+func TestUnusedImageWritePixelsAreSubmitted(t *testing.T) {
+	const count = 65
+	dst := graphicscommand.NewImage(count+1, 1, false, "")
+	defer dst.Dispose()
+	var pending []*graphics.ManagedBytes
+	want := make([]byte, 4*(count+1))
+	for i := range count {
+		value := byte(i + 1)
+		pixels := graphics.NewManagedBytes(8, func(bs []byte) {
+			for p := range 2 {
+				copy(bs[4*p:], []byte{value, 0, 0, 255})
+			}
+		})
+		pending = append(pending, pixels)
+		dst.WritePixels(pixels, image.Rect(i, 0, i+2, 1))
+		for x := i; x < i+2; x++ {
+			copy(want[4*x:], []byte{value, 0, 0, 255})
+		}
+	}
+	if got := len(dst.BufferedWritePixelsArgsForTesting()); got > 64 {
+		t.Errorf("pending writes=%d, want at most64", got)
+	}
+	driver := ui.Get().GraphicsDriverForTesting()
+	other := graphicscommand.NewImage(1, 1, false, "")
+	defer other.Dispose()
+	if err := other.ReadPixels(driver, []graphicsdriver.PixelsArgs{
+		{
+			Pixels: make([]byte, 4),
+			Region: image.Rect(0, 0, 1, 1),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var retained int
+	for _, pixels := range pending {
+		retained += pixels.Len()
+	}
+	if retained != 0 {
+		t.Errorf("managed upload bytes retained after unrelated flush=%d, want0", retained)
+	}
+	got := make([]byte, len(want))
+	if err := dst.ReadPixels(driver, []graphicsdriver.PixelsArgs{
+		{
+			Pixels: got,
+			Region: image.Rect(0, 0, count+1, 1),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Error("overlapping writes changed pixel order")
+	}
+}
