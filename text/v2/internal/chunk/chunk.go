@@ -30,6 +30,7 @@
 package chunk
 
 import (
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
@@ -84,10 +85,8 @@ func AppendChunks(dst []Chunk, text string, paragraphLevel bidi.Level) []Chunk {
 		return appendChunksForRun(dst, text, paragraphLevel, paragraphLevel, 0)
 	}
 
-	// Bidi-aware path. The bidi package limits its input at class-B
-	// paragraph separators only, which is a narrower set than the
-	// chunker's line-break codepoints (LS/VT/FF aren't B), so the
-	// first-line slice has to be computed here before SegmentString.
+	// SegmentString stops at class-B paragraph separators. FS, GS and RS
+	// are not line breaks here, so resolve each paragraph within the first line.
 	firstLine := text[:textutil.FirstLineLen(text)]
 	if len(firstLine) == 0 {
 		return append(dst, Chunk{0, 0, paragraphLevel})
@@ -97,31 +96,37 @@ func AppendChunks(dst []Chunk, text string, paragraphLevel bidi.Level) []Chunk {
 		defaultDir = bidi.RightToLeft
 	}
 	var p bidi.Paragraph
-	runs := p.SegmentString(firstLine, defaultDir)
-	if runs.NumRuns() == 0 {
-		return append(dst, Chunk{0, len(firstLine), paragraphLevel})
-	}
-
-	var byteIdx int
-	var runeIdx int
-	for ri := range runs.NumRuns() {
-		run := runs.Run(ri)
-		// Walk runes in firstLine until reaching the rune-indexed
-		// run boundary. The bidi package returns rune-indexed runs;
-		// chunker output is byte-indexed.
-		for runeIdx < run.Start {
-			_, w := utf8.DecodeRuneInString(firstLine[byteIdx:])
-			byteIdx += w
-			runeIdx++
+	for byteOffset := 0; byteOffset < len(firstLine); {
+		paragraph := firstLine[byteOffset:]
+		if i := strings.IndexAny(paragraph, "\x1c\x1d\x1e"); i >= 0 {
+			paragraph = paragraph[:i]
 		}
-		runStart := byteIdx
-		for runeIdx < run.End {
-			_, w := utf8.DecodeRuneInString(firstLine[byteIdx:])
-			byteIdx += w
-			runeIdx++
+		runs := p.SegmentString(paragraph, defaultDir)
+		if runs.NumRuns() == 0 && len(paragraph) != 0 {
+			dst = appendChunksForRun(dst, paragraph, paragraphLevel, paragraphLevel, byteOffset)
 		}
-		runEnd := byteIdx
-		dst = appendChunksForRun(dst, firstLine[runStart:runEnd], run.Level, paragraphLevel, runStart)
+		var byteIdx, runeIdx int
+		for ri := range runs.NumRuns() {
+			run := runs.Run(ri)
+			// Bidi run boundaries are rune-indexed; chunks are byte-indexed.
+			for runeIdx < run.Start {
+				_, w := utf8.DecodeRuneInString(paragraph[byteIdx:])
+				byteIdx += w
+				runeIdx++
+			}
+			runStart := byteIdx
+			for runeIdx < run.End {
+				_, w := utf8.DecodeRuneInString(paragraph[byteIdx:])
+				byteIdx += w
+				runeIdx++
+			}
+			dst = appendChunksForRun(dst, paragraph[runStart:byteIdx], run.Level, paragraphLevel, byteOffset+runStart)
+		}
+		byteOffset += len(paragraph)
+		if byteOffset < len(firstLine) {
+			dst = append(dst, Chunk{byteOffset, byteOffset + 1, paragraphLevel})
+			byteOffset++
+		}
 	}
 	return dst
 }

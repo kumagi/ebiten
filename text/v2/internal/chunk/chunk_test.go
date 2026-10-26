@@ -15,6 +15,7 @@
 package chunk_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -383,5 +384,44 @@ func TestChunks_FallbackAbsorbsExtend(t *testing.T) {
 	// absorbed combining mark.
 	if want := chunk.FallbackBytes + 1 + len("\u0301"); got[0].End != want {
 		t.Errorf("first chunk ends at %d, want %d", got[0].End, want)
+	}
+}
+
+func TestBidiParagraphSeparatorsWithinLine(t *testing.T) {
+	for _, separator := range []string{"\x1c", "\x1d", "\x1e"} {
+		for _, level := range []bidi.Level{0, 1} {
+			for _, line := range []string{
+				"אbc" + separator + "defאב",
+				separator + "abcא",
+				"א" + separator + separator + "aא",
+				"א" + separator,
+			} {
+				t.Run(fmt.Sprintf("%q/level%d", line, level), func(t *testing.T) {
+					chunks := chunk.AppendChunks(nil, line+"\nignored", level)
+					end := 0
+					for _, c := range chunks {
+						if c.Start != end || c.End <= c.Start || c.End > len(line) {
+							t.Fatalf("invalid first-line coverage: %+v", chunks)
+						}
+						for _, r := range line[c.Start:c.End] {
+							wantLevel := level
+							switch {
+							case r >= 'א' && r <= 'ת':
+								wantLevel = 1
+							case r >= 'a' && r <= 'z':
+								wantLevel = level * 2
+							}
+							if c.Level != wantLevel {
+								t.Errorf("rune %q in %+v: level %d, want %d", r, c, c.Level, wantLevel)
+							}
+						}
+						end = c.End
+					}
+					if end != len(line) {
+						t.Errorf("first-line tail omitted: covered %d of %d bytes", end, len(line))
+					}
+				})
+			}
+		}
 	}
 }
