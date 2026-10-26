@@ -174,6 +174,14 @@ func (f *frameRenderer) renderOne(c vmprotocol.GraphicsCommand) error {
 		return nil
 
 	case vmprotocol.GraphicsCommandKindDrawTriangles:
+		if c.Blend.BlendFactorSourceRGB > graphicsdriver.BlendFactorSourceAlphaSaturated ||
+			c.Blend.BlendFactorSourceAlpha > graphicsdriver.BlendFactorSourceAlphaSaturated ||
+			c.Blend.BlendFactorDestinationRGB > graphicsdriver.BlendFactorSourceAlphaSaturated ||
+			c.Blend.BlendFactorDestinationAlpha > graphicsdriver.BlendFactorSourceAlphaSaturated ||
+			c.Blend.BlendOperationRGB > graphicsdriver.BlendOperationMax ||
+			c.Blend.BlendOperationAlpha > graphicsdriver.BlendOperationMax {
+			return fmt.Errorf("vmhost: DrawTriangles got invalid blend factors or operations")
+		}
 		dst, ok := f.images[c.Dst]
 		if !ok {
 			return fmt.Errorf("vmhost: DrawTriangles references unknown dst image %d", c.Dst)
