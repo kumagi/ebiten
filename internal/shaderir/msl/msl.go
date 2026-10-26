@@ -15,11 +15,13 @@
 package msl
 
 import (
+	"cmp"
 	"fmt"
 	"go/constant"
 	"go/token"
 	"math"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir"
@@ -99,8 +101,10 @@ func Compile(p *shaderir.Program) (shader string) {
 		assignedAttributes: p.AssignedAttributes(),
 		vertexFuncIndices:  map[int]struct{}{},
 	}
+	var vertexFuncs []*shaderir.Func
 	if p.VertexFunc.Block != nil {
-		for _, f := range p.ReachableFuncsFromBlock(p.VertexFunc.Block) {
+		vertexFuncs = p.ReachableFuncsFromBlock(p.VertexFunc.Block)
+		for _, f := range vertexFuncs {
 			c.vertexFuncIndices[f.Index] = struct{}{}
 		}
 	}
@@ -141,16 +145,33 @@ func Compile(p *shaderir.Program) (shader string) {
 		lines = append(lines, "};")
 	}
 
-	if len(p.Funcs) > 0 {
-		lines = append(lines, "")
-		for _, f := range p.Funcs {
-			lines = append(lines, c.function(p, &f, true)...)
+	var funcs []*shaderir.Func
+	if p.VertexFunc.Block != nil && p.FragmentFunc.Block != nil {
+		fragmentFuncs := p.ReachableFuncsFromBlock(p.FragmentFunc.Block)
+		funcs = append(vertexFuncs, fragmentFuncs...)
+		slices.SortFunc(funcs, func(a, b *shaderir.Func) int {
+			return cmp.Compare(a.Index, b.Index)
+		})
+		funcs = slices.CompactFunc(funcs, func(a, b *shaderir.Func) bool {
+			return a.Index == b.Index
+		})
+	} else {
+		// Preserve standalone function output for partial programs.
+		funcs = make([]*shaderir.Func, 0, len(p.Funcs))
+		for i := range p.Funcs {
+			funcs = append(funcs, &p.Funcs[i])
 		}
-		for _, f := range p.Funcs {
+	}
+	if len(funcs) > 0 {
+		lines = append(lines, "")
+		for _, f := range funcs {
+			lines = append(lines, c.function(p, f, true)...)
+		}
+		for _, f := range funcs {
 			if len(lines) > 0 && lines[len(lines)-1] != "" {
 				lines = append(lines, "")
 			}
-			lines = append(lines, c.function(p, &f, false)...)
+			lines = append(lines, c.function(p, f, false)...)
 		}
 	}
 

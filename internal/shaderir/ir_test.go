@@ -15,7 +15,9 @@
 package shaderir_test
 
 import (
+	"fmt"
 	"go/constant"
+	"strings"
 	"testing"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir"
@@ -1077,6 +1079,85 @@ void main(void) {
 				want := tc.Metal + "\n"
 				if got != want {
 					t.Errorf("%s metal: got: %s, want: %s", tc.Name, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestMSLReachableFuncs(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		vertex, fragment bool
+	}{
+		{
+			name:     "both",
+			vertex:   true,
+			fragment: true,
+		},
+		{
+			name:     "vertex_only",
+			vertex:   true,
+			fragment: false,
+		},
+		{
+			name:     "fragment_only",
+			vertex:   false,
+			fragment: true,
+		},
+		{
+			name:     "neither",
+			vertex:   false,
+			fragment: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &shaderir.Program{Funcs: []shaderir.Func{
+				{
+					Index: 3,
+					Block: block(nil, 0),
+				},
+				{
+					Index: 1,
+					Block: block(nil, 0),
+				},
+				{
+					Index: 2,
+					Block: block(nil, 0, exprStmt(callExpr(functionExpr(0)))),
+				},
+				{
+					Index: 0,
+					Block: block(nil, 0),
+				},
+			}}
+			if tc.vertex {
+				p.VertexFunc.Block = block(nil, 0, exprStmt(callExpr(functionExpr(2))))
+			}
+			if tc.fragment {
+				p.FragmentFunc.Block = block(nil, 0,
+					exprStmt(callExpr(functionExpr(2))),
+					exprStmt(callExpr(functionExpr(1))),
+					returnStmt(callExpr(builtinFuncExpr(shaderir.Vec4F), floatExpr(0))))
+			}
+			got := msl.Compile(p)
+			for i := 0; i < 4; i++ {
+				want := 2
+				if tc.vertex && tc.fragment && i == 3 {
+					want = 0
+				}
+				if n := strings.Count(got, fmt.Sprintf("void F%d(", i)); n != want {
+					t.Errorf("F%d: got %d declarations, want %d\n%s", i, n, want, got)
+				}
+			}
+			if tc.vertex && tc.fragment {
+				f0, f1, f2 := strings.Index(got, "void F0("), strings.Index(got, "void F1("), strings.Index(got, "void F2(")
+				if !(f0 < f1 && f1 < f2) {
+					t.Errorf("function order: %d, %d, %d", f0, f1, f2)
+				}
+				for _, want := range []string{"void F0(void)", "void F1(bool front_facing)", "void F2(void)"} {
+					if !strings.Contains(got, want) {
+						t.Errorf("missing stage-specific signature %q\n%s", want, got)
+					}
 				}
 			}
 		})
