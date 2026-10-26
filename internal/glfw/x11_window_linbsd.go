@@ -1317,6 +1317,9 @@ func writeTargetToProperty(request *_XSelectionRequestEvent) _Atom {
 // handleSelectionRequest replies to a request to convert the selection.
 func handleSelectionRequest(event *_XEvent) {
 	request := event.xselectionrequest()
+	if request.Owner != _glfw.platformWindow.helperWindowHandle {
+		return
+	}
 
 	var reply _XEvent
 	selection := reply.xselection()
