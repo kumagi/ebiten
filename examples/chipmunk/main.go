@@ -88,7 +88,11 @@ func NewGame() *Game {
 }
 
 func (g *Game) Update() error {
-	g.space.Step(1.0 / float64(ebiten.TPS()))
+	tps := ebiten.TPS()
+	if tps <= 0 {
+		tps = ebiten.DefaultTPS
+	}
+	g.space.Step(1.0 / float64(tps))
 	return nil
 }
 

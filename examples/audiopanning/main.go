@@ -96,7 +96,11 @@ func lerp(a, b, t float64) float64 {
 }
 
 func (g *Game) Update() error {
-	r := float64(ebiten.Tick()) * ((1 / float64(ebiten.TPS())) * 2 * math.Pi) * 0.1 // full cycle every 10 seconds
+	tps := ebiten.TPS()
+	if tps <= 0 {
+		tps = ebiten.DefaultTPS
+	}
+	r := float64(ebiten.Tick()) * ((1 / float64(tps)) * 2 * math.Pi) * 0.1 // full cycle every 10 seconds
 	g.xpos = (float64(screenWidth) / 2) + math.Cos(r)*(float64(screenWidth)/2)
 	g.panning = lerp(-1, 1, g.xpos/float64(screenWidth))
 

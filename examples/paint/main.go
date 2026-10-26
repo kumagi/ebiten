@@ -123,6 +123,9 @@ func (g *Game) paint(canvas *ebiten.Image, x, y int) {
 	// Scale the color and rotate the hue so that colors vary on each frame.
 	cm.Scale(1.0, 0.50, 0.125, 1.0)
 	tps := ebiten.TPS()
+	if tps <= 0 {
+		tps = ebiten.DefaultTPS
+	}
 	theta := 2.0 * math.Pi * float64(g.count%tps) / float64(tps)
 	cm.RotateHue(theta)
 	colorm.DrawImage(canvas, brushImage, cm, op)
