@@ -66,12 +66,10 @@ func runCommand(command string, args []string, env []string) error {
 	return nil
 }
 
+// removeAll removes the tool's temporary directory, even in dry-run mode.
 func removeAll(path string) error {
 	if buildX || buildN {
 		fmt.Printf("rm -rf %s\n", path)
-	}
-	if buildN {
-		return nil
 	}
 	return os.RemoveAll(path)
 }
