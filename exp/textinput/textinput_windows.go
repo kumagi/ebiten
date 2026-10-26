@@ -133,6 +133,9 @@ func (t *textInputImpl) start(bounds image.Rectangle) (err error) {
 		t.immContext = 0
 	}
 	h := _ImmGetContext(t.window)
+	if h == 0 {
+		return nil
+	}
 	defer func() {
 		if winErr := _ImmReleaseContext(t.window, h); winErr != nil {
 			err = errors.Join(err, winErr)
@@ -258,6 +261,10 @@ func (t *textInputImpl) update() (err error) {
 	}
 
 	hIMC := _ImmGetContext(t.window)
+	if hIMC == 0 {
+		t.sendComposition("", 0, 0)
+		return nil
+	}
 	defer func() {
 		if winErr := _ImmReleaseContext(t.window, hIMC); winErr != nil {
 			err = errors.Join(err, winErr)
@@ -312,6 +319,9 @@ func (t *textInputImpl) commit() (err error) {
 	}
 
 	hIMC := _ImmGetContext(t.window)
+	if hIMC == 0 {
+		return nil
+	}
 	defer func() {
 		if winErr := _ImmReleaseContext(t.window, hIMC); winErr != nil {
 			err = errors.Join(err, winErr)

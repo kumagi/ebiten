@@ -149,6 +149,7 @@ func immGetCompositionStringW[T byte | uint16 | uint32](hIMC _HIMC, dwIndex uint
 	return lpBuf, nil
 }
 
+// _ImmGetContext returns the input context associated with the window, or 0 if there is none.
 func _ImmGetContext(unnamedParam1 windows.HWND) _HIMC {
 	r, _, _ := procImmGetContext.Call(uintptr(unnamedParam1))
 	return _HIMC(r)
