@@ -158,7 +158,12 @@ func (p *mpegPlayer) updateFrame() error {
 	d := 1 / p.mpg.Framerate()
 	var mpegFrame *mpeg.Frame
 	for video.Time()+d <= pos && !video.HasEnded() {
-		mpegFrame = video.Decode()
+		// Decode can return nil without advancing the playback time.
+		f := video.Decode()
+		if f == nil {
+			break
+		}
+		mpegFrame = f
 	}
 
 	if mpegFrame == nil {
