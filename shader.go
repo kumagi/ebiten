@@ -67,6 +67,9 @@ func newShader(src []byte, name string) (*Shader, error) {
 //
 // If the shader is disposed, Dispose does nothing.
 //
+// Dispose is not concurrent-safe:
+// the shader must not be used in another goroutine while Dispose is called.
+//
 // Deprecated: as of v2.7. Use Deallocate instead.
 func (s *Shader) Dispose() {
 	if s.isDisposed() {
