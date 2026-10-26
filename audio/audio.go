@@ -590,6 +590,7 @@ func (p *Player) PauseAndStopReading() {
 //
 // As long as the player continues to play, Position's returning value is increased monotonically,
 // even though the source stream loops and its position goes back.
+// Positions beyond the range of time.Duration are clamped to that range.
 func (p *Player) Position() time.Duration {
 	defer runtime.KeepAlive(p)
 	return p.p.Position()

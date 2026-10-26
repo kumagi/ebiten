@@ -555,6 +555,20 @@ func bufferSizeInBytes(bufferSize time.Duration, bytesPerSample, sampleRate int)
 	return int(size)
 }
 
+// mulDivSaturating returns x * mul / div, clamping to the int64 range on overflow.
+func mulDivSaturating(x, mul, div int64) int64 {
+	if div == 0 {
+		panic("audio: position is out of range")
+	}
+	if v, ok := mathutil.MulDiv(x, mul, div); ok {
+		return v
+	}
+	if (x < 0) != (mul < 0) != (div < 0) {
+		return math.MinInt64
+	}
+	return math.MaxInt64
+}
+
 func (p *playerImpl) sourceIdent() any {
 	return p.srcIdent
 }
@@ -621,9 +635,10 @@ func (p *playerImpl) updatePosition() {
 	}
 
 	// Update the adjusted position every tick. This is necessary to keep the position accurate.
-	position, ok := mathutil.MulDiv(samples, int64(time.Second), int64(p.factory.sampleRate))
-	if !ok {
-		panic("audio: position is out of range")
+	position := mulDivSaturating(samples, int64(time.Second), int64(p.factory.sampleRate))
+	if adjustingTime > 0 && position > math.MaxInt64-int64(adjustingTime) {
+		p.adjustedPosition = math.MaxInt64
+		return
 	}
 	p.adjustedPosition = position + int64(adjustingTime)
 }
@@ -698,10 +713,7 @@ func (s *timeStream) Seek(offset int64, whence int) (int64, error) {
 
 func (s *timeStream) timeDurationToPos(offset time.Duration) int64 {
 	bytesPerSecond := int64(s.bytesPerSample) * int64(s.sampleRate)
-	o, ok := mathutil.MulDiv(int64(offset), bytesPerSecond, int64(time.Second))
-	if !ok {
-		panic("audio: position is out of range")
-	}
+	o := mulDivSaturating(int64(offset), bytesPerSecond, int64(time.Second))
 
 	// Align the byte position with the samples.
 	o -= o % int64(s.bytesPerSample)
@@ -716,9 +728,5 @@ func (s *timeStream) position() int64 {
 
 func (s *timeStream) positionInTimeDuration() time.Duration {
 	bytesPerSecond := int64(s.sampleRate) * int64(s.bytesPerSample)
-	position, ok := mathutil.MulDiv(s.pos.Load(), int64(time.Second), bytesPerSecond)
-	if !ok {
-		panic("audio: position is out of range")
-	}
-	return time.Duration(position)
+	return time.Duration(mulDivSaturating(s.pos.Load(), int64(time.Second), bytesPerSecond))
 }
