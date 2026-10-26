@@ -104,7 +104,7 @@ func (g *Game) updateFireIntensityPerPixel(currentPixelIndex int) {
 	d := rand.IntN(3)
 	newI := max(int(g.indices[below])-d, 0)
 
-	if currentPixelIndex-d < 0 {
+	if currentPixelIndex%screenWidth < d {
 		return
 	}
 	g.indices[currentPixelIndex-d] = byte(newI)
