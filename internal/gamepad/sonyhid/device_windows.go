@@ -17,6 +17,7 @@ package sonyhid
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -27,12 +28,20 @@ import (
 
 // Device is the HID device of a PlayStation controller.
 type Device struct {
-	// All I/O is overlapped and never waited on: the methods are called with the
-	// gamepad mutex held, and a synchronous operation on a stalled device (e.g. a
-	// dying Bluetooth link) would block gamepad polling. At most one write and one
-	// read are in flight. A write requested while one is pending cancels the
-	// pending write, and the requested motor state is held as the last event and
-	// issued from Update once the canceled write concludes and frees the device.
+	// m guards the fields below. Gamepad.Vibrate runs on the caller's goroutine
+	// while Close runs on the gamepad update goroutine, which does not take the
+	// gamepad's lock, so the two can overlap.
+	m sync.Mutex
+
+	// All I/O is overlapped and never waited on: a synchronous operation on a
+	// stalled device (e.g. a dying Bluetooth link) would block gamepad polling.
+	// At most one write and one read are in flight. A write requested while one
+	// is pending cancels the pending write, and the requested motor state is held
+	// as the last event and issued from Update once the canceled write concludes
+	// and frees the device.
+	//
+	// handle is zero once the device is closed. The methods return early then, as
+	// the handles and the OVERLAPPED structures belong to Close from then on.
 	handle windows.Handle
 	model  model
 	bt     bool
@@ -234,6 +243,9 @@ func Open(path string, vid, pid uint16) *Device {
 // user can notice. EnableTouchpad does nothing once any output report has
 // been requested, or once the device is closed.
 func (s *Device) EnableTouchpad() {
+	s.m.Lock()
+	defer s.m.Unlock()
+
 	if !s.bt || s.written || s.handle == 0 {
 		return
 	}
@@ -242,6 +254,13 @@ func (s *Device) EnableTouchpad() {
 
 // Vibrate runs the motors for the duration with magnitudes clamped to 0 to 1.
 func (s *Device) Vibrate(duration time.Duration, strongMagnitude float64, weakMagnitude float64) {
+	s.m.Lock()
+	defer s.m.Unlock()
+
+	if s.handle == 0 {
+		return
+	}
+
 	strongMagnitude = mathutil.Clamp01(strongMagnitude)
 	weakMagnitude = mathutil.Clamp01(weakMagnitude)
 
@@ -261,6 +280,13 @@ func (s *Device) stop() {
 
 // Update advances rumble output and stops expired vibration.
 func (s *Device) Update() {
+	s.m.Lock()
+	defer s.m.Unlock()
+
+	if s.handle == 0 {
+		return
+	}
+
 	if s.wpending && s.pollWrite() && s.next {
 		s.next = false
 		s.issueWrite(s.nextStrong, s.nextWeak)
@@ -331,7 +357,10 @@ func (s *Device) issueWrite(strong, weak byte) {
 
 // UpdateInput reads available input and reports whether the device is still connected.
 func (s *Device) UpdateInput() bool {
-	if s.inputLost {
+	s.m.Lock()
+	defer s.m.Unlock()
+
+	if s.handle == 0 || s.inputLost {
 		return false
 	}
 	for range maxInputReportsPerUpdate {
@@ -363,6 +392,9 @@ func (s *Device) UpdateInput() bool {
 
 // Close releases the device.
 func (s *Device) Close() {
+	s.m.Lock()
+	defer s.m.Unlock()
+
 	// The kernel writes the result of a canceled operation into its OVERLAPPED
 	// structure when the cancellation completes, which happens asynchronously, and
 	// owns the operation's buffer until then. The device is therefore kept
@@ -409,5 +441,8 @@ func (s *Device) Close() {
 
 // Input returns the most recently read controller state.
 func (s *Device) Input() InputState {
+	s.m.Lock()
+	defer s.m.Unlock()
+
 	return s.input
 }
