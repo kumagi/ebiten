@@ -40,7 +40,7 @@ func (i *Image) Dump(graphicsDriver graphicsdriver.Graphics, path string, blackb
 		return "", err
 	}
 	defer func() {
-		_ = f.Close()
+		err = errors.Join(err, f.Close())
 	}()
 
 	w := bufio.NewWriter(f)
@@ -74,24 +74,29 @@ func DumpImages(images []*Image, graphicsDriver graphicsdriver.Graphics, dir str
 			continue
 		}
 
-		f, err := os.Create(filepath.Join(dir, img.dumpName("*.png")))
-		if err != nil {
-			return "", err
-		}
-		defer func() {
-			_ = f.Close()
-		}()
-
-		w := bufio.NewWriter(f)
-		if err := img.dumpTo(w, graphicsDriver, false, image.Rect(0, 0, img.width, img.height)); err != nil {
-			return "", err
-		}
-		if err := w.Flush(); err != nil {
+		if err := dumpImage(img, graphicsDriver, dir); err != nil {
 			return "", err
 		}
 	}
 
 	return dir, nil
+}
+
+// dumpImage closes its file before returning so DumpImages holds only one file at a time.
+func dumpImage(img *Image, graphicsDriver graphicsdriver.Graphics, dir string) (err error) {
+	f, err := os.Create(filepath.Join(dir, img.dumpName("*.png")))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = errors.Join(err, f.Close())
+	}()
+
+	w := bufio.NewWriter(f)
+	if err := img.dumpTo(w, graphicsDriver, false, image.Rect(0, 0, img.width, img.height)); err != nil {
+		return err
+	}
+	return w.Flush()
 }
 
 // availableFilename returns a filename that is valid as a new file or directory.
