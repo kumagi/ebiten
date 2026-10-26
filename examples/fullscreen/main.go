@@ -67,8 +67,23 @@ func (g *Game) Update() error {
 	return nil
 }
 
+// deviceScaleFactor and monitorSize handle an unavailable monitor.
+func deviceScaleFactor() float64 {
+	if m := ebiten.Monitor(); m != nil {
+		return m.DeviceScaleFactor()
+	}
+	return 1
+}
+
+func monitorSize() (int, int) {
+	if m := ebiten.Monitor(); m != nil {
+		return m.Size()
+	}
+	return 0, 0
+}
+
 func (g *Game) Draw(screen *ebiten.Image) {
-	scale := ebiten.Monitor().DeviceScaleFactor()
+	scale := deviceScaleFactor()
 
 	w, h := gophersImage.Bounds().Dx(), gophersImage.Bounds().Dy()
 	op := &ebiten.DrawImageOptions{}
@@ -81,7 +96,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	op.Filter = ebiten.FilterLinear
 	screen.DrawImage(gophersImage, op)
 
-	fw, fh := ebiten.Monitor().Size()
+	fw, fh := monitorSize()
 	msg := "This is an example of the finest fullscreen.\n"
 	if runtime.GOOS == "js" {
 		msg += "Press F or touch the screen to enter fullscreen (again).\n"
@@ -95,15 +110,15 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	textOp := &text.DrawOptions{}
 	textOp.GeoM.Translate(50*scale, 50*scale)
 	textOp.ColorScale.ScaleWithColor(color.White)
-	textOp.LineSpacing = 12 * ebiten.Monitor().DeviceScaleFactor() * 1.5
+	textOp.LineSpacing = 12 * scale * 1.5
 	text.Draw(screen, msg, &text.GoTextFace{
 		Source: mplusFaceSource,
-		Size:   12 * ebiten.Monitor().DeviceScaleFactor(),
+		Size:   12 * scale,
 	}, textOp)
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
-	s := ebiten.Monitor().DeviceScaleFactor()
+	s := deviceScaleFactor()
 	return int(float64(outsideWidth) * s), int(float64(outsideHeight) * s)
 }
 
