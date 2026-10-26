@@ -256,9 +256,14 @@ func (v *VScrollBar) Update(contentHeight int) {
 		}
 	}
 
+	v.thumbOffset = min(max(v.thumbOffset, 0), max(0, v.maxThumbOffset()))
+
 	v.contentOffset = 0
 	if v.thumbRate < 1 {
-		v.contentOffset = int(float64(contentHeight) * float64(v.thumbOffset) / float64(v.Height))
+		// Map the thumb travel to the scrollable content, including the minimum thumb size.
+		if m := v.maxThumbOffset(); m > 0 {
+			v.contentOffset = (contentHeight - v.Height) * v.thumbOffset / m
+		}
 	}
 }
 
