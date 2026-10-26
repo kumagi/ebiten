@@ -140,10 +140,11 @@ func (m *Mipmap) DrawTriangles(srcs [graphics.ShaderSrcImageCount]*Mipmap, verti
 		}
 		if level != 0 {
 			if img := src.level(level); img != nil {
-				s := float32(pow2(level))
+				sx := float32(sizeForLevel(src.width, level)) / float32(src.width)
+				sy := float32(sizeForLevel(src.height, level)) / float32(src.height)
 				for i := 0; i < len(vertices); i += graphics.VertexFloatCount {
-					vertices[i+2] /= s
-					vertices[i+3] /= s
+					vertices[i+2] *= sx
+					vertices[i+3] *= sy
 				}
 				imgs[i] = img
 				// A sub-image shares the level images with its original image, so the region keeps
@@ -203,10 +204,6 @@ func (m *Mipmap) level(level int) *buffered.Image {
 		panic(fmt.Sprintf("mipmap: invalid level: %d", level))
 	}
 
-	graphics.QuadVerticesFromSrcAndMatrix(vs, 0, 0, float32(srcW), float32(srcH), 0.5, 0, 0, 0.5, 0, 0, 1, 1, 1, 1)
-
-	is := graphics.QuadIndices()
-
 	dstW := sizeForLevel(m.width, level)
 	dstH := sizeForLevel(m.height, level)
 	if dstW == 0 || dstH == 0 {
@@ -220,6 +217,11 @@ func (m *Mipmap) level(level int) *buffered.Image {
 		m.setImg(level, nil)
 		return nil
 	}
+
+	// Odd dimensions are rounded down, so the level image is not always half the source size.
+	graphics.QuadVerticesFromSrcAndMatrix(vs, 0, 0, float32(srcW), float32(srcH), float32(dstW)/float32(srcW), 0, 0, float32(dstH)/float32(srcH), 0, 0, 1, 1, 1, 1)
+
+	is := graphics.QuadIndices()
 
 	var s *buffered.Image
 	if img.img != nil {
@@ -240,13 +242,22 @@ func (m *Mipmap) level(level int) *buffered.Image {
 // regionForLevel converts a region in the original image's coordinates to the level image's
 // coordinates. An empty region stays empty.
 func (m *Mipmap) regionForLevel(region image.Rectangle, level int) image.Rectangle {
+	region = region.Intersect(image.Rect(0, 0, m.width, m.height))
 	if region.Empty() {
 		return region
 	}
+	w, h := sizeForLevel(m.width, level), sizeForLevel(m.height, level)
+	if w == 0 || h == 0 {
+		return image.Rectangle{}
+	}
 	// Min is rounded down and Max is rounded up so that the region covers every pixel of the level
 	// image that the original region overlaps.
-	r := image.Rect(region.Min.X>>level, region.Min.Y>>level, -(-region.Max.X >> level), -(-region.Max.Y >> level))
-	return r.Intersect(image.Rect(0, 0, sizeForLevel(m.width, level), sizeForLevel(m.height, level)))
+	return image.Rect(
+		int(int64(region.Min.X)*int64(w)/int64(m.width)),
+		int(int64(region.Min.Y)*int64(h)/int64(m.height)),
+		int((int64(region.Max.X)*int64(w)+int64(m.width)-1)/int64(m.width)),
+		int((int64(region.Max.Y)*int64(h)+int64(m.height)-1)/int64(m.height)),
+	)
 }
 
 func sizeForLevel(x int, level int) int {
@@ -317,9 +328,4 @@ func mipmapLevelFromDistance(dx0, dy0, dx1, dy1, sx0, sy0, sx1, sy1 float32) int
 	level = min(level, maxLevel)
 
 	return level
-}
-
-func pow2(power int) float32 {
-	x := 1
-	return float32(x << uint(power))
 }

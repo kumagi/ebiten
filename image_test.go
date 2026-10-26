@@ -1200,6 +1200,41 @@ func Disabled_TestImageMipmapNegativeDet(t *testing.T) {
 	}
 }
 
+func TestImageMipmapOddSizeSymmetry(t *testing.T) {
+	for _, size := range []image.Point{image.Pt(31, 23), image.Pt(100, 100), image.Pt(32, 24)} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			w, h := size.X, size.Y
+			src := ebiten.NewImage(w, h)
+			pixels := make([]byte, 4*w*h)
+			for y := range h {
+				for x := range w {
+					i := 4 * (y*w + x)
+					pixels[i] = byte(255 * min(x, w-1-x) / (w / 2))
+					pixels[i+1] = byte(255 * min(y, h-1-y) / (h / 2))
+					pixels[i+3] = 255
+				}
+			}
+			src.WritePixels(pixels)
+			for _, bounds := range []image.Rectangle{src.Bounds(), src.Bounds().Inset(3)} {
+				t.Run(fmt.Sprint(bounds), func(t *testing.T) {
+					dst := ebiten.NewImage(6, 4)
+					op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+					op.GeoM.Scale(6/float64(bounds.Dx()), 4/float64(bounds.Dy()))
+					dst.DrawImage(src.SubImage(bounds).(*ebiten.Image), op)
+					for y := range 4 {
+						for x := range 6 {
+							got := dst.At(x, y).(color.RGBA)
+							if other := dst.At(5-x, 3-y).(color.RGBA); !sameColors(got, other, 2) {
+								t.Errorf("symmetric pixels (%d, %d) and (%d, %d) differ: %v / %v", x, y, 5-x, 3-y, got, other)
+							}
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
 // Issue #710
 func TestImageMipmapColor(t *testing.T) {
 	img0 := ebiten.NewImage(256, 256)

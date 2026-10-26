@@ -121,12 +121,12 @@ func TestRegionForLevel(t *testing.T) {
 			want:   image.Rect(0, 0, 3, 3),
 		},
 		{
-			name:   "sub-image outside the level image",
+			name:   "last column of an odd image",
 			width:  7,
 			height: 7,
 			region: image.Rect(6, 0, 7, 7),
 			level:  1,
-			want:   image.Rectangle{},
+			want:   image.Rect(2, 0, 3, 3),
 		},
 	}
 
