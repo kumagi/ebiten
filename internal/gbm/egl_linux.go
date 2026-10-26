@@ -144,6 +144,11 @@ func (c *Context) Probe() error {
 
 // SwapBuffers presents the current frame through KMS.
 func (c *Context) SwapBuffers() error {
+	// A failed wait can leave a page flip in flight. Keep its buffer until Close
+	// restores the CRTC instead of submitting another frame.
+	if c.pendingBo != 0 {
+		return errors.New("gbm: a failed page flip wait requires closing the context")
+	}
 	if err := c.eglContext.SwapBuffers(); err != nil {
 		return err
 	}
