@@ -899,7 +899,7 @@ func (u *glfwBackend) registerDropCallback() error {
 // If the callback is not invoked for a while, waitForFramebufferSizeCallback times out and returns.
 //
 // waitForFramebufferSizeCallback must be called from the main thread.
-func (u *glfwBackend) waitForFramebufferSizeCallback(window *glfw.Window, f func() error) error {
+func (u *glfwBackend) waitForFramebufferSizeCallback(window *glfw.Window, f func() error) (err error) {
 	// The temporary callback suppresses normal resize handling, including on timeout.
 	defer u.layoutSizeCache.invalidate()
 	u.framebufferSizeCallbackCh = make(chan struct{}, 1)
@@ -915,6 +915,14 @@ func (u *glfwBackend) waitForFramebufferSizeCallback(window *glfw.Window, f func
 			}
 		}
 	}
+
+	defer func() {
+		_, restoreErr := window.SetFramebufferSizeCallback(u.defaultFramebufferSizeCallback)
+		err = errors.Join(err, restoreErr)
+		close(u.framebufferSizeCallbackCh)
+		u.framebufferSizeCallbackCh = nil
+	}()
+
 	if _, err := window.SetFramebufferSizeCallback(u.framebufferSizeCallback); err != nil {
 		return err
 	}
@@ -943,12 +951,6 @@ event:
 			time.Sleep(time.Millisecond)
 		}
 	}
-	if _, err := window.SetFramebufferSizeCallback(u.defaultFramebufferSizeCallback); err != nil {
-		return err
-	}
-
-	close(u.framebufferSizeCallbackCh)
-	u.framebufferSizeCallbackCh = nil
 
 	return nil
 }
