@@ -411,3 +411,83 @@ func TestReadDirPartialError(t *testing.T) {
 		}
 	}
 }
+
+func TestDirReadDirEnumeratesOnce(t *testing.T) {
+	for _, children := range [][]string{nil, {""}, {"child"}} {
+		root := newFakeDirEntry(t, "root", children, js.Undefined())
+		original := root.Get("createReader")
+		calls := 0
+		create := js.FuncOf(func(this js.Value, args []js.Value) any { calls++; return original.Invoke() })
+		t.Cleanup(create.Release)
+		root.Set("createReader", create)
+		fsys, err := file.NewFileEntryFS([]js.Value{root})
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, err := fsys.Open(".")
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := f.(fs.ReadDirFile)
+		if _, err := d.ReadDir(-1); err != nil {
+			t.Fatal(err)
+		}
+		for _, count := range []int{-1, 0, 1, 1} {
+			ents, err := d.ReadDir(count)
+			if len(ents) != 0 {
+				t.Fatal(ents)
+			}
+			if count > 0 && !errors.Is(err, io.EOF) {
+				t.Errorf("ReadDir(%d): %v, want EOF", count, err)
+			}
+			if count <= 0 && err != nil {
+				t.Fatal(err)
+			}
+		}
+		if calls != 1 {
+			t.Errorf("children=%q: createReader calls=%d, want 1", children, calls)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+func TestDirReadDirRetriesFailure(t *testing.T) {
+	bad := newFakeDirEntry(t, "root", nil, newDOMException("NotReadableError", "unreadable"))
+	root := newFakeDirEntry(t, "root", nil, js.Undefined())
+	good := root.Get("createReader")
+	calls := 0
+	create := js.FuncOf(func(this js.Value, args []js.Value) any {
+		calls++
+		if calls == 1 {
+			return bad.Get("createReader").Invoke()
+		}
+		return good.Invoke()
+	})
+	t.Cleanup(create.Release)
+	root.Set("createReader", create)
+	fsys, err := file.NewFileEntryFS([]js.Value{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := fsys.Open(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := f.(fs.ReadDirFile)
+	if _, err := d.ReadDir(-1); err == nil {
+		t.Fatal("read failure ignored")
+	}
+	if _, err := d.ReadDir(-1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.ReadDir(1); !errors.Is(err, io.EOF) {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Errorf("createReader calls=%d, want 2", calls)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}

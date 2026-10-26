@@ -331,7 +331,7 @@ func (f *file) Close() error {
 type dir struct {
 	name        string
 	dirEntries  []js.Value
-	fileEntries []js.Value
+	fileEntries []js.Value // nil until enumeration succeeds.
 	offset      int
 	mu          sync.Mutex
 }
@@ -361,7 +361,7 @@ func (d *dir) ReadDir(count int) ([]fs.DirEntry, error) {
 	if d.fileEntries == nil {
 		// The callbacks below run on another goroutine. fileEntries is published to d only after
 		// the channel delivers the result, so that d's fields are written by this goroutine alone.
-		var fileEntries []js.Value
+		fileEntries := []js.Value{}
 		names := map[string]struct{}{}
 		for _, dirEntry := range d.dirEntries {
 			ch := make(chan error, 1)
