@@ -28,10 +28,13 @@ func parseUriList(text string) []string {
 
 		if strings.HasPrefix(line, prefix) {
 			line = line[len(prefix):]
-			// TODO: Validate hostname
 			slash := strings.IndexByte(line, '/')
 			if slash < 0 {
 				// A file URI without a path is malformed.
+				continue
+			}
+			// Do not discard an unrecognized authority when converting to a local path.
+			if host := line[:slash]; host != "" && !strings.EqualFold(host, "localhost") {
 				continue
 			}
 			line = line[slash:]

@@ -39,9 +39,27 @@ func TestParseUriList(t *testing.T) {
 			out:  []string{"/a.txt"},
 		},
 		{
-			name: "hostname skipped",
+			name: "localhost authority",
 			in:   "file://localhost/etc/fstab\r\n",
 			out:  []string{"/etc/fstab"},
+		},
+		{
+			name: "case insensitive localhost",
+			in:   "file://LOCALHOST/a.txt\r\n",
+			out:  []string{"/a.txt"},
+		},
+		{
+			name: "unrecognized authority",
+			in:   "file://other.example/a.txt\r\n",
+		},
+		{
+			name: "mixed authorities",
+			in:   "file:///a.txt\nfile://other.example/b.txt\nfile://localhost/c.txt\n",
+			out:  []string{"/a.txt", "/c.txt"},
+		},
+		{
+			name: "localhost with port",
+			in:   "file://localhost:1234/a.txt\n",
 		},
 		{
 			name: "percent escapes",
