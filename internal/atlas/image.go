@@ -1116,13 +1116,15 @@ func TotalGPUImageMemoryUsageInBytes() int64 {
 	return sum
 }
 
-// SaveGPUResources saves GPU resources (textures and shaders) in CPU memory.
+// SaveGPUResources requests saving GPU resources (textures and shaders) in CPU memory.
 //
-// Until GPU resources are saved, the app becomes suspended
-// until [RestoreGPUResources] or [ResumeApp] is called.
+// The app becomes suspended after the resources have been saved.
+// [IsSuspended] reports true from then until [RestoreGPUResources] or [ResumeApp] is called.
 //
 // If [RestoreGPUResources] is called, the saved resources are restored in the next frame.
 // If [ResumeApp] is called but not [RestoreGPUResources], the saved resources are discarded.
+//
+// If graphics have not been initialized, SaveGPUResources does nothing.
 func SaveGPUResources() {
 	if !inited.Load() {
 		return
