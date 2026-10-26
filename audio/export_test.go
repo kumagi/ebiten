@@ -56,6 +56,12 @@ type (
 		// whose source failed stops for good and reports the error from Err.
 		err error
 
+		// reading is whether the goroutine reading r is running. Play must not spawn a second
+		// reader while one is running, or the source would be read in an interleaved order.
+		reading bool
+
+		readCond *sync.Cond
+
 		mu sync.Mutex
 	}
 )
@@ -65,6 +71,7 @@ func (d *dummyDriver) NewPlayer(r io.Reader) player {
 		r:      r,
 		volume: 1,
 	}
+	p.readCond = sync.NewCond(&p.mu)
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.players = append(d.players, p)
@@ -117,8 +124,25 @@ func (p *dummyPlayer) Play() {
 		return
 	}
 	p.playing = true
+	if p.reading {
+		// The existing reader keeps reading. A real player would resume its single consumer in
+		// the same way.
+		return
+	}
+	p.reading = true
 	gen := p.readGen
 	p.readers.Go(func() {
+		defer func() {
+			p.mu.Lock()
+			defer p.mu.Unlock()
+			p.reading = false
+			p.readCond.Broadcast()
+			// The source is exhausted only when it was played through. A paused player would still
+			// have unplayed data in its buffer in a real player.
+			if p.playing && p.readGen == gen {
+				p.eof = true
+			}
+		}()
 		var buf [4096]byte
 		for {
 			stopped, err := p.readOnce(gen, buf[:])
@@ -129,13 +153,6 @@ func (p *dummyPlayer) Play() {
 				break
 			}
 			time.Sleep(time.Millisecond)
-		}
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		// The source is exhausted only when it was played through. A paused player would still
-		// have unplayed data in its buffer in a real player.
-		if p.playing {
-			p.eof = true
 		}
 	})
 }
@@ -161,9 +178,14 @@ func (p *dummyPlayer) readOnce(gen int, buf []byte) (stopped bool, err error) {
 
 func (p *dummyPlayer) PauseAndStopReading() {
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.playing = false
 	p.readGen++
-	p.mu.Unlock()
+	// Wait for the reader to observe the generation change, so that a following Play doesn't
+	// leave two readers or no reader.
+	for p.reading {
+		p.readCond.Wait()
+	}
 }
 
 func (p *dummyPlayer) IsPlaying() bool {
