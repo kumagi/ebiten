@@ -192,6 +192,8 @@ func (c *context) reset() error {
 	c.lastViewportWidth = 0
 	c.lastViewportHeight = 0
 	c.lastBlend = graphicsdriver.Blend{}
+	c.maxTextureSize = 0
+	c.maxTextureSizeOnce = sync.Once{}
 
 	c.ctx.Enable(gl.BLEND)
 	c.ctx.Enable(gl.SCISSOR_TEST)
