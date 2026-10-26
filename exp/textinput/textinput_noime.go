@@ -25,8 +25,13 @@ import (
 type textInputImpl struct {
 	events *textInputEvents
 
-	rs       []rune
-	lastTick int64
+	rs []rune
+
+	// lastTick is the tick the runes were collected at, valid only when
+	// lastTickSet is true. ebiten.Tick reports zero during the first update, so
+	// the zero value cannot stand for a tick that was already collected.
+	lastTick    int64
+	lastTickSet bool
 }
 
 func (t *textInputImpl) markIMEDiscardNeeded() {
@@ -36,11 +41,12 @@ func (t *textInputImpl) Start(bounds image.Rectangle, _, _ string) (<-chan textI
 	// AppendInputChars is updated only when the tick is updated.
 	// If the tick is not updated, return nil immediately.
 	tick := ebiten.Tick()
-	if t.lastTick == tick {
+	if t.lastTickSet && t.lastTick == tick {
 		return nil, nil
 	}
 	defer func() {
 		t.lastTick = tick
+		t.lastTickSet = true
 	}()
 
 	ch, _ := t.events.start()
