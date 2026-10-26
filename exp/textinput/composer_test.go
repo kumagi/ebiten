@@ -328,3 +328,48 @@ func TestComposerUpdateFromCallbacks(t *testing.T) {
 		})
 	}
 }
+
+func TestComposerHandledWhenNextSessionFails(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		kind        textinput.CommitKind
+		wantHandled bool
+	}{
+		{
+			name:        "consumed commit",
+			kind:        textinput.CommitRegular,
+			wantHandled: true,
+		},
+		{
+			name: "passthrough commit",
+			kind: textinput.CommitWithPassthroughKey,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := textinput.NewComposerDriver("", "")
+			d.Composer.OnNewSession = func() *textinput.SessionOptions {
+				return &textinput.SessionOptions{TextBeforeCaret: "\xff"}
+			}
+			var committed string
+			d.Composer.OnCommit = func(commit *textinput.Commit) {
+				committed += commit.Text()
+			}
+			if !d.Send(textinput.TextInputState{
+				Text:       "F",
+				CommitKind: tc.kind,
+			}) {
+				t.Fatal("commit was not delivered")
+			}
+			handled, err := d.Composer.Update()
+			if err == nil {
+				t.Error("invalid next session was accepted")
+			}
+			if handled != tc.wantHandled {
+				t.Errorf("handled = %v, want %v", handled, tc.wantHandled)
+			}
+			if committed != "F" {
+				t.Errorf("committed = %q, want F", committed)
+			}
+		})
+	}
+}
