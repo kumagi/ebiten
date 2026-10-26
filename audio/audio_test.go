@@ -635,6 +635,22 @@ func TestSetBufferSize(t *testing.T) {
 	}{
 		{in: -time.Second, want: 0},
 		{in: 0, want: 0},
+		{
+			in:   time.Nanosecond,
+			want: 8,
+		},
+		{
+			in:   time.Microsecond,
+			want: 8,
+		},
+		{
+			in:   10 * time.Microsecond,
+			want: 8,
+		},
+		{
+			in:   26 * time.Microsecond,
+			want: 8,
+		},
 		{in: 50 * time.Millisecond, want: 17640},
 		{in: 15 * time.Hour, want: largeBufferSize},
 	}

@@ -551,7 +551,8 @@ func bufferSizeInBytes(bufferSize time.Duration, bytesPerSample, sampleRate int)
 		return 0
 	}
 	size = size / int64(bytesPerSample) * int64(bytesPerSample)
-	return int(size)
+	// Zero selects the default buffer size, so keep a positive request at least one sample long.
+	return int(max(size, int64(bytesPerSample)))
 }
 
 func (p *playerImpl) sourceIdent() any {
