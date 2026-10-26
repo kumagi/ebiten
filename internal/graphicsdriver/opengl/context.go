@@ -109,6 +109,7 @@ type context struct {
 	maxTextureSize                  int
 	maxTextureSizeOnce              sync.Once
 	initOnce                        sync.Once
+	initErr                         error
 	hasKHRParallelShaderCompile     bool
 	hasKHRParallelShaderCompileOnce sync.Once
 }
@@ -168,16 +169,12 @@ func (c *context) getMaxTextureSize() int {
 }
 
 func (c *context) reset() error {
-	var err error
 	c.initOnce.Do(func() {
 		// Load OpenGL functions after WGL is initialized especially for Windows (#2452).
-		if contextErr := c.ctx.LoadFunctions(); contextErr != nil {
-			err = contextErr
-			return
-		}
+		c.initErr = c.ctx.LoadFunctions()
 	})
-	if err != nil {
-		return err
+	if c.initErr != nil {
+		return c.initErr
 	}
 
 	c.locationCache = newLocationCache()
