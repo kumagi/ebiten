@@ -72,7 +72,8 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 func main() {
 	w, h := gophersImage.Bounds().Dx(), gophersImage.Bounds().Dy()
 	g := &Game{
-		gophersRenderTarget: ebiten.NewImage(w/mosaicRatio, h/mosaicRatio),
+		// Round up to keep the partial tiles at the right and bottom.
+		gophersRenderTarget: ebiten.NewImage((w+mosaicRatio-1)/mosaicRatio, (h+mosaicRatio-1)/mosaicRatio),
 	}
 	ebiten.SetWindowSize(screenWidth*2, screenHeight*2)
 	ebiten.SetWindowTitle("Mosaic (Ebitengine Demo)")
