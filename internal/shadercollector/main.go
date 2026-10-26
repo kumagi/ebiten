@@ -203,7 +203,7 @@ const (
 
 var (
 	reShaderSourceDirective = regexp.MustCompile(`^\s*//` + regexp.QuoteMeta(shaderSourceDirective) + `$`)
-	reShaderFileDirective   = regexp.MustCompile(`^\s*//` + regexp.QuoteMeta(shaderFileDirective) + ` `)
+	reShaderFileDirective   = regexp.MustCompile(`^\s*//` + regexp.QuoteMeta(shaderFileDirective) + `[[:space:]]`)
 )
 
 func hasShaderSourceDirectiveInComment(commentGroup *ast.CommentGroup) bool {
@@ -218,7 +218,7 @@ func hasShaderSourceDirectiveInComment(commentGroup *ast.CommentGroup) bool {
 }
 
 func isAsciiSpace(r rune) bool {
-	return r == ' ' || r == '\t' || r == '\v' || r == '\n' || r == '\r'
+	return r == ' ' || r == '\t' || r == '\v' || r == '\f' || r == '\n' || r == '\r'
 }
 
 func includesGlobMetaChar(str string) bool {

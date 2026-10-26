@@ -37,6 +37,50 @@ func hasGoCommand() bool {
 	return true
 }
 
+func TestShaderFileWhitespace(t *testing.T) {
+	if !hasGoCommand() {
+		t.Skip("go command is missing")
+	}
+	tool := filepath.Join(t.TempDir(), "shadercollector.exe")
+	if out, err := exec.Command("go", "build", "-buildvcs=false", "-o", tool, ".").CombinedOutput(); err != nil {
+		t.Fatalf("building shadercollector: %v\n%s", err, out)
+	}
+	for _, separator := range []string{" ", "\t", "\v", "\f", " \t"} {
+		t.Run(fmt.Sprintf("%q", separator), func(t *testing.T) {
+			dir := t.TempDir()
+			files := map[string]string{
+				"go.mod":    "module example.com/shaderwhitespace\n\ngo 1.24\n",
+				"source.go": "package shaderwhitespace\n//ebitengine:shaderfile" + separator + "a.kage" + separator + "b.kage\n",
+				"a.kage":    "package main\nfunc Fragment(position vec4, texCoord vec2, color vec4) vec4 { return color }\n",
+				"b.kage":    "package main\nfunc Fragment(position vec4, texCoord vec2, color vec4) vec4 { return vec4(1) }\n",
+			}
+			for name, content := range files {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cmd := exec.Command(tool, ".")
+			cmd.Dir = dir
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var shaders []struct{ KageFile string }
+			if err := json.Unmarshal(out, &shaders); err != nil {
+				t.Fatal(err)
+			}
+			if len(shaders) != 2 {
+				t.Fatalf("collected %d shaders, want 2", len(shaders))
+			}
+			for i, name := range []string{"a.kage", "b.kage"} {
+				if want := filepath.Join(dir, name); shaders[i].KageFile != want {
+					t.Errorf("shader %d path: got %q, want %q", i, shaders[i].KageFile, want)
+				}
+			}
+		})
+	}
+}
+
 func TestRun(t *testing.T) {
 	if !hasGoCommand() {
 		t.Skip("go command is missing")
