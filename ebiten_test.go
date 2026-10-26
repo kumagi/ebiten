@@ -75,3 +75,12 @@ func TestSetWindowSizeLimitsWithMinExceedingMax(t *testing.T) {
 		})
 	}
 }
+
+func TestSetCursorModeWithInvalidMode(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("SetCursorMode with an invalid mode must panic but not")
+		}
+	}()
+	ebiten.SetCursorMode(ebiten.CursorModeType(99))
+}

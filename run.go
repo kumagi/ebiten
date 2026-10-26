@@ -16,6 +16,7 @@ package ebiten
 
 import (
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"io/fs"
@@ -452,8 +453,15 @@ func CursorMode() CursorModeType {
 //
 // SetCursorMode does nothing on mobiles.
 //
+// SetCursorMode panics if the given mode is invalid.
+//
 // SetCursorMode is concurrent-safe.
 func SetCursorMode(mode CursorModeType) {
+	switch mode {
+	case CursorModeVisible, CursorModeHidden, CursorModeCaptured:
+	default:
+		panic(fmt.Sprintf("ebiten: invalid cursor mode: %d", mode))
+	}
 	ui.Get().SetCursorMode(ui.CursorMode(mode))
 }
 
