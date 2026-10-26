@@ -91,6 +91,9 @@ func (i *image12) WritePixels(args []graphicsdriver.PixelsArgs) error {
 		// A placed footprint must start at a multiple of the placement alignment.
 		offset := (totalBytes + _D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT - 1) &^ (_D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT - 1)
 		layout, _, _, n := i.graphics.device.GetCopyableFootprints(&desc, 0, 1, offset)
+		if n == ^uint64(0) {
+			return errors.New("directx: GetCopyableFootprints returned an invalid buffer size")
+		}
 		layouts = append(layouts, layout)
 		totalBytes = layout.Offset + n
 	}

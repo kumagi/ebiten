@@ -74,6 +74,9 @@ func (i *image12) ReadPixelsAsync(args []graphicsdriver.PixelsArgs) (_ graphicsd
 		Layout:           _D3D12_TEXTURE_LAYOUT_UNKNOWN,
 	}
 	layout, _, _, totalBytes := i.graphics.device.GetCopyableFootprints(&desc, 0, 1, 0)
+	if totalBytes == ^uint64(0) {
+		return nil, errors.New("directx: GetCopyableFootprints returned an invalid buffer size")
+	}
 	r.stride = int(layout.Footprint.RowPitch)
 	r.totalBytes = totalBytes
 	r.staging, err = i.graphics.acquireReadbackBuffer(totalBytes)

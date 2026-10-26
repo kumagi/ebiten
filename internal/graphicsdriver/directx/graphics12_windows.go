@@ -258,7 +258,21 @@ func (g *graphics12) initializeDesktop(useWARP bool, useDebugLayer bool, useDRED
 	}()
 
 	// GetCopyableFootprints might return an invalid value with Wine (#2114).
-	// To check this early, call NewImage here.
+	// To check this early, call GetCopyableFootprints here.
+	desc := &_D3D12_RESOURCE_DESC{
+		Dimension:        _D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+		Width:            1,
+		Height:           1,
+		DepthOrArraySize: 1,
+		MipLevels:        1,
+		Format:           _DXGI_FORMAT_R8G8B8A8_UNORM,
+		SampleDesc:       _DXGI_SAMPLE_DESC{Count: 1},
+		Layout:           _D3D12_TEXTURE_LAYOUT_UNKNOWN,
+		Flags:            _D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+	}
+	if _, _, _, totalBytes := g.device.GetCopyableFootprints(desc, 0, 1, 0); totalBytes == ^uint64(0) {
+		return errors.New("directx: GetCopyableFootprints returned an invalid buffer size")
+	}
 	i, err := g.NewImage(1, 1)
 	if err != nil {
 		return err
