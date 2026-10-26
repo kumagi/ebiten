@@ -99,15 +99,15 @@ func (i *image12) WritePixels(args []graphicsdriver.PixelsArgs) error {
 	if err != nil {
 		return err
 	}
+	m, err := uploadingStagingBuffer.Map(0, &_D3D12_RANGE{Begin: 0, End: 0})
+	if err != nil {
+		uploadingStagingBuffer.Release()
+		return err
+	}
 	i.uploadingStagingBuffers = append(i.uploadingStagingBuffers, uploadingStagingBuffer)
 
 	if rb, ok := i.transiteState(_D3D12_RESOURCE_STATE_COPY_DEST); ok {
 		i.graphics.copyCommandList.ResourceBarrier([]_D3D12_RESOURCE_BARRIER_Transition{rb})
-	}
-
-	m, err := uploadingStagingBuffer.Map(0, &_D3D12_RANGE{Begin: 0, End: 0})
-	if err != nil {
-		return err
 	}
 
 	i.graphics.needFlushCopyCommandList = true
