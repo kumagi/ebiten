@@ -1495,3 +1495,91 @@ func TestReadWholeSamples(t *testing.T) {
 		}
 	}
 }
+
+var errProbeRestore = errors.New("restore failed")
+
+type endProbeSource struct {
+	*bytes.Reader
+	move          bool
+	rejectRestore bool
+	rejectCurrent bool
+	probed        bool
+}
+
+func (s *endProbeSource) Seek(offset int64, whence int) (int64, error) {
+	if whence == io.SeekEnd {
+		s.probed = true
+		if s.move {
+			if _, err := s.Reader.Seek(offset, whence); err != nil {
+				return 0, err
+			}
+		}
+		return 0, errors.ErrUnsupported
+	}
+	if s.probed && whence == io.SeekStart && s.rejectRestore {
+		return 0, errProbeRestore
+	}
+	if s.probed && whence == io.SeekCurrent && s.rejectCurrent {
+		return 0, errors.ErrUnsupported
+	}
+	return s.Reader.Seek(offset, whence)
+}
+
+func TestDecodeFailedEndProbe(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		move          bool
+		rejectRestore bool
+		rejectCurrent bool
+		wantError     bool
+	}{
+		{
+			name: "moved",
+			move: true,
+		},
+		{
+			name:          "unchanged without rewind",
+			rejectRestore: true,
+		},
+		{
+			name:          "restore fails",
+			move:          true,
+			rejectRestore: true,
+			wantError:     true,
+		},
+		{
+			name:          "position unknown after probe",
+			move:          true,
+			rejectCurrent: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+			file := pcmWavFile(2, 16, data)
+			setDataChunkSize(file, 0)
+			source := &endProbeSource{
+				Reader:        bytes.NewReader(file),
+				move:          tc.move,
+				rejectRestore: tc.rejectRestore,
+				rejectCurrent: tc.rejectCurrent,
+			}
+			stream, err := wav.DecodeWithoutResampling(source)
+			if tc.wantError {
+				if !errors.Is(err, errProbeRestore) {
+					t.Errorf("decode error=%v, want restoration error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := io.ReadAll(stream)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, data) {
+				t.Errorf("decoded=%v, want%v", got, data)
+			}
+		})
+	}
+}

@@ -344,7 +344,8 @@ chunks:
 }
 
 // sizeToEnd returns the number of bytes from the current position of src to its end, or -1 when
-// src cannot tell, e.g. src is not an io.Seeker or is a pipe. On success, src stays at its position.
+// src cannot tell, e.g. src is not an io.Seeker or is a pipe. After probing the end, sizeToEnd
+// restores the position before returning, or reports an error if restoration fails.
 func sizeToEnd(src io.Reader) (int64, error) {
 	seeker, ok := src.(io.Seeker)
 	if !ok {
@@ -356,6 +357,13 @@ func sizeToEnd(src io.Reader) (int64, error) {
 	}
 	end, err := seeker.Seek(0, io.SeekEnd)
 	if err != nil {
+		// Do not require rewinding if the failed probe left the position unchanged.
+		if pos, err := seeker.Seek(0, io.SeekCurrent); err == nil && pos == cur {
+			return -1, nil
+		}
+		if _, err := seeker.Seek(cur, io.SeekStart); err != nil {
+			return 0, err
+		}
 		return -1, nil
 	}
 	if _, err := seeker.Seek(cur, io.SeekStart); err != nil {
