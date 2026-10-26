@@ -1742,8 +1742,16 @@ func (g *GuestSession) Close() error {
 		<-g.done
 
 		g.renderer.dispose()
+		// An observed audio stream can keep a closed session reachable.
+		g.enc = nil
+		g.dec = nil
 		g.readbacks = nil
 		g.readbackPixelsBuf = nil
+		g.audioReadPCM = nil
+		g.compositeVtxBuf = nil
+		g.mu.Lock()
+		g.compositableFrame = hostImage{}
+		g.mu.Unlock()
 		g.closeErr = g.conn.Close()
 		ui.UnregisterVMHost()
 	})

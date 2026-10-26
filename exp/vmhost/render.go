@@ -86,6 +86,10 @@ func (f *frameRenderer) dispose() {
 	f.images = map[graphicsdriver.ImageID]*hostImage{}
 	f.shaders = map[graphicsdriver.ShaderID]*hostShader{}
 	f.screen = nil
+	f.vertices = nil
+	f.indices = nil
+	f.vtxBuf = nil
+	f.idxBuf = nil
 }
 
 // hostMaxImageSize returns the host graphics driver's maximum image size. It must not be called
