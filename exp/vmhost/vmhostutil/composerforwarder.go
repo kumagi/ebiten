@@ -246,13 +246,14 @@ func (f *ComposerForwarder) initComposerCallbacks() {
 // pending composition and queued commits are discarded, not committed: the target is gone or being
 // replaced.
 func (f *ComposerForwarder) reset() {
-	f.composer.Cancel()
+	// Cancel can dispatch a delivered commit, so clear its target first.
 	f.target = nil
 	f.lastText, f.lastSelStart, f.lastSelEnd = "", 0, 0
 	f.bridging = false
 	f.predictedBefore, f.predictedAfter = "", ""
 	f.pendingCommits = slices.Delete(f.pendingCommits, 0, len(f.pendingCommits))
 	f.bridgeUpdates = 0
+	f.composer.Cancel()
 }
 
 // onNewSession is the composer's OnNewSession callback: the host session mirrors the guest's caret.
