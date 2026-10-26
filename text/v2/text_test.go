@@ -1675,3 +1675,70 @@ func TestDrawVerticalWithoutVerticalMetrics(t *testing.T) {
 		}
 	}
 }
+
+type emptyBoundsGoXFace struct {
+	testGoXFace
+	bounds fixed.Rectangle26_6
+}
+
+func (f *emptyBoundsGoXFace) GlyphBounds(r rune) (fixed.Rectangle26_6, fixed.Int26_6, bool) {
+	return f.bounds, fixed.I(testGoXFaceSize), true
+}
+
+func TestGoXFaceLazyEmptyBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		bounds   fixed.Rectangle26_6
+		hasImage bool
+	}{
+		{
+			name: "negative_width",
+			bounds: fixed.Rectangle26_6{
+				Min: fixed.P(3, 0),
+				Max: fixed.P(1, 2),
+			},
+		},
+		{
+			name: "negative_height",
+			bounds: fixed.Rectangle26_6{
+				Min: fixed.P(0, 3),
+				Max: fixed.P(2, 1),
+			},
+		},
+		{
+			name: "both_negative",
+			bounds: fixed.Rectangle26_6{
+				Min: fixed.P(3, 3),
+				Max: fixed.P(1, 1),
+			},
+		},
+		{
+			name:   "zero_width",
+			bounds: fixed.R(0, 0, 0, 2),
+		},
+		{
+			name:   "zero_height",
+			bounds: fixed.R(0, 0, 2, 0),
+		},
+		{
+			name:     "ordinary",
+			bounds:   fixed.R(0, 0, testGoXFaceSize, testGoXFaceSize),
+			hasImage: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			face := text.NewGoXFace(&emptyBoundsGoXFace{bounds: tc.bounds})
+			glyphs := text.AppendLazyGlyphs(nil, "a", face, nil)
+			if len(glyphs) != 1 {
+				t.Fatal("expected one glyph", len(glyphs))
+			}
+			g := glyphs[0]
+			if !g.ImageBounds.Empty() != tc.hasImage {
+				t.Errorf("image bounds = %v, want image = %t", g.ImageBounds, tc.hasImage)
+			}
+			if g.StartIndexInBytes != 0 || g.EndIndexInBytes != 1 || g.AdvanceX != testGoXFaceSize {
+				t.Errorf("glyph metadata: %v", g)
+			}
+		})
+	}
+}

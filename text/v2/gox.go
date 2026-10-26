@@ -317,7 +317,7 @@ func goXGlyphImageInfo(face *GoXFace, r rune, origin fixed.Point26_6, granularit
 
 	rw := (b.Max.X - b.Min.X).Ceil()
 	rh := (b.Max.Y - b.Min.Y).Ceil()
-	if rw == 0 || rh == 0 {
+	if rw <= 0 || rh <= 0 {
 		return
 	}
 	bounds = image.Rect(imgX, imgY, imgX+rw+1, imgY+rh+1)
@@ -333,7 +333,7 @@ func goXGlyphImageInfo(face *GoXFace, r rune, origin fixed.Point26_6, granularit
 
 func (g *GoXFace) glyphImageImpl(r rune, subpixelOffset fixed.Point26_6, glyphBounds fixed.Rectangle26_6) *ebiten.Image {
 	w, h := (glyphBounds.Max.X - glyphBounds.Min.X).Ceil(), (glyphBounds.Max.Y - glyphBounds.Min.Y).Ceil()
-	if w == 0 || h == 0 {
+	if w <= 0 || h <= 0 {
 		return nil
 	}
 
