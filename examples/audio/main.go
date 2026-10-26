@@ -263,7 +263,9 @@ func (p *Player) update() error {
 	if err := p.seekBarIfNeeded(); err != nil {
 		return err
 	}
-	p.switchPlayStateIfNeeded()
+	if err := p.switchPlayStateIfNeeded(); err != nil {
+		return err
+	}
 	p.playSEIfNeeded()
 	return nil
 }
@@ -317,15 +319,24 @@ func (p *Player) shouldSwitchPlayStateIfNeeded() bool {
 	return false
 }
 
-func (p *Player) switchPlayStateIfNeeded() {
+func (p *Player) switchPlayStateIfNeeded() error {
 	if !p.shouldSwitchPlayStateIfNeeded() {
-		return
+		return nil
 	}
 	if p.audioPlayer.IsPlaying() {
 		p.audioPlayer.Pause()
-		return
+		return nil
 	}
 	p.audioPlayer.Play()
+	// An exhausted player stays stopped until it is rewound. A paused player
+	// resumes above without losing its position.
+	if !p.audioPlayer.IsPlaying() {
+		if err := p.audioPlayer.Rewind(); err != nil {
+			return err
+		}
+		p.audioPlayer.Play()
+	}
+	return nil
 }
 
 func (p *Player) seekBarIfNeeded() error {
