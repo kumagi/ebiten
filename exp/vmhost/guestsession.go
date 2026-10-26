@@ -222,6 +222,8 @@ type readPixelsRequest struct {
 
 	// done reports that the host has served the request. It is guarded by GuestSession.mu.
 	done bool
+	// err is published before done is set and read after the request completes.
+	err error
 
 	readback *asyncPixelReadback
 
@@ -864,7 +866,7 @@ func (g *GuestSession) requestReadPixelsInHostFrame(req *readPixelsRequest) erro
 		}
 		g.cond.Wait()
 	}
-	return nil
+	return req.err
 }
 
 // servePendingReadPixels performs the read-back the session goroutine is parked on, if any, and wakes
@@ -872,6 +874,11 @@ func (g *GuestSession) requestReadPixelsInHostFrame(req *readPixelsRequest) erro
 func (g *GuestSession) servePendingReadPixels() {
 	req := g.takePendingReadPixels()
 	if req == nil {
+		return
+	}
+	if !ui.Get().IsRunning() {
+		req.err = errors.New("vmhost: the host's game must be running to read pixels")
+		g.finishReadPixels(req)
 		return
 	}
 	// A guest can wait inside a tick or frame while the host waits for that same operation.
