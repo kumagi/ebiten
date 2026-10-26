@@ -435,6 +435,7 @@ func (g *GuestSession) sessionLoop() {
 			g.textInput.markClosed()
 		}
 	}()
+	defer g.markAudioStreamsClosed()
 	for {
 		o, ok := g.nextOp()
 		if !ok {
@@ -1877,6 +1878,15 @@ func (g *GuestSession) AudioSampleRate() int {
 	g.audioMu.Lock()
 	defer g.audioMu.Unlock()
 	return g.audioSampleRate
+}
+
+// markAudioStreamsClosed marks every audio stream closed.
+func (g *GuestSession) markAudioStreamsClosed() {
+	g.audioMu.Lock()
+	defer g.audioMu.Unlock()
+	for _, p := range g.audioStreams {
+		p.markClosed()
+	}
 }
 
 // setRequestedTPS records the guest's reported requested TPS.

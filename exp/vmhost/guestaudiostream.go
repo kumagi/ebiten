@@ -50,8 +50,7 @@ func (p *GuestAudioStream) setControl(playing bool, volume float64) {
 	p.volume = volume
 }
 
-// markClosed marks the stream closed and not playing, used when the guest reports its player closed and
-// the stream is dropped from the session's set.
+// markClosed marks the stream permanently closed and not playing.
 func (p *GuestAudioStream) markClosed() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -90,7 +89,8 @@ func (p *GuestAudioStream) IsPlaying() bool {
 	return p.playing
 }
 
-// IsClosed reports whether the guest has closed the stream's player. Once true it stays true: the stream
+// IsClosed reports whether the guest has closed the stream's player or the session has ended.
+// Once true it stays true: the stream
 // never plays again and Read reports io.EOF. It distinguishes a permanently gone stream from one that is
 // merely paused or finished (which may be sought back and replayed).
 func (p *GuestAudioStream) IsClosed() bool {
