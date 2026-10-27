@@ -202,6 +202,8 @@ func (k Key) String() string {
 		return "KeyY"
 	case KeyZ:
 		return "KeyZ"
+	case KeyAlt:
+		return "KeyAlt"
 	case KeyAltLeft:
 		return "KeyAltLeft"
 	case KeyAltRight:
@@ -230,6 +232,8 @@ func (k Key) String() string {
 		return "KeyComma"
 	case KeyContextMenu:
 		return "KeyContextMenu"
+	case KeyControl:
+		return "KeyControl"
 	case KeyControlLeft:
 		return "KeyControlLeft"
 	case KeyControlRight:
@@ -318,6 +322,8 @@ func (k Key) String() string {
 		return "KeyInsert"
 	case KeyIntlBackslash:
 		return "KeyIntlBackslash"
+	case KeyMeta:
+		return "KeyMeta"
 	case KeyMetaLeft:
 		return "KeyMetaLeft"
 	case KeyMetaRight:
@@ -376,6 +382,8 @@ func (k Key) String() string {
 		return "KeyScrollLock"
 	case KeySemicolon:
 		return "KeySemicolon"
+	case KeyShift:
+		return "KeyShift"
 	case KeyShiftLeft:
 		return "KeyShiftLeft"
 	case KeyShiftRight:

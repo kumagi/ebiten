@@ -539,7 +539,7 @@ const (
 
 func (k Key) String() string {
 	switch k {
-	{{range $index, $name := .UIKeyNames}}case Key{{$name}}:
+	{{range $name := .EbitengineKeyNamesWithoutOld}}case Key{{$name}}:
 		return {{$name | printf "Key%s" | printf "%q"}}
 	{{end}}}
 	return fmt.Sprintf("Key(%d)", k)
