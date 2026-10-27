@@ -186,6 +186,10 @@ func newGuestListener(t *testing.T, network string) (net.Listener, string) {
 // skipIfVMUnsupported skips tests on platforms where the vm host/guest model does not run.
 func skipIfVMUnsupported(t *testing.T) {
 	t.Helper()
+	if singleThreadBuild {
+		// Hosting a guest needs the multithread mode.
+		t.Skip("the vm host is not supported in single-thread mode")
+	}
 	switch runtime.GOOS {
 	case "android", "ios", "js":
 		t.Skipf("the vm is not supported on %s", runtime.GOOS)
