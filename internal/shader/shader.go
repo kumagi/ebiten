@@ -492,6 +492,12 @@ func (cs *compileState) parse(f *ast.File) {
 		}
 	}
 
+	for _, p := range vertexOutParams {
+		if p.typ.Main == shaderir.Array {
+			cs.addError(cs.vertexEntryPos, fmt.Sprintf("a returning value must not be an array but was %s", p.typ.String()))
+		}
+	}
+
 	if len(cs.errs) > 0 {
 		return
 	}
@@ -501,7 +507,6 @@ func (cs *compileState) parse(f *ast.File) {
 		cs.ir.Attributes = append(cs.ir.Attributes, p.typ)
 	}
 	if len(vertexOutParams) > 0 {
-		// TODO: Check that these params are not arrays or structs
 		// The 0th argument is a special variable for position and is not included in varying variables.
 		for _, p := range vertexOutParams[1:] {
 			cs.ir.Varyings = append(cs.ir.Varyings, p.typ)

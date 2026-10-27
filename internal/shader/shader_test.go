@@ -1324,6 +1324,37 @@ func Fragment() vec4 {
 	}
 }
 
+func TestCompileArrayVarying(t *testing.T) {
+	for _, typ := range []string{"[2]vec2", "[2]float", "vec2", "float"} {
+		t.Run(typ, func(t *testing.T) {
+			src := fmt.Sprintf(`package main
+
+func Vertex(position vec4) (vec4, %[1]s) {
+	var value %[1]s
+	return position, value
+}
+
+func Fragment(position vec4, value %[1]s) vec4 {
+	return vec4(1)
+}`, typ)
+			_, err := shader.Compile([]byte(src), "Vertex", "Fragment", 0)
+			if !strings.HasPrefix(typ, "[") {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "a returning value must not be an array") {
+				t.Fatalf("error = %v, want array varying rejection", err)
+			}
+			var perr *shader.ParseError
+			if !errors.As(err, &perr) || len(perr.Positions()) == 0 || perr.Positions()[0].Line != 3 {
+				t.Errorf("expected a parse error at the vertex entry, got %v", err)
+			}
+		})
+	}
+}
+
 func TestCompileReservedUniformName(t *testing.T) {
 	cases := []struct {
 		name string
