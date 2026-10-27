@@ -32,6 +32,38 @@ func TestMain(m *testing.M) {
 	t.MainWithRunLoop(m)
 }
 
+func TestCircleNilColor(t *testing.T) {
+	dst := ebiten.NewImage(4, 4)
+	defer dst.Deallocate()
+	for name, draw := range map[string]func(float32, color.Color, bool){
+		"fill":        func(r float32, clr color.Color, aa bool) { vector.FillCircle(dst, 2, 2, r, clr, aa) },
+		"stroke":      func(r float32, clr color.Color, aa bool) { vector.StrokeCircle(dst, 2, 2, r, 1, clr, aa) },
+		"legacy fill": func(r float32, clr color.Color, aa bool) { vector.DrawFilledCircle(dst, 2, 2, r, clr, aa) },
+	} {
+		for _, aa := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/AA=%v", name, aa), func(t *testing.T) {
+				draw(0, nil, aa)
+				if name == "stroke" {
+					vector.StrokeCircle(dst, 2, 2, 1, 0, nil, aa)
+				}
+				before := make([]byte, 4*4*4)
+				dst.ReadPixels(before)
+				defer func() {
+					if got, want := fmt.Sprint(recover()), "vector: the given color must not be nil"; got != want {
+						t.Errorf("panic = %q, want %q", got, want)
+					}
+					after := make([]byte, len(before))
+					dst.ReadPixels(after)
+					if !bytes.Equal(before, after) {
+						t.Error("nil color modified the destination")
+					}
+				}()
+				draw(1, nil, aa)
+			})
+		}
+	}
+}
+
 // Issue #2589
 func TestLine0(t *testing.T) {
 	dst := ebiten.NewImage(16, 16)
