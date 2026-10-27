@@ -88,6 +88,7 @@ var (
 	procImmSetCandidateWindow    = imm32.NewProc("ImmSetCandidateWindow")
 
 	procCallWindowProcW   = user32.NewProc("CallWindowProcW")
+	procDefWindowProcW    = user32.NewProc("DefWindowProcW")
 	procGetActiveWindow   = user32.NewProc("GetActiveWindow")
 	procSetWindowLongW    = user32.NewProc("SetWindowLongW")    // 32-Bit Windows version.
 	procSetWindowLongPtrW = user32.NewProc("SetWindowLongPtrW") // 64-Bit Windows version.
@@ -95,6 +96,11 @@ var (
 
 func _CallWindowProcW(lpPrevWndFunc uintptr, hWnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 	r, _, _ := procCallWindowProcW.Call(lpPrevWndFunc, hWnd, uintptr(msg), wParam, lParam)
+	return r
+}
+
+func _DefWindowProcW(hWnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
+	r, _, _ := procDefWindowProcW.Call(hWnd, uintptr(msg), wParam, lParam)
 	return r
 }
 
@@ -187,11 +193,8 @@ func _SetWindowLongPtrW(hWnd windows.HWND, nIndex int32, dwNewLong uintptr) (uin
 		p = procSetWindowLongW
 	}
 	h, _, e := p.Call(uintptr(hWnd), uintptr(nIndex), dwNewLong)
-	if h == 0 {
-		if e != nil && e != windows.ERROR_SUCCESS {
-			return 0, fmt.Errorf("textinput: SetWindowLongPtrW failed: %w", e)
-		}
-		return 0, fmt.Errorf("textinput: SetWindowLongPtrW returned 0")
+	if h == 0 && e != nil && e != windows.ERROR_SUCCESS {
+		return 0, fmt.Errorf("textinput: SetWindowLongPtrW failed: %w", e)
 	}
 	return h, nil
 }

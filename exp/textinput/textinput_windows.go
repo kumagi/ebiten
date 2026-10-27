@@ -29,10 +29,11 @@ import (
 type textInputImpl struct {
 	events *textInputEvents
 
-	origWndProc     uintptr
-	wndProcCallback uintptr
-	window          windows.HWND
-	immContext      uintptr
+	origWndProc      uintptr
+	wndProcCallback  uintptr
+	wndProcInstalled bool
+	window           windows.HWND
+	immContext       uintptr
 
 	highSurrogate uint16
 
@@ -105,7 +106,7 @@ func (t *textInputImpl) start(bounds image.Rectangle) (err error) {
 	if t.window == 0 {
 		return errNoActiveWindow
 	}
-	if t.origWndProc == 0 {
+	if !t.wndProcInstalled {
 		if t.wndProcCallback == 0 {
 			t.wndProcCallback = windows.NewCallback(t.wndProc)
 		}
@@ -115,6 +116,7 @@ func (t *textInputImpl) start(bounds image.Rectangle) (err error) {
 			return err
 		}
 		t.origWndProc = h
+		t.wndProcInstalled = true
 	}
 
 	// By default, IME was disabled by setting 0 as the IMM context.
@@ -219,7 +221,10 @@ func (t *textInputImpl) wndProc(hWnd uintptr, uMsg uint32, wParam, lParam uintpt
 		}
 	}
 
-	return _CallWindowProcW(t.origWndProc, hWnd, uMsg, wParam, lParam)
+	if t.origWndProc != 0 {
+		return _CallWindowProcW(t.origWndProc, hWnd, uMsg, wParam, lParam)
+	}
+	return _DefWindowProcW(hWnd, uMsg, wParam, lParam)
 }
 
 // send must be called from the main thread.
