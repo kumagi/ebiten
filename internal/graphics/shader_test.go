@@ -29,24 +29,28 @@ func Fragment(dstPos vec4, src0Pos vec2, color vec4) vec4 {
 	return dstPos
 }`
 	cases := []struct {
-		name string
-		src  string
-		err  bool
+		name        string
+		src         string
+		err         bool
+		errContains string
 	}{
 		{
-			name: "no directive",
-			src:  fragment,
-			err:  true,
+			name:        "no directive",
+			errContains: "directive is required",
+			src:         fragment,
+			err:         true,
 		},
 		{
-			name: "texels",
-			src:  "//kage:unit texels\n\n" + fragment,
-			err:  true,
+			name:        "texels",
+			errContains: `unexpected unit "texels": must be pixels`,
+			src:         "//kage:unit texels\n\n" + fragment,
+			err:         true,
 		},
 		{
-			name: "invalid value",
-			src:  "//kage:unit foo\n\n" + fragment,
-			err:  true,
+			name:        "invalid value",
+			errContains: `unexpected unit "foo": must be pixels`,
+			src:         "//kage:unit foo\n\n" + fragment,
+			err:         true,
 		},
 		{
 			name: "pixels",
@@ -67,6 +71,9 @@ func Fragment(dstPos vec4, src0Pos vec2, color vec4) vec4 {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := graphics.CompileShader([]byte(c.src))
+			if c.errContains != "" && (err == nil || !strings.Contains(err.Error(), c.errContains)) {
+				t.Errorf("error = %v, want %q", err, c.errContains)
+			}
 			if err == nil && c.err {
 				t.Errorf("CompileShader must return an error but does not")
 			} else if err != nil && !c.err {

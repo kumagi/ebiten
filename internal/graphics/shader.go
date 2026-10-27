@@ -226,8 +226,11 @@ func CompileShader(fragmentSrc []byte) (*shaderir.Program, error) {
 	if err != nil {
 		return nil, err
 	}
-	if value != "pixels" {
+	if value == "" {
 		return nil, fmt.Errorf("graphics: the `//kage:unit pixels` directive is required")
+	}
+	if value != "pixels" {
+		return nil, fmt.Errorf("graphics: unexpected unit %q: must be pixels", value)
 	}
 
 	const (
