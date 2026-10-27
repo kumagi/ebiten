@@ -81,7 +81,11 @@ func invokeOriginalGobind(lang string) (pkgName string, err error) {
 		cfgtags += "ios"
 	}
 	cfg.BuildFlags = []string{"-tags", cfgtags}
-	pkgs, err := packages.Load(cfg, flag.Args()[0])
+	pattern := "."
+	if flag.NArg() > 0 {
+		pattern = flag.Arg(0)
+	}
+	pkgs, err := packages.Load(cfg, pattern)
 	if err != nil {
 		return "", err
 	}
