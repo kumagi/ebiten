@@ -511,13 +511,20 @@ func (u *UserInterface) updateInputStateForFrame(deviceScaleFactor float64) erro
 		}
 	} else {
 		cx, cy := u.context.clientPositionToLogicalPosition(u.cursorXInClient, u.cursorYInClient, s)
-		u.inputState.CursorX = cx
-		u.inputState.CursorY = cy
+		// The position is not known yet while the screen is not initialized.
+		if !math.IsNaN(cx) && !math.IsNaN(cy) {
+			u.inputState.CursorX = cx
+			u.inputState.CursorY = cy
+		}
 	}
 
 	u.inputState.Touches = u.inputState.Touches[:0]
 	for _, t := range u.touchesInClient {
 		x, y := u.context.clientPositionToLogicalPosition(t.x, t.y, s)
+		// The position is not known yet while the screen is not initialized.
+		if math.IsNaN(x) || math.IsNaN(y) {
+			continue
+		}
 		u.inputState.Touches = append(u.inputState.Touches, Touch{
 			ID: t.id,
 			X:  x,
