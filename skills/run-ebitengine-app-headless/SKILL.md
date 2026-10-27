@@ -58,7 +58,7 @@ The endpoint reaches the guest one of two ways:
 ## The driver
 
 A host driver lives at
-[_driver/main.go](skills/run-ebitengine-app-headless/_driver/main.go). Treat it
+[_driver/main.go](_driver/main.go). Treat it
 as a **starting-point template**, not a finished tool: copy it and adapt the
 input script, assertions, and screen size to your case. It runs as-is only for
 the trivial screenshot (recipe step 1); it is a skill asset, not a stable
@@ -90,7 +90,7 @@ command, so don't depend on its flags.
 ## Recipe
 
 Everything here is built on the driver at
-[_driver/main.go](skills/run-ebitengine-app-headless/_driver/main.go): step 1
+[_driver/main.go](_driver/main.go): step 1
 runs it as-is, steps 2–3 copy and adapt it. The Go snippets below are excerpts
 of its `Update`, so `d.guest` (the `*vmhost.GuestSession`), `d.screen`, and
 `*ticks` (the `-ticks` flag value) are the driver's own identifiers.
@@ -338,7 +338,7 @@ guest closes its player, `IsClosed()` returns true and `Read` reports
 `io.EOF` for good, so `appendAudioStreams` drops it — returning only the
 guest's still-open streams. To actually *hear* it rather than just inspect it,
 feed the stream to a host `audio.Player` as its source — see
-[examples/vm/main.go](examples/vm/main.go).
+[examples/vm/main.go](../../examples/vm/main.go).
 
 ## Gotchas
 
@@ -376,8 +376,8 @@ feed the stream to a host `audio.Player` as its source — see
 
 To exercise an app as a guest from a `go test` instead of a standalone
 driver, mirror the package's own end-to-end tests:
-[exp/vmhost/guest_test.go](exp/vmhost/guest_test.go) (the `startGuest` /
+[exp/vmhost/guest_test.go](../../exp/vmhost/guest_test.go) (the `startGuest` /
 `tickAndFrame` helpers) and
-[exp/vmhost/readpixels_test.go](exp/vmhost/readpixels_test.go). These use
+[exp/vmhost/readpixels_test.go](../../exp/vmhost/readpixels_test.go). These use
 `internal/testing`'s `MainWithRunLoop`, which is importable only inside
 the ebiten module.
