@@ -1318,6 +1318,8 @@ func (i *Image) ReadPixels(pixels []byte) {
 
 	i.invokeUsageCallbacks()
 
+	i.updateAccessTime()
+
 	i.image.ReadPixels(pixels, i.adjustedBounds())
 }
 
@@ -1343,6 +1345,7 @@ func (i *Image) ReadPixelsAsync(pixels []byte) *PixelReadback {
 	}
 
 	i.invokeUsageCallbacks()
+	i.updateAccessTime()
 
 	return &PixelReadback{
 		result: i.image.ReadPixelsAsync(pixels, i.adjustedBounds()),
@@ -1395,6 +1398,7 @@ func (i *Image) at(x, y int) (r, g, b, a byte) {
 	}
 
 	i.invokeUsageCallbacks()
+	i.updateAccessTime()
 
 	x, y = i.adjustPosition(x, y)
 	var pix [4]byte
@@ -1558,6 +1562,8 @@ func (i *Image) WritePixels(pixels []byte) {
 	}
 
 	i.invokeUsageCallbacks()
+
+	i.updateAccessTime()
 
 	// Do not need to copy pixels here.
 	// * In the pixel cache, pixels are copied when necessary.
