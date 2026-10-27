@@ -16,6 +16,8 @@
 
 package ui
 
+import "math"
+
 type KeyEvent struct {
 	Key     Key
 	Pressed bool
@@ -113,6 +115,10 @@ func (u *UserInterface) updateInputStateForFrame(deviceScaleFactor float64) erro
 	u.inputState.Touches = u.inputState.Touches[:0]
 	for _, t := range u.touches {
 		x, y := u.context.clientPositionToLogicalPosition(t.x, t.y, s)
+		if math.IsNaN(x) || math.IsNaN(y) {
+			// The screen is not initialized yet, so the position doesn't make sense.
+			continue
+		}
 		u.inputState.Touches = append(u.inputState.Touches, Touch{
 			ID: t.id,
 			X:  x,
