@@ -62,6 +62,10 @@ func (i *image12) WritePixels(args []graphicsdriver.PixelsArgs) error {
 		return errors.New("directx: WritePixels cannot be called on the screen")
 	}
 
+	if len(args) == 0 {
+		return nil
+	}
+
 	// Submit earlier draws without resetting their allocator or waiting for the GPU.
 	// Both lists are DIRECT lists on one queue, so submission order is execution order.
 	if err := i.graphics.submitCommandList(i.graphics.drawCommandList); err != nil {

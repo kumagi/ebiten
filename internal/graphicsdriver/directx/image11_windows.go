@@ -15,6 +15,7 @@
 package directx
 
 import (
+	"errors"
 	"unsafe"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/graphics"
@@ -73,6 +74,10 @@ func (i *image11) disposeBuffers() {
 }
 
 func (i *image11) WritePixels(args []graphicsdriver.PixelsArgs) error {
+	if i.screen {
+		return errors.New("directx: WritePixels cannot be called on the screen")
+	}
+
 	for _, a := range args {
 		i.graphics.deviceContext.UpdateSubresource(unsafe.Pointer(i.texture), 0, &_D3D11_BOX{
 			left:   uint32(a.Region.Min.X),
