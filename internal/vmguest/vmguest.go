@@ -80,6 +80,9 @@ func AppendPostTickHook(hook func(vmprotocol.GuestMessageEncoder, int) error) {
 
 // RunPostTickHooks runs the registered post-tick hooks with the given encoder and the guest's
 // ebiten.Tick() during the tick just run. The guest UI backend calls it after a successful tick.
+//
+// Hooks run in registration order. The first error skips the remaining hooks and is returned
+// to the guest UI backend, which ends the session.
 func RunPostTickHooks(enc vmprotocol.GuestMessageEncoder, tick int) error {
 	postTickHooksMu.Lock()
 	hooks := postTickHooks
