@@ -820,7 +820,7 @@ func initExtensions() error {
 		purego.RegisterLibFunc(&xrender.QueryVersion, handle, "XRenderQueryVersion")
 		purego.RegisterLibFunc(&xrender.FindVisualFormat, handle, "XRenderFindVisualFormat")
 
-		if xrender.QueryExtension(display, &xrender.errorBase, &xrender.eventBase) {
+		if xrender.QueryExtension(display, &xrender.eventBase, &xrender.errorBase) {
 			if xrender.QueryVersion(display, &xrender.major, &xrender.minor) != 0 {
 				xrender.available = true
 			}
@@ -835,7 +835,7 @@ func initExtensions() error {
 		purego.RegisterLibFunc(&xshape.QueryVersion, handle, "XShapeQueryVersion")
 		purego.RegisterLibFunc(&xshape.CombineMask, handle, "XShapeCombineMask")
 
-		if xshape.QueryExtension(display, &xshape.errorBase, &xshape.eventBase) {
+		if xshape.QueryExtension(display, &xshape.eventBase, &xshape.errorBase) {
 			if xshape.QueryVersion(display, &xshape.major, &xshape.minor) != 0 {
 				xshape.available = true
 			}
