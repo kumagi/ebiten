@@ -36,7 +36,7 @@ func main() {
 	}
 }
 
-func run() error {
+func run() (err error) {
 	// These values are copied from an example in github.com/hajimehoshi/bitmapfont.
 	const (
 		charWidth  = 6
@@ -77,7 +77,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
+		}
+	}()
 
 	w := bufio.NewWriter(f)
 	if err := png.Encode(w, dst); err != nil {
