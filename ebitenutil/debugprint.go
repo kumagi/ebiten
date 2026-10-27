@@ -77,7 +77,7 @@ func drawDebugText(rt *ebiten.Image, str string, ox, oy int) {
 		s := debugPrintTextImage.SubImage(image.Rect(sx, sy, sx+cw, sy+ch)).(*ebiten.Image)
 		op.GeoM.Reset()
 		op.GeoM.Translate(float64(x), float64(y))
-		op.GeoM.Translate(float64(ox+1), float64(oy))
+		op.GeoM.Translate(float64(ox), float64(oy))
 		rt.DrawImage(s, op)
 		x += cw
 	}
