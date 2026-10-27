@@ -110,3 +110,36 @@ func TestFrameworkName(t *testing.T) {
 		}
 	}
 }
+
+func TestOSFromBuildTarget(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want string
+	}{
+		{
+			in:   "android",
+			want: "android",
+		},
+		{
+			in:   "android/arm64,android/amd64",
+			want: "android",
+		},
+		{
+			in:   "ios",
+			want: "darwin",
+		},
+		{
+			in:   "ios/arm64",
+			want: "darwin",
+		},
+	} {
+		if got, err := ebitenmobile.OsFromBuildTarget(tc.in); got != tc.want || err != nil {
+			t.Errorf("osFromBuildTarget(%q) = %q, %v; want %q, nil", tc.in, got, err, tc.want)
+		}
+	}
+	for _, target := range []string{"", "andriod", "linux", "darwin", ",", "/arm64", "android,ios", "android,"} {
+		if _, err := ebitenmobile.OsFromBuildTarget(target); err == nil {
+			t.Errorf("osFromBuildTarget(%q) must return an error", target)
+		}
+	}
+}

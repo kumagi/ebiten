@@ -15,6 +15,7 @@
 package main
 
 var (
+	OsFromBuildTarget      = osFromBuildTarget
 	FrameworkName          = frameworkName
 	IsValidJavaPackageName = isValidJavaPackageName
 )

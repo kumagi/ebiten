@@ -185,6 +185,9 @@ func osFromBuildTarget(buildTarget string) (string, error) {
 			return "", fmt.Errorf("ebitenmobile: cannot target different OSes")
 		}
 	}
+	if os != "android" && os != "ios" {
+		return "", fmt.Errorf("ebitenmobile: unsupported target: %s", buildTarget)
+	}
 	if os == "ios" {
 		os = "darwin"
 	}
