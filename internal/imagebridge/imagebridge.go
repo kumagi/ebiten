@@ -41,7 +41,11 @@ func Set[Image any](bridge Bridge[Image]) {
 	theBridge = bridge
 }
 
-// Get returns the bridge installed by [Set]. Get panics if the bridge was set with a different image type.
+// Get returns the bridge installed by [Set]. Get panics if [Set] was not called yet or if the
+// bridge was set with a different image type.
 func Get[Image any]() Bridge[Image] {
+	if theBridge == nil {
+		panic("imagebridge: Get is called before Set")
+	}
 	return theBridge.(Bridge[Image])
 }
