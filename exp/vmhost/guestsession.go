@@ -42,6 +42,7 @@ import (
 	"image"
 	"io"
 	"maps"
+	"math"
 	"net"
 	"slices"
 	"sync"
@@ -685,6 +686,10 @@ func (g *GuestSession) startReadPixelsAsync(query *vmprotocol.GuestMessage) (uin
 	mirror, total, err := g.validateReadPixels(query)
 	if err != nil {
 		return 0, err
+	}
+	// Check the size before converting it to int, including on 32-bit hosts.
+	if total > int64(math.MaxInt) {
+		return 0, fmt.Errorf("vmhost: ReadPixels asks for %d bytes, which is too large to allocate", total)
 	}
 	pixels := slices.Grow(g.readbackPixelsBuf[:0], int(total))[:int(total)]
 	g.readbackPixelsBuf = nil
