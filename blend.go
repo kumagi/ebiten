@@ -39,6 +39,8 @@ import (
 //
 // A blend operation is a binary operator of a source color and a destination color.
 // The default is adding.
+//
+// A drawing operation that uses a Blend panics if one of its factors or operations is not a defined value.
 type Blend struct {
 	// BlendFactorSourceRGB is a factor for source RGB values.
 	BlendFactorSourceRGB BlendFactor
