@@ -138,7 +138,7 @@ func (c *Context) Probe() error {
 	}
 	c.modesetDone = false
 	if r := drml.RmFB(c.d.fd, c.frontFB); r != 0 {
-		return fmt.Errorf("gbm: removing probe framebuffer failed: %d", r)
+		return fmt.Errorf("gbm: removing probe framebuffer failed: %w", unix.Errno(-r))
 	}
 	gbml.ReleaseBuffer(c.gbmSurface, c.frontBo)
 	c.frontFB = 0
@@ -183,7 +183,7 @@ func (c *Context) present(bo uintptr) (err error) {
 
 	if !c.modesetDone {
 		if r := drml.SetCrtc(c.d.fd, c.d.crtcID, fb, 0, 0, &c.d.connID, 1, &c.d.mode); r != 0 {
-			return fmt.Errorf("gbm: drmModeSetCrtc failed: %d", r)
+			return fmt.Errorf("gbm: drmModeSetCrtc failed: %w", unix.Errno(-r))
 		}
 		c.modesetDone = true
 		c.setFront(bo, fb)
@@ -205,7 +205,7 @@ func (c *Context) present(bo uintptr) (err error) {
 		r = drml.PageFlip(c.d.fd, c.d.crtcID, fb, _DRM_MODE_PAGE_FLIP_EVENT, 0)
 	}
 	if r != 0 {
-		return fmt.Errorf("gbm: drmModePageFlip failed: %d", r)
+		return fmt.Errorf("gbm: drmModePageFlip failed: %w", unix.Errno(-r))
 	}
 	c.flipBo, c.flipFB = bo, fb
 	return nil
@@ -260,7 +260,7 @@ func (c *Context) addFB(bo uintptr) (uint32, error) {
 		r = drml.AddFB2(c.d.fd, uint32(c.d.width), uint32(c.d.height), _GBM_FORMAT_XRGB8888, &handles[0], &pitches[0], &offsets[0], &fb, 0)
 	}
 	if r != 0 {
-		return 0, fmt.Errorf("gbm: drmModeAddFB2 failed: %d", r)
+		return 0, fmt.Errorf("gbm: drmModeAddFB2 failed: %w", unix.Errno(-r))
 	}
 	return fb, nil
 }
@@ -280,7 +280,7 @@ func (c *Context) Close() error {
 	}
 	if c.frontBo != 0 {
 		if r := drml.RmFB(c.d.fd, c.frontFB); r != 0 {
-			err = errors.Join(err, fmt.Errorf("gbm: removing framebuffer failed: %d", r))
+			err = errors.Join(err, fmt.Errorf("gbm: removing framebuffer failed: %w", unix.Errno(-r)))
 		}
 		gbml.ReleaseBuffer(c.gbmSurface, c.frontBo)
 		c.frontBo = 0
@@ -288,7 +288,7 @@ func (c *Context) Close() error {
 	}
 	if c.flipBo != 0 {
 		if r := drml.RmFB(c.d.fd, c.flipFB); r != 0 {
-			err = errors.Join(err, fmt.Errorf("gbm: removing pending framebuffer failed: %d", r))
+			err = errors.Join(err, fmt.Errorf("gbm: removing pending framebuffer failed: %w", unix.Errno(-r)))
 		}
 		gbml.ReleaseBuffer(c.gbmSurface, c.flipBo)
 		c.flipBo = 0
