@@ -97,7 +97,7 @@ GLSL. `cross` is `vec3`-only.
 | `for (...)` with a uniform bound | constant upper bound plus `if i >= Bound { break }` |
 | `while (cond)` / `do { } while` | not available; rewrite as a bounded `for` with `break` |
 | `switch` | `if`/`else if` chain |
-| recursion | not available in the target languages; flatten it |
+| recursion | a compile error, "must not be called recursively"; flatten it |
 
 The classic Kage loop must be literally
 `for <var> := <const>; <var> <op> <const>; <var> <op>= <const> { }`. The bounds

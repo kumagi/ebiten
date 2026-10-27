@@ -310,8 +310,8 @@ helper functions with multiple return values; `const`; `if`/`else`;
 
 **Not available:** `struct`, `switch`, `goto`, `defer`, `go`, `init`, `import`,
 methods, nested functions and closures, strings, slices, maps, pointers.
-Recursion passes Kage's own compiler but the target shading languages reject it,
-so it fails at draw time — do not use it.
+Recursion is a compile error (`function f must not be called recursively`),
+direct or mutual, so `NewShader` rejects it: flatten the call instead.
 
 **Rules that bite:**
 
@@ -396,8 +396,8 @@ Errors are reported as `line:column: message` against the source.
 Two limits to keep in mind:
 
 - This validates Kage only. Translation to GLSL/HLSL/MSL happens in the
-  graphics driver on first use, so backend-level rejections (recursion,
-  driver-specific limits) surface at draw time, not here.
+  graphics driver on first use, so backend-level rejections (driver-specific
+  limits) surface at draw time, not here.
 - It cannot catch a wrong result. For that, render with
   [skills/run-ebitengine-app-headless](../run-ebitengine-app-headless/SKILL.md)
   and compare pixels.
