@@ -25,6 +25,8 @@ import (
 // GraphicsCommandKind identifies a recorded graphics command.
 type GraphicsCommandKind int
 
+// The values follow iota: adding, inserting, or reordering kinds is a wire-affecting change (see
+// VersionMajor and VersionMinor).
 const (
 	GraphicsCommandKindInitialize GraphicsCommandKind = iota
 	GraphicsCommandKindBegin
