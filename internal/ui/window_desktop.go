@@ -555,6 +555,9 @@ func (w *desktopWindow) SetClosingHandled(handled bool) {
 }
 
 func (w *desktopWindow) IsClosingHandled() bool {
+	if w.ui.isTerminated() {
+		return false
+	}
 	return w.isWindowClosingHandled()
 }
 
