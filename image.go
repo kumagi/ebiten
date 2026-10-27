@@ -275,6 +275,10 @@ func init() {
 // When the given Filter is invalid, DrawImage panics.
 // When the image i is disposed and img is not, DrawImage does nothing.
 //
+// DrawImage can panic if img shares its underlying image with i.
+// A whole image and any of its sub-images share the same underlying image.
+// Use a separate image as the source to avoid this panic.
+//
 // DrawImage works more efficiently as batches
 // when the successive calls of DrawImage satisfy the below conditions:
 //
@@ -621,6 +625,10 @@ func (i *Image) DrawTriangles(vertices []Vertex, indices []uint16, img *Image, o
 // When the given Filter, Address, ColorScaleMode, or FillRule is invalid, DrawTriangles32 panics.
 //
 // When the image i is disposed and the given image is not, DrawTriangles32 does nothing.
+//
+// DrawTriangles32 can panic if img shares its underlying image with i.
+// A whole image and any of its sub-images share the same underlying image.
+// Use a separate image as the source to avoid this panic.
 func (i *Image) DrawTriangles32(vertices []Vertex, indices []uint32, img *Image, options *DrawTrianglesOptions) {
 	i.copyCheck()
 
