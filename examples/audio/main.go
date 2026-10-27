@@ -211,7 +211,7 @@ func NewPlayer(game *Game, audioContext *audio.Context, musicType musicType) (*P
 	player := &Player{
 		audioContext: audioContext,
 		audioPlayer:  p,
-		total:        time.Second * time.Duration(s.Length()) / bytesPerSample / sampleRate,
+		total:        time.Duration(float64(s.Length()) / (bytesPerSample * sampleRate) * float64(time.Second)),
 		volume128:    128,
 		seCh:         make(chan []byte),
 		musicType:    musicType,
