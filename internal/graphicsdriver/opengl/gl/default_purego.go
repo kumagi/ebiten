@@ -350,7 +350,7 @@ func (c *defaultContext) GetProgramInfoLog(program uint32) string {
 	c.pinner.Pin(&infoLog[0])
 	defer c.pinner.Unpin()
 	c.call(c.gpGetProgramInfoLog, uintptr(program), uintptr(bufSize), 0, uintptr(unsafe.Pointer(&infoLog[0])))
-	return string(infoLog)
+	return stringFromInfoLog(infoLog)
 }
 
 func (c *defaultContext) GetProgrami(program uint32, pname uint32) int {
@@ -369,7 +369,7 @@ func (c *defaultContext) GetShaderInfoLog(shader uint32) string {
 	c.pinner.Pin(&infoLog[0])
 	defer c.pinner.Unpin()
 	c.call(c.gpGetShaderInfoLog, uintptr(shader), uintptr(bufSize), 0, uintptr(unsafe.Pointer(&infoLog[0])))
-	return string(infoLog)
+	return stringFromInfoLog(infoLog)
 }
 
 func (c *defaultContext) GetShaderi(shader uint32, pname uint32) int {
