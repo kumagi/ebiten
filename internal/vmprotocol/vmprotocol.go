@@ -523,8 +523,14 @@ func writeHandshakeVersion(w io.Writer, major, minor uint16) error {
 	copy(buf[0:4], handshakeMagic)
 	binary.BigEndian.PutUint16(buf[4:6], major)
 	binary.BigEndian.PutUint16(buf[6:8], minor)
-	_, err := w.Write(buf[:])
-	return err
+	n, err := w.Write(buf[:])
+	if err != nil {
+		return err
+	}
+	if n != len(buf) {
+		return io.ErrShortWrite
+	}
+	return nil
 }
 
 func readHandshake(r io.Reader) ([8]byte, error) {
