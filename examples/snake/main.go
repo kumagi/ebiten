@@ -120,32 +120,7 @@ func (g *Game) Update() error {
 	}
 
 	if g.needsToMoveSnake() {
-		if g.collidesWithWall() || g.collidesWithSelf() {
-			g.reset()
-		}
-
-		if g.collidesWithApple() {
-			g.apple.X = rand.IntN(xGridCountInScreen)
-			g.apple.Y = rand.IntN(yGridCountInScreen)
-			g.snakeBody = append(g.snakeBody, Position{
-				X: g.snakeBody[len(g.snakeBody)-1].X,
-				Y: g.snakeBody[len(g.snakeBody)-1].Y,
-			})
-			if len(g.snakeBody) > 10 && len(g.snakeBody) <= 20 {
-				g.level = 2
-				g.moveTime = 3
-			} else if len(g.snakeBody) > 20 {
-				g.level = 3
-				g.moveTime = 2
-			} else {
-				g.level = 1
-			}
-			g.score++
-			if g.bestScore < g.score {
-				g.bestScore = g.score
-			}
-		}
-
+		tail := g.snakeBody[len(g.snakeBody)-1]
 		for i := int64(len(g.snakeBody)) - 1; i > 0; i-- {
 			g.snakeBody[i].X = g.snakeBody[i-1].X
 			g.snakeBody[i].Y = g.snakeBody[i-1].Y
@@ -159,6 +134,27 @@ func (g *Game) Update() error {
 			g.snakeBody[0].Y++
 		case dirUp:
 			g.snakeBody[0].Y--
+		}
+
+		if g.collidesWithWall() || g.collidesWithSelf() {
+			g.reset()
+		} else if g.collidesWithApple() {
+			g.apple.X = rand.IntN(xGridCountInScreen)
+			g.apple.Y = rand.IntN(yGridCountInScreen)
+			g.snakeBody = append(g.snakeBody, tail)
+			if len(g.snakeBody) > 10 && len(g.snakeBody) <= 20 {
+				g.level = 2
+				g.moveTime = 3
+			} else if len(g.snakeBody) > 20 {
+				g.level = 3
+				g.moveTime = 2
+			} else {
+				g.level = 1
+			}
+			g.score++
+			if g.bestScore < g.score {
+				g.bestScore = g.score
+			}
 		}
 	}
 
