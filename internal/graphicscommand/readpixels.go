@@ -66,7 +66,7 @@ func FlushAndPollPixelReadbacks(graphicsDriver graphicsdriver.Graphics) error {
 			return err
 		}
 	}
-	thread.Call(theRenderThread, func() {
+	thread.Call(renderThread(), func() {
 		theCommandQueueManager.pollReadPixels()
 	})
 	if err := theCommandQueueManager.error(); err != nil {
@@ -80,7 +80,7 @@ func FlushAndPollPixelReadbacks(graphicsDriver graphicsdriver.Graphics) error {
 func TryPollPixelReadbacks() {
 	// Only render-thread-owned pending requests are accessed, so no atlas lock is needed.
 	// A busy, inactive, or stopped loop leaves completion to a later poll or frame flush.
-	thread.TryCallAsync(theRenderThread, (*commandQueueManager).pollReadPixels, &theCommandQueueManager)
+	thread.TryCallAsync(renderThread(), (*commandQueueManager).pollReadPixels, &theCommandQueueManager)
 }
 
 // FlushAndWaitPixelReadbacks submits queued commands and completes the given read-backs.
@@ -95,7 +95,7 @@ func FlushAndWaitPixelReadbacks(graphicsDriver graphicsdriver.Graphics, results 
 	if err := FlushAndPollPixelReadbacks(graphicsDriver); err != nil {
 		return err
 	}
-	thread.Call(theRenderThread, func() {
+	thread.Call(renderThread(), func() {
 		theCommandQueueManager.waitReadPixels(results)
 	})
 	return nil
@@ -266,7 +266,7 @@ func (c *commandQueueManager) abortReadPixels(err error) {
 	// Commands are recorded under the atlas backend mutex, so the current queue cannot change
 	// while the render thread walks it.
 	q := c.current
-	thread.Call(theRenderThread, func() {
+	thread.Call(renderThread(), func() {
 		q.abortQueuedReadPixels(err)
 		c.abortPendingReadPixels(err)
 	})

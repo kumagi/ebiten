@@ -64,7 +64,7 @@ func (c *commandQueueManager) FlushForTesting(graphicsDriver graphicsdriver.Grap
 }
 
 func SetRenderThreadForTesting(t thread.Thread) func() {
-	previous := theRenderThread
-	theRenderThread = t
-	return func() { theRenderThread = previous }
+	previous := theRenderThread.Load()
+	theRenderThread.Store(&t)
+	return func() { theRenderThread.Store(previous) }
 }
