@@ -86,6 +86,9 @@ func getOutputInfoX11(srPtr uintptr, output _RROutput) uintptr {
 // pollMonitorsX11 polls for changes in the set of connected monitors.
 func pollMonitorsX11() error {
 	if !_glfw.platformWindow.randr.available || _glfw.platformWindow.randr.monitorBroken {
+		if len(_glfw.monitors) > 0 {
+			return nil
+		}
 		return inputMonitor(&Monitor{name: "Display"}, Connected, _GLFW_INSERT_FIRST)
 	}
 
