@@ -128,7 +128,7 @@ type (
 	RefreshCallback         func(w *Window)
 	FocusCallback           func(w *Window, focused bool)
 	IconifyCallback         func(w *Window, iconified bool)
-	MaximizeCallback        func(w *Window, iconified bool)
+	MaximizeCallback        func(w *Window, maximized bool)
 	FramebufferSizeCallback func(w *Window, width int, height int)
 	ContentScaleCallback    func(w *Window, x float32, y float32)
 	MouseButtonCallback     func(w *Window, button MouseButton, action Action, mods ModifierKey)
