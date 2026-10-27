@@ -365,8 +365,12 @@ func setMarkedText(_ objc.ID, _ objc.SEL, str objc.ID, selectedRange nsRange, re
 
 	t := cstrings.NSStringToString(str)
 
-	startInBytes := convertUTF16CountToByteCount(t, int(selectedRange.location))
-	endInBytes := convertUTF16CountToByteCount(t, int(selectedRange.location+selectedRange.length))
+	// Keep the reported selection within the marked text.
+	startInBytes := utf16ToByteWithin(t, int(selectedRange.location))
+	endInBytes := utf16ToByteWithin(t, int(selectedRange.location+selectedRange.length))
+	if endInBytes < startInBytes {
+		endInBytes = startInBytes
+	}
 	theTextInputImpl.update(t, startInBytes, endInBytes, noReplacement, noReplacement, commitNone)
 }
 
