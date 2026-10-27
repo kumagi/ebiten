@@ -553,6 +553,9 @@ func (u *glfwBackend) createWindow() error {
 
 	monitor := u.getRequestedMonitor()
 	ww, wh := u.desktopWindow.getWindowSizeInDIP()
+	// Apply the size limits, so that the window is not created bigger than
+	// them and then shrunk right after its creation.
+	ww, wh = u.desktopWindow.adjustWindowSizeBasedOnSizeLimitsInDIP(ww, wh)
 	s := monitor.DeviceScaleFactor()
 	width, height := windowSizeInGLFWPixels(ww, wh, s)
 	window, err := glfw.CreateWindow(width, height, "", nil, nil)
