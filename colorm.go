@@ -51,7 +51,7 @@ func (c *ColorM) affineColorM() affine.ColorM {
 // String returns a string representation of ColorM.
 //
 // Deprecated: as of v2.5. Use the colorm package instead.
-func (c *ColorM) String() string {
+func (c ColorM) String() string {
 	return c.affineColorM().String()
 }
 

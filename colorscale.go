@@ -30,7 +30,7 @@ type ColorScale struct {
 }
 
 // String returns a string representing the color scale.
-func (c *ColorScale) String() string {
+func (c ColorScale) String() string {
 	return fmt.Sprintf("(%f,%f,%f,%f)", c.r_1+1, c.g_1+1, c.b_1+1, c.a_1+1)
 }
 

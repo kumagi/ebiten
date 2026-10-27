@@ -35,7 +35,7 @@ type GeoM struct {
 }
 
 // String returns a string representation of GeoM.
-func (g *GeoM) String() string {
+func (g GeoM) String() string {
 	return fmt.Sprintf("[[%f, %f, %f], [%f, %f, %f]]", g.a_1+1, g.b, g.tx, g.c, g.d_1+1, g.ty)
 }
 
