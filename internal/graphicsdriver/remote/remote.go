@@ -284,6 +284,11 @@ func (i *Image) Dispose() {
 }
 
 func (i *Image) ReadPixelsAsync(args []graphicsdriver.PixelsArgs) (graphicsdriver.PixelReadback, error) {
+	for _, a := range args {
+		if got, want := len(a.Pixels), 4*a.Region.Dx()*a.Region.Dy(); got != want {
+			return nil, fmt.Errorf("remote: len(Pixels) must be %d but %d at ReadPixelsAsync", want, got)
+		}
+	}
 	g := i.graphics
 	if g.host == nil {
 		return completedReadback{}, nil
@@ -309,6 +314,11 @@ func (completedReadback) Dispose() {
 
 func (i *Image) WritePixels(args []graphicsdriver.PixelsArgs) error {
 	g := i.graphics
+	for _, a := range args {
+		if got, want := len(a.Pixels), 4*a.Region.Dx()*a.Region.Dy(); got != want {
+			return fmt.Errorf("remote: len(Pixels) must be %d but %d at WritePixels", want, got)
+		}
+	}
 	regionsStart := len(g.regionsBuf)
 	pixelsStart := len(g.pixelsListBuf)
 	for _, a := range args {
