@@ -184,7 +184,24 @@ func (g *Graphics) SetVertices(vertices []float32, indices []uint32) error {
 	return nil
 }
 
+func (g *Graphics) checkSize(width, height int) {
+	if width < 1 {
+		panic(fmt.Sprintf("remote: width (%d) must be equal or more than %d", width, 1))
+	}
+	if height < 1 {
+		panic(fmt.Sprintf("remote: height (%d) must be equal or more than %d", height, 1))
+	}
+	m := g.MaxImageSize()
+	if width > m {
+		panic(fmt.Sprintf("remote: width (%d) must be less than or equal to %d", width, m))
+	}
+	if height > m {
+		panic(fmt.Sprintf("remote: height (%d) must be less than or equal to %d", height, m))
+	}
+}
+
 func (g *Graphics) NewImage(width, height int) (graphicsdriver.Image, error) {
+	g.checkSize(width, height)
 	g.nextImageID++
 	id := g.nextImageID
 	g.record(vmprotocol.GraphicsCommand{
@@ -197,6 +214,7 @@ func (g *Graphics) NewImage(width, height int) (graphicsdriver.Image, error) {
 }
 
 func (g *Graphics) NewScreenFramebufferImage(width, height int) (graphicsdriver.Image, error) {
+	g.checkSize(width, height)
 	g.nextImageID++
 	id := g.nextImageID
 	g.record(vmprotocol.GraphicsCommand{
