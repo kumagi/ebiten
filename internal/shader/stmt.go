@@ -590,7 +590,7 @@ func (cs *compileState) parseStmt(block *block, fname string, stmt ast.Stmt, inP
 		}
 
 	default:
-		cs.addError(stmt.Pos(), fmt.Sprintf("unexpected statement: %#v", stmt))
+		cs.addError(stmt.Pos(), "unsupported statement")
 		return nil, false
 	}
 	return stmts, true

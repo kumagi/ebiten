@@ -1710,3 +1710,38 @@ func Fragment(dstPos vec4, src0Pos vec2, color vec4) vec4 {
 		})
 	}
 }
+
+func TestDiagnosticsDoNotExposeAST(t *testing.T) {
+	for _, tc := range []struct{ name, body, want string }{
+		{"literal", `x := "hello"; _ = x`, "unsupported literal: STRING"},
+		{"expression", `x := func() {}; _ = x`, "unsupported expression"},
+		{"statement", `switch {}`, "unsupported statement"},
+		{"binary", `x := pair() + 1; _ = x`, "multiple-value context is not available at a binary operator"},
+		{"unary", `x := -pair(); _ = x`, "multiple-value context is not available at a unary operator"},
+		{"selector", `x := pair().x; _ = x`, "multiple-value context is not available at a selector"},
+		{"callee", `(vec2(1).x)()`, "function callee must be a function name"},
+		{"mixed arguments", `x := max(pair(), 1); _ = x`, "single-value context and multiple-value context cannot be mixed"},
+		{"too many arguments", `x := single(1, 2); _ = x`, "too many arguments in call to single"},
+		{"too few arguments", `x := single(); _ = x`, "not enough arguments in call to single"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := `package main
+func pair() (float, float) { return 1, 2 }
+func single(x float) float { return x }
+func Fragment() vec4 { ` + tc.body + `; return vec4(1) }`
+			_, err := shader.Compile([]byte(src), "Vertex", "Fragment", 0)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+			for _, internal := range []string{"%!", "&{", "ast.", "token.Pos"} {
+				if strings.Contains(err.Error(), internal) {
+					t.Errorf("diagnostic exposes AST: %v", err)
+				}
+			}
+			var perr *shader.ParseError
+			if !errors.As(err, &perr) || len(perr.Positions()) == 0 {
+				t.Errorf("missing parse error position: %v", err)
+			}
+		})
+	}
+}

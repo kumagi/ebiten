@@ -96,7 +96,7 @@ func (cs *compileState) parseExpr(block *block, fname string, expr ast.Expr, mar
 				},
 			}, []shaderir.Type{{}}, nil, true
 		default:
-			cs.addError(e.Pos(), fmt.Sprintf("literal not implemented: %#v", e))
+			cs.addError(e.Pos(), fmt.Sprintf("unsupported literal: %s", e.Kind))
 		}
 
 	case *ast.BinaryExpr:
@@ -108,12 +108,12 @@ func (cs *compileState) parseExpr(block *block, fname string, expr ast.Expr, mar
 			return nil, nil, nil, false
 		}
 		if len(lhs) != 1 {
-			cs.addError(e.Pos(), fmt.Sprintf("multiple-value context is not available at a binary operator: %s", e.X))
+			cs.addError(e.Pos(), "multiple-value context is not available at a binary operator")
 			return nil, nil, nil, false
 		}
 		stmts = append(stmts, ss...)
 		if len(ts) == 0 {
-			cs.addError(e.Pos(), fmt.Sprintf("unexpected binary operator: %s", e.X))
+			cs.addError(e.Pos(), fmt.Sprintf("unexpected binary operator: %s", e.Op))
 			return nil, nil, nil, false
 		}
 		lhst := ts[0]
@@ -256,7 +256,7 @@ func (cs *compileState) parseExpr(block *block, fname string, expr ast.Expr, mar
 				return nil, nil, nil, false
 			}
 			if len(es) > 1 && len(e.Args) > 1 {
-				cs.addError(a.Pos(), fmt.Sprintf("single-value context and multiple-value context cannot be mixed: %s", e.Fun))
+				cs.addError(a.Pos(), "single-value context and multiple-value context cannot be mixed")
 				return nil, nil, nil, false
 			}
 			for _, expr := range es {
@@ -891,11 +891,11 @@ func (cs *compileState) parseExpr(block *block, fname string, expr ast.Expr, mar
 		f := cs.funcs[callee.Index]
 
 		if len(f.ir.InParams) < len(args) {
-			cs.addError(argCountErrorPos(e, argPositions, len(f.ir.InParams)), fmt.Sprintf("too many arguments in call to %s", e.Fun))
+			cs.addError(argCountErrorPos(e, argPositions, len(f.ir.InParams)), fmt.Sprintf("too many arguments in call to %s", f.name))
 			return nil, nil, nil, false
 		}
 		if len(f.ir.InParams) > len(args) {
-			cs.addError(argCountErrorPos(e, argPositions, len(f.ir.InParams)), fmt.Sprintf("not enough arguments in call to %s", e.Fun))
+			cs.addError(argCountErrorPos(e, argPositions, len(f.ir.InParams)), fmt.Sprintf("not enough arguments in call to %s", f.name))
 			return nil, nil, nil, false
 		}
 
@@ -932,7 +932,7 @@ func (cs *compileState) parseExpr(block *block, fname string, expr ast.Expr, mar
 
 		if t := f.ir.Return; t.Main != shaderir.None {
 			if len(outParams) != 0 {
-				cs.addError(e.Pos(), fmt.Sprintf("a function returning value cannot have out-params so far: %s", e.Fun))
+				cs.addError(e.Pos(), fmt.Sprintf("a function returning value cannot have out-params so far: %s", f.name))
 				return nil, nil, nil, false
 			}
 
@@ -1005,7 +1005,7 @@ func (cs *compileState) parseExpr(block *block, fname string, expr ast.Expr, mar
 			return nil, nil, nil, false
 		}
 		if len(exprs) != 1 {
-			cs.addError(e.Pos(), fmt.Sprintf("multiple-value context is not available at a selector: %s", e.X))
+			cs.addError(e.Pos(), "multiple-value context is not available at a selector")
 			return nil, nil, nil, false
 		}
 
@@ -1064,11 +1064,11 @@ func (cs *compileState) parseExpr(block *block, fname string, expr ast.Expr, mar
 			return nil, nil, nil, false
 		}
 		if len(exprs) != 1 {
-			cs.addError(e.Pos(), fmt.Sprintf("multiple-value context is not available at a unary operator: %s", e.X))
+			cs.addError(e.Pos(), "multiple-value context is not available at a unary operator")
 			return nil, nil, nil, false
 		}
 		if len(ts) == 0 {
-			cs.addError(e.Pos(), fmt.Sprintf("unexpected unary operator: %s", e.X))
+			cs.addError(e.Pos(), fmt.Sprintf("unexpected unary operator: %s", e.Op))
 			return nil, nil, nil, false
 		}
 		if exprs[0].Type == shaderir.Blank {
@@ -1331,7 +1331,7 @@ func (cs *compileState) parseExpr(block *block, fname string, expr ast.Expr, mar
 		}, []shaderir.Type{typ}, stmts, true
 
 	default:
-		cs.addError(e.Pos(), fmt.Sprintf("expression not implemented: %#v", e))
+		cs.addError(e.Pos(), "unsupported expression")
 	}
 	return nil, nil, nil, false
 }
@@ -1411,7 +1411,7 @@ func (cs *compileState) parseCallee(block *block, e ast.Expr) (shaderir.Expr, bo
 		}
 		return expr, true
 	}
-	cs.addError(e.Pos(), fmt.Sprintf("function callee must be a function name but %s", e))
+	cs.addError(e.Pos(), "function callee must be a function name")
 	return shaderir.Expr{}, false
 }
 
