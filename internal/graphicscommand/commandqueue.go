@@ -355,9 +355,9 @@ func (q *commandQueue) flush(graphicsDriver graphicsdriver.Graphics, mode graphi
 			if err := graphicsDriver.SetVertices(vs[:nv], es[:ne]); err != nil {
 				return err
 			}
-			es = es[ne:]
-			vs = vs[nv:]
 		}
+		es = es[ne:]
+		vs = vs[nv:]
 		var indexOffset int
 		for _, c := range cs[:nc] {
 			if err := c.Exec(q, graphicsDriver, indexOffset); err != nil {
