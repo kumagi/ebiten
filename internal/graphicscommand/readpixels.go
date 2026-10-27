@@ -171,6 +171,10 @@ func (c *readPixelsAsyncCommand) String() string {
 // Exec records the read-back into the graphics driver's command stream at this position, so the
 // read pixels include the drawing commands preceding this command and exclude the following ones.
 func (c *readPixelsAsyncCommand) Exec(commandQueue *commandQueue, graphicsDriver graphicsdriver.Graphics, indexOffset int) error {
+	if c.req.finished {
+		// The request was aborted before this command ran.
+		return nil
+	}
 	if c.img.image == nil {
 		// The image is not created yet, which happens when the newImageCommand failed.
 		c.req.finish(errors.New("graphicscommand: the image is not available at ReadPixelsAsync"))
