@@ -38,8 +38,10 @@ func newDriver(sampleRate int, vmGuest bool) (driver, chan struct{}, error) {
 		ChannelCount: channelCount,
 		Format:       oto.FormatFloat32LE,
 	})
-	err = addErrorInfo(err)
-	return &otoContext{ctx}, ready, err
+	if err := addErrorInfo(err); err != nil {
+		return nil, nil, err
+	}
+	return &otoContext{ctx}, ready, nil
 }
 
 // otoContext is a proxy between oto.Context and driver.
