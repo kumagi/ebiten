@@ -189,6 +189,15 @@ func xmain() error {
 	if *pkg == "" {
 		return errors.New("specify the guest package with -pkg, e.g. -pkg ./examples/paint")
 	}
+	if *ticks <= 0 {
+		return fmt.Errorf("-ticks must be positive but was %d", *ticks)
+	}
+	if *logicalW <= 0 {
+		return fmt.Errorf("-w must be positive but was %d", *logicalW)
+	}
+	if *logicalH <= 0 {
+		return fmt.Errorf("-h must be positive but was %d", *logicalH)
+	}
 
 	// A short temp dir keeps the unix socket path within the OS limit (~104 bytes on macOS).
 	dir, err := os.MkdirTemp("", "vg")
