@@ -115,8 +115,9 @@ type HostMessage struct {
 	// PressTouch/MoveTouch/ReleaseTouch carry a ui.TouchID.
 	Code int
 
-	// MoveCursor, ScrollWheel, and Scroll; also PressTouch and MoveTouch carry the touch position. Pinch
-	// carries the change of the scale in X, and Rotate carries the angle in X.
+	// X and Y carry the cursor or touch position for MoveCursor, PressTouch, and MoveTouch.
+	// For ScrollWheel and Scroll, they carry horizontal and vertical scroll amounts.
+	// Pinch carries the change of the scale in X, and Rotate carries the angle in X.
 	X float64
 	Y float64
 
