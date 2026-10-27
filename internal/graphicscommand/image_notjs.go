@@ -28,6 +28,10 @@ import (
 )
 
 func (i *Image) Dump(graphicsDriver graphicsdriver.Graphics, path string, blackbg bool, rect image.Rectangle) (string, error) {
+	if i.screen {
+		return "", fmt.Errorf("graphicscommand: a screen image cannot be dumped")
+	}
+
 	p, err := availableFilename(path)
 	if err != nil {
 		return "", err
