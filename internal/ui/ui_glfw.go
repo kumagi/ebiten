@@ -1682,10 +1682,13 @@ func (u *glfwBackend) updateWindowSizeLimits() error {
 		if err != nil {
 			return err
 		}
-		minw = max(1, int(math.Round(dipToGLFWPixel(float64(mw), s))))
-	} else {
-		minw = max(1, int(math.Round(dipToGLFWPixel(float64(minw), s))))
+		minw = mw
+		// Keep the implicit minimum consistent with an explicit maximum.
+		if maxw >= 0 {
+			minw = min(minw, maxw)
+		}
 	}
+	minw = max(1, int(math.Round(dipToGLFWPixel(float64(minw), s))))
 	if minh < 0 {
 		minh = glfw.DontCare
 	} else {
