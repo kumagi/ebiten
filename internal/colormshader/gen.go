@@ -51,12 +51,16 @@ const note = `// This file is intended for precompiled shaders that will be intr
 // so they do not affect the binary file size.
 `
 
-func xmain() error {
+func xmain() (err error) {
 	f, err := os.Create("defs.go")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
+		}
+	}()
 
 	w := bufio.NewWriter(f)
 
