@@ -57,9 +57,10 @@ func (c *Context) Initialize(display uintptr) error {
 // ChooseConfig asks for one matching configuration. Some fbdev EGL drivers
 // expect a config buffer rather than a count-only query.
 func (c *Context) ChooseConfig(attribs []int32) (uintptr, error) {
+	p := attribsPtr(attribs)
 	var config uintptr
 	var num int32
-	if !eglChooseConfig(c.display, &attribs[0], &config, 1, &num) {
+	if !eglChooseConfig(c.display, p, &config, 1, &num) {
 		return 0, fmt.Errorf("egl: eglChooseConfig failed: %w", c.LastError())
 	}
 	if num <= 0 {
@@ -71,21 +72,34 @@ func (c *Context) ChooseConfig(attribs []int32) (uintptr, error) {
 // ChooseConfigs returns every matching configuration so a backend can select
 // the one compatible with its native window format.
 func (c *Context) ChooseConfigs(attribs []int32) ([]uintptr, error) {
+	p := attribsPtr(attribs)
 	var num int32
-	if !eglChooseConfig(c.display, &attribs[0], nil, 0, &num) {
+	if !eglChooseConfig(c.display, p, nil, 0, &num) {
 		return nil, fmt.Errorf("egl: eglChooseConfig failed: %w", c.LastError())
 	}
 	if num <= 0 {
 		return nil, errors.New("egl: no matching EGL config")
 	}
 	configs := make([]uintptr, num)
-	if !eglChooseConfig(c.display, &attribs[0], &configs[0], int32(len(configs)), &num) {
+	if !eglChooseConfig(c.display, p, &configs[0], int32(len(configs)), &num) {
 		return nil, fmt.Errorf("egl: eglChooseConfig failed: %w", c.LastError())
 	}
 	if num <= 0 {
 		return nil, errors.New("egl: no matching EGL config")
 	}
+	if int(num) > len(configs) {
+		return nil, fmt.Errorf("egl: eglChooseConfig reported %d configs but only %d were requested", num, len(configs))
+	}
 	return configs[:num], nil
+}
+
+// attribsPtr returns a pointer to the first attribute, or nil for an empty list.
+// EGL accepts a nil attribute list for its default selection criteria.
+func attribsPtr(attribs []int32) *int32 {
+	if len(attribs) == 0 {
+		return nil
+	}
+	return &attribs[0]
 }
 
 // ConfigAttrib returns an attribute of an EGL configuration.
@@ -99,10 +113,7 @@ func (c *Context) ConfigAttrib(config uintptr, attribute int32) (int32, error) {
 
 // CreateWindowSurface creates a window surface for the selected configuration.
 func (c *Context) CreateWindowSurface(config, window uintptr, attribs []int32) error {
-	var p *int32
-	if len(attribs) != 0 {
-		p = &attribs[0]
-	}
+	p := attribsPtr(attribs)
 	c.surface = eglCreateWindowSurface(c.display, config, window, p)
 	if c.surface == 0 {
 		return fmt.Errorf("egl: eglCreateWindowSurface failed: %w", c.LastError())
