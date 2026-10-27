@@ -25,14 +25,19 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 )
 
+type loadedImage struct {
+	img *ebiten.Image
+	err error
+}
+
 type Game struct {
-	highDPIImageCh chan *ebiten.Image
+	highDPIImageCh chan loadedImage
 	highDPIImage   *ebiten.Image
 }
 
 func NewGame() *Game {
 	g := &Game{
-		highDPIImageCh: make(chan *ebiten.Image),
+		highDPIImageCh: make(chan loadedImage, 1),
 	}
 
 	// Licensed under Public Domain
@@ -42,10 +47,7 @@ func NewGame() *Game {
 	// Load the image asynchronously.
 	go func() {
 		img, err := ebitenutil.NewImageFromURL(url)
-		if err != nil {
-			log.Fatal(err)
-		}
-		g.highDPIImageCh <- img
+		g.highDPIImageCh <- loadedImage{img: img, err: err}
 		close(g.highDPIImageCh)
 	}()
 
@@ -59,8 +61,11 @@ func (g *Game) Update() error {
 
 	// Use select and 'default' clause for non-blocking receiving.
 	select {
-	case img := <-g.highDPIImageCh:
-		g.highDPIImage = img
+	case l := <-g.highDPIImageCh:
+		if l.err != nil {
+			return l.err
+		}
+		g.highDPIImage = l.img
 	default:
 	}
 
