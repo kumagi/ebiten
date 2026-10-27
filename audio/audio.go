@@ -513,7 +513,7 @@ func (p *playerImpl) finalize() {
 	}
 }
 
-// Close closes the stream.
+// Close closes the player.
 //
 // When Close is called, the stream owned by the player is NOT closed,
 // even if the stream implements io.Closer.
