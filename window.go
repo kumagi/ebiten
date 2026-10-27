@@ -173,6 +173,9 @@ func SetWindowIcon(iconImages []image.Image) {
 //
 // WindowPosition returns the original window position in fullscreen mode.
 //
+// While a position set by [SetWindowPosition] is not applied to the window yet, WindowPosition
+// returns the requested position.
+//
 // WindowPosition returns (0, 0) if the platform is not a desktop.
 //
 // WindowPosition is concurrent-safe.
@@ -205,6 +208,9 @@ var (
 //
 // Even if the application is in fullscreen mode, WindowSize returns the original window size.
 // If you need the fullscreen dimensions, see Monitor().Size() instead.
+//
+// Until a size requested with [SetWindowSize] is applied to the window, WindowSize returns
+// the requested size adjusted to [WindowSizeLimits].
 //
 // WindowSize is concurrent-safe.
 func WindowSize() (int, int) {
