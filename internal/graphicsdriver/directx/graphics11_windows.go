@@ -400,9 +400,13 @@ func (g *graphics11) SetVertices(vertices []float32, indices []uint32) error {
 }
 
 func (g *graphics11) NewImage(width, height int) (graphicsdriver.Image, error) {
+	maxSize := g.MaxImageSize()
+	checkSize(maxSize, width, height)
+	internalWidth, internalHeight := graphics.InternalImageSize(width), graphics.InternalImageSize(height)
+	checkSize(maxSize, internalWidth, internalHeight)
 	t, err := g.device.CreateTexture2D(&_D3D11_TEXTURE2D_DESC{
-		Width:     uint32(graphics.InternalImageSize(width)),
-		Height:    uint32(graphics.InternalImageSize(height)),
+		Width:     uint32(internalWidth),
+		Height:    uint32(internalHeight),
 		MipLevels: 1, // 0 doesn't work when shrinking the image.
 		ArraySize: 1,
 		Format:    _DXGI_FORMAT_R8G8B8A8_UNORM,
@@ -431,6 +435,7 @@ func (g *graphics11) NewImage(width, height int) (graphicsdriver.Image, error) {
 }
 
 func (g *graphics11) NewScreenFramebufferImage(width, height int) (graphicsdriver.Image, error) {
+	checkSize(g.MaxImageSize(), width, height)
 	if g.screenImage != nil {
 		// Dispose the screen image, so that no reference to the swap chain's buffer remains before
 		// ResizeBuffers.

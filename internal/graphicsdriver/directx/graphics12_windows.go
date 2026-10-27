@@ -1235,11 +1235,15 @@ func (g *graphics12) SetVertices(vertices []float32, indices []uint32) (err erro
 }
 
 func (g *graphics12) NewImage(width, height int) (graphicsdriver.Image, error) {
+	maxSize := g.MaxImageSize()
+	checkSize(maxSize, width, height)
+	internalWidth, internalHeight := graphics.InternalImageSize(width), graphics.InternalImageSize(height)
+	checkSize(maxSize, internalWidth, internalHeight)
 	desc := _D3D12_RESOURCE_DESC{
 		Dimension:        _D3D12_RESOURCE_DIMENSION_TEXTURE2D,
 		Alignment:        0,
-		Width:            uint64(graphics.InternalImageSize(width)),
-		Height:           uint32(graphics.InternalImageSize(height)),
+		Width:            uint64(internalWidth),
+		Height:           uint32(internalHeight),
 		DepthOrArraySize: 1,
 		MipLevels:        1,
 		Format:           _DXGI_FORMAT_R8G8B8A8_UNORM,
@@ -1276,6 +1280,7 @@ func (g *graphics12) NewImage(width, height int) (graphicsdriver.Image, error) {
 }
 
 func (g *graphics12) NewScreenFramebufferImage(width, height int) (graphicsdriver.Image, error) {
+	checkSize(g.MaxImageSize(), width, height)
 	if g.screenImage != nil {
 		g.screenImage.Dispose()
 		g.screenImage = nil

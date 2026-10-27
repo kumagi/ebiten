@@ -34,6 +34,21 @@ import (
 
 const frameCount = 2
 
+func checkSize(maxSize, width, height int) {
+	if width < 1 {
+		panic(fmt.Sprintf("directx: width (%d) must be equal or more than %d", width, 1))
+	}
+	if height < 1 {
+		panic(fmt.Sprintf("directx: height (%d) must be equal or more than %d", height, 1))
+	}
+	if width > maxSize {
+		panic(fmt.Sprintf("directx: width (%d) must be less than or equal to %d", width, maxSize))
+	}
+	if height > maxSize {
+		panic(fmt.Sprintf("directx: height (%d) must be less than or equal to %d", height, maxSize))
+	}
+}
+
 func pow2(x uint32) uint32 {
 	if x > (math.MaxUint32+1)/2 {
 		return math.MaxUint32
