@@ -718,7 +718,6 @@ type _WINDOWPLACEMENT struct {
 	ptMinPosition    _POINT
 	ptMaxPosition    _POINT
 	rcNormalPosition _RECT
-	rcDevice         _RECT
 }
 
 type _WNDCLASSEXW struct {
