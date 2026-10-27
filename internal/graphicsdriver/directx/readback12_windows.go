@@ -150,8 +150,14 @@ func (r *readback12) Wait() error {
 	if _, err := windows.WaitForSingleObject(event, windows.INFINITE); err != nil {
 		return err
 	}
-	_, err := r.Poll()
-	return err
+	done, err := r.Poll()
+	if err != nil {
+		return err
+	}
+	if !done {
+		return errors.New("directx: the pixel read-back did not complete")
+	}
+	return nil
 }
 
 func (r *readback12) Dispose() {
