@@ -37,7 +37,7 @@ func isWSL() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return strings.HasPrefix(abs, `\\wsl$\`), nil
+	return strings.HasPrefix(abs, `\\wsl$\`) || strings.HasPrefix(abs, `\\wsl.localhost\`), nil
 }
 
 func TestPrograms(t *testing.T) {
