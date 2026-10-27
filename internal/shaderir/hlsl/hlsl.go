@@ -180,21 +180,18 @@ func Compile(p *shaderir.Program) (vertexShader, pixelShader, vertexPrelude, pix
 		vslines = append(vslines, "")
 		var args []string
 		for i, a := range p.Attributes {
+			// The fixed slot semantics do not determine the attribute's IR type.
+			var semantic string
 			switch i {
 			case 0:
-				args = append(args, fmt.Sprintf("float2 A%d : POSITION", i))
+				semantic = "POSITION"
 			case 1:
-				args = append(args, fmt.Sprintf("float2 A%d : TEXCOORD", i))
-			case 2:
-				args = append(args, fmt.Sprintf("float4 A%d : COLOR0", i))
+				semantic = "TEXCOORD"
 			default:
-				// Use COLOR[n] as a general purpose varying.
-				if a.Main != shaderir.Vec4 {
-					args = append(args, fmt.Sprintf("?(unexpected type: %s) A%d : COLOR%d", a, i, i-2))
-				} else {
-					args = append(args, fmt.Sprintf("float4 A%d : COLOR%d", i, i-2))
-				}
+				// Use COLOR[n] as a general purpose attribute.
+				semantic = fmt.Sprintf("COLOR%d", i-2)
 			}
+			args = append(args, fmt.Sprintf("%s : %s", c.varDecl(p, &a, fmt.Sprintf("A%d", i)), semantic))
 		}
 		vslines = append(vslines, "Varyings VSMain("+strings.Join(args, ", ")+") {")
 		vslines = append(vslines, fmt.Sprintf("\tVaryings %s;", vsOut))
