@@ -25,8 +25,8 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/exp/vmhost"
 )
 
-// pendingCommit is a commit the host's IME produced while no guest session existed, queued for the
-// guest's next session.
+// pendingCommit is a commit the host's IME produced while bridging, queued for a later guest
+// session.
 type pendingCommit struct {
 	text string
 
@@ -49,9 +49,10 @@ type pendingCommit struct {
 // any text inputting the host itself runs, so forward a session only while the guest is what the
 // user is typing into.
 //
-// A ComposerForwarder is a buffer between the host's IME and the guest: the user's typing is
-// captured continuously and delivered once the guest can receive it. [ComposerForwarder.Reset]
-// discards the input not yet delivered.
+// A ComposerForwarder keeps the host's IME session alive across guest commits. It captures input
+// while serving a guest session or bridging to its next session, and queues commits produced
+// during the bridge for later guest sessions. It captures nothing while idle.
+// [ComposerForwarder.Reset] discards the input not yet delivered.
 //
 // The zero value is ready to use. A ComposerForwarder is not safe for concurrent use: call it from
 // the host's game loop, like the [textinput.Composer] it drives.
