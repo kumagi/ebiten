@@ -157,6 +157,9 @@ func (t *GuestTextInput) End() {
 // EndWithError ends the session, delivering err as a text-inputting error: the guest observes the
 // failure, as when a platform IME fails. err must not be nil.
 func (t *GuestTextInput) EndWithError(err error) {
+	if err == nil {
+		panic("vmhost: EndWithError requires a non-nil error")
+	}
 	t.markClosed()
 	msg := t.g.takeMessage()
 	msg.Kind = vmprotocol.HostMessageKindTextInputState
