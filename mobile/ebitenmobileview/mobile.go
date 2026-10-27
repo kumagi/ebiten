@@ -76,7 +76,7 @@ func (s *state) setSetGameNotifier(setGameNotifier SetGameNotifier) {
 	s.m.Unlock()
 
 	// If SetGame is already called, notify this immediately.
-	if r {
+	if r && setGameNotifier != nil {
 		setGameNotifier.NotifySetGame()
 	}
 }
@@ -145,6 +145,9 @@ func SetRenderer(renderer Renderer) {
 	ui.Get().SetRenderer(renderer)
 }
 
+// SetSetGameNotifier sets the notifier that is called when the game is set.
+// If SetGame has already been called, the notifier is called immediately.
+// The notifier can be nil, which means that no notification is done.
 func SetSetGameNotifier(setGameNotifier SetGameNotifier) {
 	theState.setSetGameNotifier(setGameNotifier)
 }
