@@ -777,64 +777,74 @@ func main() {
 		filepath.Join("mobile", "ebitenmobileview", "keys_android.go"): mobileAndroidKeysTmpl,
 		filepath.Join("mobile", "ebitenmobileview", "keys_ios.go"):     mobileIOSKeysTmpl,
 	} {
-		f, err := os.Create(path)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer f.Close()
+		if err := func() (err error) {
+			f, err := os.Create(path)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if closeErr := f.Close(); err == nil {
+					err = closeErr
+				}
+			}()
 
-		funcs := template.FuncMap{
-			"ToLower": strings.ToLower,
-		}
-		tmpl, err := template.New(path).Funcs(funcs).Parse(tmpl)
-		if err != nil {
-			log.Fatal(err)
-		}
+			funcs := template.FuncMap{
+				"ToLower": strings.ToLower,
+			}
+			tmpl, err := template.New(path).Funcs(funcs).Parse(tmpl)
+			if err != nil {
+				return err
+			}
 
-		// The build tag can't be included in the templates because of `go vet`.
-		// Pass the build tag and extract this in the template to make `go vet` happy.
-		var buildConstraints string
-		switch path {
-		case filepath.Join("internal", "glfw", "keys.go"):
-			buildConstraints = "//go:build darwin || freebsd || linux || netbsd || windows"
-		case filepath.Join("internal", "ui", "keys_glfw.go"):
-			buildConstraints = "//go:build !android && !ios && !js && !nintendosdk && !playstation5"
-		}
-		// NOTE: According to godoc, maps are automatically sorted by key.
-		w := bufio.NewWriter(f)
-		if err := tmpl.Execute(w, struct {
-			License                         string
-			DoNotEdit                       string
-			BuildConstraints                string
-			UIKeyNameToJSCode               map[string]string
-			EbitengineKeyNames              []string
-			EbitengineKeyNamesWithoutOld    []string
-			EbitengineKeyNamesWithoutMods   []string
-			GLFWKeyNameToGLFWKey            map[string]int
-			UIKeyNames                      []string
-			UIKeyNameToGLFWKeyName          map[string]string
-			AndroidKeyToUIKeyName           map[int]string
-			IOSKeyToUIKeyName               map[int]string
-			OldEbitengineKeyNameToUIKeyName map[string]string
-		}{
-			License:                         license,
-			DoNotEdit:                       doNotEdit,
-			BuildConstraints:                buildConstraints,
-			UIKeyNameToJSCode:               uiKeyNameToJSCode,
-			EbitengineKeyNames:              ebitengineKeyNames,
-			EbitengineKeyNamesWithoutOld:    ebitengineKeyNamesWithoutOld,
-			EbitengineKeyNamesWithoutMods:   ebitengineKeyNamesWithoutMods,
-			GLFWKeyNameToGLFWKey:            glfwKeyNameToGLFWKey,
-			UIKeyNames:                      uiKeyNames,
-			UIKeyNameToGLFWKeyName:          uiKeyNameToGLFWKeyName,
-			AndroidKeyToUIKeyName:           androidKeyToUIKeyName,
-			IOSKeyToUIKeyName:               iosKeyToUIKeyName,
-			OldEbitengineKeyNameToUIKeyName: oldEbitengineKeyNameToUIKeyName,
-		}); err != nil {
-			log.Fatal(err)
-		}
+			// The build tag can't be included in the templates because of `go vet`.
+			// Pass the build tag and extract this in the template to make `go vet` happy.
+			var buildConstraints string
+			switch path {
+			case filepath.Join("internal", "glfw", "keys.go"):
+				buildConstraints = "//go:build darwin || freebsd || linux || netbsd || windows"
+			case filepath.Join("internal", "ui", "keys_glfw.go"):
+				buildConstraints = "//go:build !android && !ios && !js && !nintendosdk && !playstation5"
+			}
+			// NOTE: According to godoc, maps are automatically sorted by key.
+			w := bufio.NewWriter(f)
+			if err := tmpl.Execute(w, struct {
+				License                         string
+				DoNotEdit                       string
+				BuildConstraints                string
+				UIKeyNameToJSCode               map[string]string
+				EbitengineKeyNames              []string
+				EbitengineKeyNamesWithoutOld    []string
+				EbitengineKeyNamesWithoutMods   []string
+				GLFWKeyNameToGLFWKey            map[string]int
+				UIKeyNames                      []string
+				UIKeyNameToGLFWKeyName          map[string]string
+				AndroidKeyToUIKeyName           map[int]string
+				IOSKeyToUIKeyName               map[int]string
+				OldEbitengineKeyNameToUIKeyName map[string]string
+			}{
+				License:                         license,
+				DoNotEdit:                       doNotEdit,
+				BuildConstraints:                buildConstraints,
+				UIKeyNameToJSCode:               uiKeyNameToJSCode,
+				EbitengineKeyNames:              ebitengineKeyNames,
+				EbitengineKeyNamesWithoutOld:    ebitengineKeyNamesWithoutOld,
+				EbitengineKeyNamesWithoutMods:   ebitengineKeyNamesWithoutMods,
+				GLFWKeyNameToGLFWKey:            glfwKeyNameToGLFWKey,
+				UIKeyNames:                      uiKeyNames,
+				UIKeyNameToGLFWKeyName:          uiKeyNameToGLFWKeyName,
+				AndroidKeyToUIKeyName:           androidKeyToUIKeyName,
+				IOSKeyToUIKeyName:               iosKeyToUIKeyName,
+				OldEbitengineKeyNameToUIKeyName: oldEbitengineKeyNameToUIKeyName,
+			}); err != nil {
+				return err
+			}
 
-		if err := w.Flush(); err != nil {
+			if err := w.Flush(); err != nil {
+				return err
+			}
+
+			return nil
+		}(); err != nil {
 			log.Fatal(err)
 		}
 	}
