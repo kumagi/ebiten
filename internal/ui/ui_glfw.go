@@ -1047,8 +1047,6 @@ func (u *glfwBackend) initOnMainThread(options *RunOptions) (err error) {
 	// internal/glfw is customized and the default client API is NoAPI, not OpenGLAPI.
 	// Then, glfw.WindowHint(glfw.ClientAPI, glfw.NoAPI) doesn't have to be called.
 
-	// Before creating a window, set it unresizable no matter what u.isInitWindowResizable() is (#1987).
-	// Making the window resizable here doesn't work correctly when switching to enable resizing.
 	resizable := glfw.False
 	if u.desktopWindow.windowResizingMode.Load() == WindowResizingModeEnabled {
 		resizable = glfw.True
