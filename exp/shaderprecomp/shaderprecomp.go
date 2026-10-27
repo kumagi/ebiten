@@ -117,7 +117,13 @@ func RegisterMetalLibraryForIOS(id ShaderSourceID, library []byte) {
 }
 
 // RegisterPlayStation5Shader registers a precompiled PlayStation 5 shader for the shader source
-// identified by id, so that Ebitengine uses it instead of compiling the shader at runtime.
+// identified by id.
+//
+// vertexHeader and vertexText are the vertex stage's header and text blobs;
+// pixelHeader and pixelText are the corresponding pixel stage blobs.
+//
+// PlayStation 5 has no runtime compilation fallback. Register the artifacts before the
+// shader is used; the graphics driver cannot create an unregistered shader.
 //
 // RegisterPlayStation5Shader panics if a PlayStation 5 shader for id is already registered.
 //

@@ -53,6 +53,10 @@
 //   - For [RegisterMetalLibraryForMacOS] and [RegisterMetalLibraryForIOS], compile MSL into
 //     .metallib files with xcrun metal and xcrun metallib, using the macosx and iphoneos SDKs
 //     respectively. Each platform requires a separate library.
+//   - For [RegisterPlayStation5Shader], prepare the vertex and pixel stages' header and text
+//     blobs with the PlayStation 5 platform toolchain. The collector's pssl target requires
+//     the external platform integration; PSSL source conversion is a placeholder in the
+//     open-source distribution.
 //
 // # Registering and using shaders
 //
@@ -74,6 +78,9 @@
 // OpenGL still compiles and links the GLSL sources at runtime.
 //
 // On OpenGL, DirectX, and Metal, missing artifacts fall back to runtime compilation.
+// PlayStation 5 has no runtime fallback: each shader used by its graphics driver must be
+// registered with [RegisterPlayStation5Shader]. Missing artifacts fail when the graphics
+// driver creates the shader, which can be deferred until the shader is used.
 // The iOS Simulator does not support registered Metal libraries and uses
 // runtime compilation. For GLSL, an omitted flavor falls back to runtime source conversion.
 //
