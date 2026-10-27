@@ -664,10 +664,9 @@ func (g *GuestSession) validateReadPixels(query *vmprotocol.GuestMessage) (*host
 		}
 		total += 4 * int64(r.Dx()) * int64(r.Dy())
 	}
-	// A read-back cannot need more than the image holds, which bounds the buffer a guest can make the
-	// host allocate.
+	// Bound the total read-back size by the image size, even for overlapping regions.
 	if maxTotal := 4 * int64(bounds.Dx()) * int64(bounds.Dy()); total > maxTotal {
-		return nil, 0, fmt.Errorf("vmhost: ReadPixels asks for %d bytes from image %d, which holds %d",
+		return nil, 0, fmt.Errorf("vmhost: ReadPixels asks for %d bytes from image %d across overlapping regions, exceeding the %d-byte limit",
 			total, query.ReadImageID, maxTotal)
 	}
 	return mirror, total, nil
