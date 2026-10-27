@@ -108,11 +108,12 @@ func (c *colorMImplBodyTranslate) String() string {
 }
 
 func clamp(x float32) float32 {
+	// A NaN value is treated as 0.
+	if !(x > 0) {
+		return 0
+	}
 	if x > 1 {
 		return 1
-	}
-	if x < 0 {
-		return 0
 	}
 	return x
 }
