@@ -17,6 +17,7 @@ package main
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"image"
 	"io"
 	"log"
@@ -51,9 +52,6 @@ func NewGame() (*Game, error) {
 	g := &Game{}
 
 	var err error
-	// Initialize audio context.
-	g.audioContext = audio.NewContext(sampleRate)
-
 	// In this example, embedded resource "Jab_wav" is used.
 	//
 	// If you want to use a wav file, open this and pass the file stream to wav.Decode.
@@ -73,9 +71,14 @@ func NewGame() (*Game, error) {
 	switch *flagBitsPerSample {
 	case 8:
 		r = bytes.NewReader(raudio.Jab8_wav)
-	default:
+	case 16:
 		r = bytes.NewReader(raudio.Jab_wav)
+	default:
+		return nil, fmt.Errorf("unsupported bits per sample: %d", *flagBitsPerSample)
 	}
+	// Initialize audio context.
+	g.audioContext = audio.NewContext(sampleRate)
+
 	d, err := wav.DecodeF32(r)
 	if err != nil {
 		return nil, err
