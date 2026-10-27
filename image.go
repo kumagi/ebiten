@@ -636,16 +636,27 @@ func (i *Image) DrawTriangles32(vertices []Vertex, indices []uint32, img *Image,
 		return
 	}
 
-	if len(indices) == 0 {
-		return
-	}
-
 	if options != nil {
 		switch options.ColorScaleMode {
 		case ColorScaleModeStraightAlpha, ColorScaleModePremultipliedAlpha:
 		default:
 			panic(fmt.Sprintf("ebiten: invalid color scale mode: %d", options.ColorScaleMode))
 		}
+		switch options.FillRule {
+		case FillRuleFillAll, FillRuleNonZero, FillRuleEvenOdd:
+		default:
+			panic(fmt.Sprintf("ebiten: invalid fill rule: %d", int(options.FillRule)))
+		}
+		if options.Filter < 0 || options.Filter >= Filter(builtinshader.FilterCount) {
+			panic(fmt.Sprintf("ebiten: invalid filter: %d", options.Filter))
+		}
+		if options.Address < 0 || options.Address >= Address(builtinshader.AddressCount) {
+			panic(fmt.Sprintf("ebiten: invalid address: %d", options.Address))
+		}
+	}
+
+	if len(indices) == 0 {
+		return
 	}
 
 	if options != nil && (options.FillRule != FillRuleFillAll || options.AntiAlias) && !i.Bounds().Empty() {
@@ -886,6 +897,14 @@ func (i *Image) DrawTrianglesShader32(vertices []Vertex, indices []uint32, shade
 
 	if i.isDisposed() {
 		return
+	}
+
+	if options != nil {
+		switch options.FillRule {
+		case FillRuleFillAll, FillRuleNonZero, FillRuleEvenOdd:
+		default:
+			panic(fmt.Sprintf("ebiten: invalid fill rule: %d", int(options.FillRule)))
+		}
 	}
 
 	if len(indices) == 0 {

@@ -25,6 +25,7 @@ import (
 	"math/rand/v2"
 	"reflect"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 
@@ -82,6 +83,81 @@ func sameColors(c1, c2 color.RGBA, delta int) bool {
 		abs(int(c1.G)-int(c2.G)) <= delta &&
 		abs(int(c1.B)-int(c2.B)) <= delta &&
 		abs(int(c1.A)-int(c2.A)) <= delta
+}
+
+func TestEmptyTrianglesValidateOptions(t *testing.T) {
+	dst, src := ebiten.NewImage(1, 1), ebiten.NewImage(1, 1)
+	defer dst.Deallocate()
+	defer src.Deallocate()
+	for _, bits := range []int{16, 32} {
+		t.Run(fmt.Sprint(bits), func(t *testing.T) {
+			call := func(op *ebiten.DrawTrianglesOptions) {
+				if bits == 16 {
+					dst.DrawTriangles(nil, nil, src, op)
+				} else {
+					dst.DrawTriangles32(nil, nil, src, op)
+				}
+			}
+			call(nil)
+			call(&ebiten.DrawTrianglesOptions{})
+			for _, invalid := range []int{-1, 99} {
+				for _, name := range []string{"color scale mode", "fill rule", "filter", "address"} {
+					t.Run(fmt.Sprintf("%s/%d", name, invalid), func(t *testing.T) {
+						op := &ebiten.DrawTrianglesOptions{}
+						switch name {
+						case "color scale mode":
+							op.ColorScaleMode = ebiten.ColorScaleMode(invalid)
+						case "fill rule":
+							op.FillRule = ebiten.FillRule(invalid)
+						case "filter":
+							op.Filter = ebiten.Filter(invalid)
+						case "address":
+							op.Address = ebiten.Address(invalid)
+						}
+						defer func() {
+							if got := fmt.Sprint(recover()); !strings.Contains(got, "invalid "+name) {
+								t.Errorf("panic = %q, want invalid %s", got, name)
+							}
+						}()
+						call(op)
+					})
+				}
+			}
+		})
+	}
+}
+
+func TestEmptyShaderTrianglesValidateFillRule(t *testing.T) {
+	dst := ebiten.NewImage(1, 1)
+	defer dst.Deallocate()
+	shader, err := ebiten.NewShader([]byte(`//kage:unit pixels
+package main
+func Fragment() vec4 { return vec4(1) }`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer shader.Deallocate()
+	for _, bits := range []int{16, 32} {
+		call := func(op *ebiten.DrawTrianglesShaderOptions) {
+			if bits == 16 {
+				dst.DrawTrianglesShader(nil, nil, shader, op)
+			} else {
+				dst.DrawTrianglesShader32(nil, nil, shader, op)
+			}
+		}
+		call(nil)
+		call(&ebiten.DrawTrianglesShaderOptions{})
+		for _, invalid := range []int{-1, 99} {
+			t.Run(fmt.Sprintf("%d/%d", bits, invalid), func(t *testing.T) {
+				defer func() {
+					if got := fmt.Sprint(recover()); !strings.Contains(got, "invalid fill rule") {
+						t.Errorf("panic = %q, want invalid fill rule", got)
+					}
+				}()
+				call(&ebiten.DrawTrianglesShaderOptions{FillRule: ebiten.FillRule(invalid)})
+			})
+		}
+	}
 }
 
 func TestImagePixels(t *testing.T) {
