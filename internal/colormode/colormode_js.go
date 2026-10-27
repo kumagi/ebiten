@@ -17,7 +17,7 @@ package colormode
 import "syscall/js"
 
 var (
-	matchMedia = js.Global().Get("window").Get("matchMedia")
+	matchMedia = js.Global().Get("matchMedia")
 )
 
 func systemColorMode() ColorMode {

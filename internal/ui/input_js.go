@@ -398,7 +398,13 @@ func isKeyString(str string) bool {
 }
 
 var (
-	jsKeyboard                          = js.Global().Get("navigator").Get("keyboard")
+	jsKeyboard = func() js.Value {
+		nav := js.Global().Get("navigator")
+		if !nav.Truthy() {
+			return js.Undefined()
+		}
+		return nav.Get("keyboard")
+	}()
 	jsKeyboardLayoutAvailable           bool
 	jsKeyboardGetLayoutMap              js.Value
 	jsKeyboardGetLayoutMapCh            chan js.Value

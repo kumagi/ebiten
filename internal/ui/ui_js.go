@@ -158,10 +158,13 @@ var (
 	clearTimeout          = js.Global().Get("clearTimeout")
 )
 
-var (
-	documentHasFocus = document.Get("hasFocus").Call("bind", document)
-	documentHidden   = js.Global().Get("Object").Call("getOwnPropertyDescriptor", js.Global().Get("Document").Get("prototype"), "hidden").Get("get").Call("bind", document)
-)
+var documentHasFocus, documentHidden = func() (js.Value, js.Value) {
+	if !document.Truthy() {
+		return js.Undefined(), js.Undefined()
+	}
+	return document.Get("hasFocus").Call("bind", document),
+		js.Global().Get("Object").Call("getOwnPropertyDescriptor", js.Global().Get("Document").Get("prototype"), "hidden").Get("get").Call("bind", document)
+}()
 
 func (u *UserInterface) SetFullscreen(fullscreen bool) {
 	if !canvas.Truthy() {
@@ -323,6 +326,9 @@ func (u *UserInterface) suspended() bool {
 }
 
 func (u *UserInterface) isFocused() bool {
+	if !document.Truthy() {
+		return true
+	}
 	if !documentHasFocus.Invoke().Bool() {
 		return false
 	}
