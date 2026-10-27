@@ -16,6 +16,7 @@ package directx
 
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/graphics"
@@ -60,6 +61,12 @@ func (i *image12) disposeImpl() {
 func (i *image12) WritePixels(args []graphicsdriver.PixelsArgs) error {
 	if i.screen {
 		return errors.New("directx: WritePixels cannot be called on the screen")
+	}
+
+	for _, a := range args {
+		if n := 4 * a.Region.Dx() * a.Region.Dy(); len(a.Pixels) < n {
+			return fmt.Errorf("directx: len(pixels) must be at least %d but %d at WritePixels", n, len(a.Pixels))
+		}
 	}
 
 	// Submit earlier draws without resetting their allocator or waiting for the GPU.

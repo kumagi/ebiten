@@ -15,6 +15,7 @@
 package directx
 
 import (
+	"fmt"
 	"unsafe"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/graphics"
@@ -73,6 +74,12 @@ func (i *image11) disposeBuffers() {
 }
 
 func (i *image11) WritePixels(args []graphicsdriver.PixelsArgs) error {
+	for _, a := range args {
+		if n := 4 * a.Region.Dx() * a.Region.Dy(); len(a.Pixels) < n {
+			return fmt.Errorf("directx: len(pixels) must be at least %d but %d at WritePixels", n, len(a.Pixels))
+		}
+	}
+
 	for _, a := range args {
 		i.graphics.deviceContext.UpdateSubresource(unsafe.Pointer(i.texture), 0, &_D3D11_BOX{
 			left:   uint32(a.Region.Min.X),
