@@ -622,7 +622,7 @@ func (cs *compileState) parseExpr(block *block, fname string, expr ast.Expr, mar
 					}
 				case shaderir.Smoothstep:
 					if (!argts[0].Equal(&argts[1]) || !argts[0].Equal(&argts[2])) && (argts[0].Main != shaderir.Float || argts[1].Main != shaderir.Float) {
-						cs.addError(e.Pos(), fmt.Sprintf("the first and the second arguments for %s must equal the third argument %s or float but %s and %s", callee.BuiltinFunc, argts[2].String(), argts[0].String(), argts[1].String()))
+						cs.addError(e.Pos(), fmt.Sprintf("the first and the second arguments for %s must both be %s or both be float but got %s and %s", callee.BuiltinFunc, argts[2].String(), argts[0].String(), argts[1].String()))
 						return nil, nil, nil, false
 					}
 				case shaderir.Refract:
