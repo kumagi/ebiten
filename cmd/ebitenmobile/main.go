@@ -141,6 +141,16 @@ func xmain() error {
 		if !isValidJavaPackageName(bindJavaPkg) {
 			return usageError(fmt.Sprintf("invalid Java package name: %s", bindJavaPkg))
 		}
+
+		// Rebuild the forwarded flags with the merged linker options. Keep the
+		// package arguments separate, including any following a -- separator.
+		_ = flagset.Set("ldflags", buildLdflags)
+		args = []string{args[0]}
+		flagset.Visit(func(f *flag.Flag) {
+			args = append(args, "-"+f.Name+"="+f.Value.String())
+		})
+		args = append(args, "--")
+		args = append(args, flagset.Args()...)
 	}
 
 	if buildO == "" {
