@@ -862,6 +862,14 @@ func (i *Image) Dispose() {
 }
 
 func (i *Image) WritePixels(args []graphicsdriver.PixelsArgs) error {
+	if i.screen {
+		return fmt.Errorf("metal: WritePixels cannot be called on the screen")
+	}
+
+	if len(args) == 0 {
+		return nil
+	}
+
 	g := i.graphics
 
 	g.flushRenderCommandEncoderIfNeeded()
