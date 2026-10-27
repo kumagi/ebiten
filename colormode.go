@@ -15,6 +15,7 @@
 package ebiten
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -61,8 +62,15 @@ func PreferredColorMode() ColorMode {
 // On desktops, the appearance of the window title bar follows the preferred color mode.
 // On the other platforms, the preferred color mode has no visible effect.
 //
+// SetPreferredColorMode panics if colorMode is invalid.
+//
 // SetPreferredColorMode is concurrent-safe.
 func SetPreferredColorMode(colorMode ColorMode) {
+	switch colorMode {
+	case ColorModeUnknown, ColorModeLight, ColorModeDark:
+	default:
+		panic(fmt.Sprintf("ebiten: invalid color mode: %d", colorMode))
+	}
 	ui.Get().SetPreferredColorMode(colormode.ColorMode(colorMode))
 }
 

@@ -15,10 +15,32 @@
 package ebiten_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
+
+func TestInvalidPreferredColorMode(t *testing.T) {
+	original := ebiten.PreferredColorMode()
+	defer ebiten.SetPreferredColorMode(original)
+	for _, invalid := range []ebiten.ColorMode{-1, 3, 99} {
+		t.Run(fmt.Sprint(invalid), func(t *testing.T) {
+			ebiten.SetPreferredColorMode(ebiten.ColorModeLight)
+			func() {
+				defer func() {
+					if got, want := fmt.Sprint(recover()), fmt.Sprintf("ebiten: invalid color mode: %d", invalid); got != want {
+						t.Errorf("panic = %q, want %q", got, want)
+					}
+				}()
+				ebiten.SetPreferredColorMode(invalid)
+			}()
+			if got := ebiten.PreferredColorMode(); got != ebiten.ColorModeLight {
+				t.Errorf("invalid mode changed the preference to %d", got)
+			}
+		})
+	}
+}
 
 func TestPreferredColorMode(t *testing.T) {
 	// The preferred color mode must be kept even on a platform without a window (#3480).
