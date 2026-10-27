@@ -274,9 +274,11 @@ func (c *Composer) Confirm() {
 	c.end(true)
 }
 
-// Cancel ends the current session if any, discarding an in-progress
-// composition: unlike [Composer.Confirm], nothing is committed. A commit the
-// IME has already delivered is still dispatched through OnCommit.
+// Cancel ends the current session if any, discarding its remaining composition.
+// Unlike [Composer.Confirm], Cancel does not commit an active session's composition.
+// A commit the IME has already delivered is still dispatched through OnCommit.
+// If the platform has already reported that the user ended the session, its final
+// composition is also committed through OnCommit, as for [Composer.Confirm].
 // OnComposition is fired with an empty composition so the caller can clear
 // its preedit overlay.
 func (c *Composer) Cancel() {
