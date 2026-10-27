@@ -47,7 +47,7 @@ const (
 
 // CursorShape returns the current cursor shape.
 //
-// CursorShape returns CursorShapeDefault on mobiles.
+// CursorShape returns CursorShapeDefault on mobiles and consoles.
 //
 // CursorShape is concurrent-safe.
 func CursorShape() CursorShapeType {
@@ -57,6 +57,7 @@ func CursorShape() CursorShapeType {
 // SetCursorShape sets the cursor shape.
 //
 // If the platform doesn't implement the given shape, the default cursor shape is used.
+// This has no effect on mobiles and consoles.
 //
 // SetCursorShape is concurrent-safe.
 func SetCursorShape(shape CursorShapeType) {
