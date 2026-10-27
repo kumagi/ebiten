@@ -138,9 +138,9 @@ func builtinShader(filter builtinshader.Filter, address builtinshader.Address, u
 		address == builtinshader.AddressUnsafe && !useColorM {
 		switch filter {
 		case builtinshader.FilterNearest:
-			shader = &Shader{shader: ui.NearestFilterShader}
+			shader = &Shader{shader: ui.NearestFilterShader, unit: legacyshader.Pixels}
 		case builtinshader.FilterLinear:
-			shader = &Shader{shader: ui.LinearFilterShader}
+			shader = &Shader{shader: ui.LinearFilterShader, unit: legacyshader.Pixels}
 		}
 	} else {
 		var src []byte
