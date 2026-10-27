@@ -15,6 +15,7 @@
 package gl
 
 import (
+	"fmt"
 	"syscall/js"
 )
 
@@ -57,10 +58,14 @@ func ensureTemporaryArrayBufferSize(byteLength int) {
 	}
 }
 
-// tmpUint8ArrayFromUint8Slice returns a Uint8Array whose length is at least minLength from an uint8 slice.
+// tmpUint8ArrayFromUint8Slice returns a Uint8Array whose length is at least minLength.
 // Be careful that the length can exceed the given minLength.
-// data must be a slice of a numeric type for initialization, or nil if you don't need initialization.
+// data is copied into the front of the shared buffer, and len(data) must not exceed minLength.
+// If data is nil, the buffer contents are not initialized.
 func tmpUint8ArrayFromUint8Slice(minLength int, data []uint8) js.Value {
+	if len(data) > minLength {
+		panic(fmt.Sprintf("gl: %d elements do not fit in a temporary buffer of %d", len(data), minLength))
+	}
 	ensureTemporaryArrayBufferSize(minLength)
 	copyUint8SliceToTemporaryArrayBuffer(data)
 	return tmpUint8Array
@@ -68,8 +73,12 @@ func tmpUint8ArrayFromUint8Slice(minLength int, data []uint8) js.Value {
 
 // tmpFloat32ArrayFromFloat32Slice returns a Float32Array whose length is at least minLength.
 // Be careful that the length can exceed the given minLength.
-// data must be a slice of a numeric type for initialization, or nil if you don't need initialization.
+// data is copied into the front of the shared buffer, and len(data) must not exceed minLength.
+// If data is nil, the buffer contents are not initialized.
 func tmpFloat32ArrayFromFloat32Slice(minLength int, data []float32) js.Value {
+	if len(data) > minLength {
+		panic(fmt.Sprintf("gl: %d elements do not fit in a temporary buffer of %d", len(data), minLength))
+	}
 	ensureTemporaryArrayBufferSize(minLength * 4)
 	copySliceToTemporaryArrayBuffer(data)
 	return tmpFloat32Array
@@ -77,8 +86,12 @@ func tmpFloat32ArrayFromFloat32Slice(minLength int, data []float32) js.Value {
 
 // tmpInt32ArrayFromInt32Slice returns a Int32Array whose length is at least minLength.
 // Be careful that the length can exceed the given minLength.
-// data must be a slice of a numeric type for initialization, or nil if you don't need initialization.
+// data is copied into the front of the shared buffer, and len(data) must not exceed minLength.
+// If data is nil, the buffer contents are not initialized.
 func tmpInt32ArrayFromInt32Slice(minLength int, data []int32) js.Value {
+	if len(data) > minLength {
+		panic(fmt.Sprintf("gl: %d elements do not fit in a temporary buffer of %d", len(data), minLength))
+	}
 	ensureTemporaryArrayBufferSize(minLength * 4)
 	copySliceToTemporaryArrayBuffer(data)
 	return tmpInt32Array
