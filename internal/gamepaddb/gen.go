@@ -163,7 +163,6 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		defer f.Close()
 
 		w := bufio.NewWriter(f)
 		if err := tmpl.Execute(w, struct {
@@ -179,9 +178,14 @@ func run() error {
 			FileNameSuffix:   platform.filenameSuffix,
 			HasGLFWGamepads:  platform.hasGLFWGamepads,
 		}); err != nil {
+			_ = f.Close()
 			return err
 		}
 		if err := w.Flush(); err != nil {
+			_ = f.Close()
+			return err
+		}
+		if err := f.Close(); err != nil {
 			return err
 		}
 	}
