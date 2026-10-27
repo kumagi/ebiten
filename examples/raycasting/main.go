@@ -69,6 +69,9 @@ type object struct {
 func (o object) points() [][2]float64 {
 	// Get one of the endpoints for all segments,
 	// + the startpoint of the first one, for non-closed paths
+	if len(o.walls) == 0 {
+		return nil
+	}
 	var points [][2]float64
 	for _, wall := range o.walls {
 		points = append(points, [2]float64{wall.X2, wall.Y2})
@@ -148,6 +151,9 @@ func rayCasting(cx, cy float64, objects []object) []line {
 						min = d2
 						minI = i
 					}
+				}
+				if minI < 0 {
+					continue
 				}
 				rays = append(rays, line{cx, cy, points[minI][0], points[minI][1]})
 			}
