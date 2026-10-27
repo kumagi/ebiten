@@ -117,7 +117,8 @@ func (c *ColorScale) Scale(r, g, b, a float32) {
 	c.a_1 = (c.a_1+1)*a - 1
 }
 
-// ScaleAlpha multiplies the given alpha value to the current scale.
+// ScaleAlpha multiplies all four components of the current scale by a.
+// The color components are scaled along with alpha for premultiplied-alpha colors.
 func (c *ColorScale) ScaleAlpha(a float32) {
 	c.r_1 = (c.r_1+1)*a - 1
 	c.g_1 = (c.g_1+1)*a - 1
