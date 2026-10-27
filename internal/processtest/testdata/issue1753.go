@@ -86,7 +86,10 @@ func Fragment(dstPos vec4, src0Pos vec2, color vec4) vec4 {
 			"A":     float32(1),
 		}
 		g.dst.DrawRectShader(w, h, s, op)
-		if got, want := g.dst.At(0, 0), (color.RGBA{0x80, 0xff, 0x80, 0xff}); got != want {
+		got, want := g.dst.At(0, 0), (color.RGBA{0x80, 0xff, 0x80, 0xff})
+		// Allow rounding 0.5 to either adjacent 8-bit UNORM value.
+		gr, ok := got.(color.RGBA)
+		if !ok || (gr.R != 0x7f && gr.R != want.R) || gr.G != want.G || (gr.B != 0x7f && gr.B != want.B) || gr.A != want.A {
 			return fmt.Errorf("phase: %d, got: %v, want: %v", g.phase, got, want)
 		}
 
