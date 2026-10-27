@@ -35,8 +35,8 @@ type mpegPlayer struct {
 	// Then, this image data is converted to RGB to frameImage.
 	yCbCrImage *ebiten.Image
 
-	// yCbCrBytes is the byte slice to store YCbCr data.
-	// This includes Y, Cb, Cr, and alpha (always 0xff) data for each pixel.
+	// yCbCrBytes stores Y, Cb, Cr, and an unused zero byte for each pixel.
+	// The conversion shader reads the channels as data and ignores alpha.
 	yCbCrBytes []byte
 
 	// yCbCrShader is the shader to convert YCbCr to RGB.
@@ -183,7 +183,6 @@ func (p *mpegPlayer) updateFrame() error {
 			buf[0] = ys[i]
 			buf[1] = cbs[i/2]
 			buf[2] = crs[i/2]
-			// p.yCbCrBytes[3] = 0xff is not needed as the shader ignores this part.
 		}
 	}
 
