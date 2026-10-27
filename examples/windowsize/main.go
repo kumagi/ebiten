@@ -623,6 +623,8 @@ func main() {
 		op.ColorSpace = ebiten.ColorSpaceSRGB
 	case "display-p3":
 		op.ColorSpace = ebiten.ColorSpaceDisplayP3
+	default:
+		log.Fatalf("unexpected color space: %s", *flagColorSpace)
 	}
 	switch *flagColorMode {
 	case "light":
