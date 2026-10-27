@@ -699,7 +699,7 @@ func (cs *compileState) parseExpr(block *block, fname string, expr ast.Expr, mar
 							}
 						}
 					} else {
-						cs.addError(argPositions[0], fmt.Sprintf("cannot use %s as vecN or ivecN value in %s", argts[0].String(), argumentName(string(callee.BuiltinFunc), 0, len(args))))
+						cs.addError(argPositions[0], fmt.Sprintf("cannot use %s as vecN or ivecN value in %s", typeString(argts[0], args[0].Const), argumentName(string(callee.BuiltinFunc), 0, len(args))))
 						return nil, nil, nil, false
 					}
 				} else {
