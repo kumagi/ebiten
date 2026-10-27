@@ -50,7 +50,7 @@ the same caveat: both sides are then in image-local pixels.
 | a second sampler at the same uv | `imageSrc1AtFromSrc0Pos(src0Pos)` ‡ — any size; every slot shares image 0's space |
 | a second sampler stretched over image 0 | `imageSrc1AtFromSrc0Pos(uv*imageSrc1Size() + imageSrc0Origin())` ‡ |
 | `textureSize(tex, 0)` | `imageSrc0Size()` (the image; `imageSrc0TextureSize()` is the atlas) |
-| `texelFetch(tex, ivec2(x, y), 0)` | `imageSrc0At(vec2(x, y) + imageSrc0Origin())` |
+| `texelFetch(tex, ivec2(x, y), 0)` with integer `x`/`y` | `imageSrc0At(vec2(float(x), float(y)) + imageSrc0Origin())` |
 | `textureLod`, mipmaps, `textureGrad` | not available |
 | `GL_CLAMP_TO_EDGE` / `GL_REPEAT` sampler state | implement in-shader; see [recipes.md](recipes.md) |
 | linear filtering | implement in-shader; sampling is always nearest |
