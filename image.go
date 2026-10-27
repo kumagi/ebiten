@@ -1557,6 +1557,11 @@ func (i *Image) WritePixels(pixels []byte) {
 		return
 	}
 
+	b := i.Bounds()
+	if got, want := len(pixels), 4*b.Dx()*b.Dy(); got != want {
+		panic(fmt.Sprintf("ebiten: len(pixels) must be %d but %d at WritePixels", want, got))
+	}
+
 	i.invokeUsageCallbacks()
 
 	// Do not need to copy pixels here.
