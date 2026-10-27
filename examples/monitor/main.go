@@ -37,6 +37,11 @@ type Game struct {
 	monitors []*ebiten.MonitorType
 }
 
+var digitKeys = [10]ebiten.Key{
+	ebiten.KeyDigit0, ebiten.KeyDigit1, ebiten.KeyDigit2, ebiten.KeyDigit3, ebiten.KeyDigit4,
+	ebiten.KeyDigit5, ebiten.KeyDigit6, ebiten.KeyDigit7, ebiten.KeyDigit8, ebiten.KeyDigit9,
+}
+
 func (g *Game) Update() error {
 	// Refresh monitors.
 	g.monitors = ebiten.AppendMonitors(g.monitors[:0])
@@ -46,7 +51,10 @@ func (g *Game) Update() error {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	} else {
 		for i, m := range g.monitors {
-			if inpututil.IsKeyJustPressed(ebiten.KeyDigit0 + ebiten.Key(i)) {
+			if i >= len(digitKeys) {
+				break
+			}
+			if inpututil.IsKeyJustPressed(digitKeys[i]) {
 				ebiten.SetWindowTitle(m.Name())
 				ebiten.SetMonitor(m)
 			}
