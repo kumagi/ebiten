@@ -22,7 +22,11 @@ import (
 func vibrate(duration time.Duration, magnitude float64) {
 	// magnitude is ignored.
 
-	if js.Global().Get("navigator").Get("vibrate").Truthy() {
-		js.Global().Get("navigator").Call("vibrate", float64(duration/time.Millisecond))
+	nav := js.Global().Get("navigator")
+	if !nav.Truthy() {
+		return
+	}
+	if nav.Get("vibrate").Truthy() {
+		nav.Call("vibrate", float64(duration/time.Millisecond))
 	}
 }
