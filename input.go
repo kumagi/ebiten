@@ -578,7 +578,8 @@ type TouchID int
 // use inpututil.JustPressedTouchIDs.
 //
 // AppendTouchIDs doesn't append anything when there are no touches.
-// AppendTouchIDs always does nothing on desktops.
+// On desktops, AppendTouchIDs reports touch input only when it is forwarded
+// by the host of a virtualization guest.
 //
 // AppendTouchIDs is concurrent-safe.
 func AppendTouchIDs(touches []TouchID) []TouchID {
