@@ -417,7 +417,6 @@ func TestDisposingTheScreenMirrorDropsTheFrame(t *testing.T) {
 				ImageID: 1,
 				Width:   320,
 				Height:  240,
-				Screen:  true,
 			},
 			vmprotocol.GraphicsCommand{
 				Kind:    vmprotocol.GraphicsCommandKindDisposeImage,

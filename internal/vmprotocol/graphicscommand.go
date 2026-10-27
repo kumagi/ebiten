@@ -95,12 +95,11 @@ type GraphicsCommand struct {
 	Vertices []float32
 	Indices  []uint32
 
-	// ImageID/Width/Height/Screen are set by NewImage and NewScreenFramebufferImage.
+	// ImageID/Width/Height are set by NewImage and NewScreenFramebufferImage.
 	// ImageID is also set by WritePixels and DisposeImage.
 	ImageID graphicsdriver.ImageID
 	Width   int
 	Height  int
-	Screen  bool
 
 	// ShaderID is set by NewShader, DrawTriangles, and DisposeShader.
 	ShaderID graphicsdriver.ShaderID

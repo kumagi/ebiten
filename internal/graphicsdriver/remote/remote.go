@@ -204,7 +204,6 @@ func (g *Graphics) NewScreenFramebufferImage(width, height int) (graphicsdriver.
 		ImageID: id,
 		Width:   width,
 		Height:  height,
-		Screen:  true,
 	})
 	return &Image{id: id, graphics: g}, nil
 }
