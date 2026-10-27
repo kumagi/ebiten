@@ -15,18 +15,20 @@
 package debug
 
 import (
-	"go/build"
 	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 )
 
-var (
-	ebitengineFileDir     string
-	ebitengineFileDirOnce sync.Once
-)
+// Use this file's recorded path so the root matches runtime frames even with -trimpath.
+var ebitengineFileDir = func() string {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return ""
+	}
+	return path.Dir(path.Dir(path.Dir(filepath.ToSlash(file))))
+}()
 
 type CallerType int
 
@@ -38,14 +40,6 @@ const (
 
 // FirstCaller returns the file and line number of the first caller outside of Ebitengine.
 func FirstCaller() (file string, line int, callerType CallerType) {
-	ebitengineFileDirOnce.Do(func() {
-		pkg, err := build.Default.Import("github.com/hajimehoshi/ebiten/v2", "", build.FindOnly)
-		if err != nil {
-			return
-		}
-		ebitengineFileDir = filepath.ToSlash(pkg.Dir)
-	})
-
 	if ebitengineFileDir == "" {
 		return "", 0, CallerTypeNone
 	}
