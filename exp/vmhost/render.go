@@ -227,6 +227,9 @@ func (f *frameRenderer) renderOne(c vmprotocol.GraphicsCommand) error {
 			return fmt.Errorf("vmhost: DrawTriangles starts at index %d, outside the %d indices set", offset, len(f.indices))
 		}
 		vertexCount := len(f.vertices) / graphics.VertexFloatCount
+		if len(c.DstRegions) == 0 {
+			return fmt.Errorf("vmhost: DrawTriangles has no destination region")
+		}
 		for _, dr := range c.DstRegions {
 			// Comparing against what remains keeps offset+IndexCount from overflowing.
 			if dr.IndexCount < 0 || dr.IndexCount > len(f.indices)-offset {
