@@ -575,7 +575,7 @@ type TouchID int
 // Giving a slice that already has enough capacity works efficiently.
 //
 // If you want to know whether a touch started being pressed in the current tick,
-// use inpututil.JustPressedTouchIDs.
+// use inpututil.AppendJustPressedTouchIDs.
 //
 // AppendTouchIDs doesn't append anything when there are no touches.
 // AppendTouchIDs always does nothing on desktops.
