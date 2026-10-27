@@ -390,6 +390,8 @@ type AudioControl struct {
 // produced.
 type TextInputCommitKind int
 
+// The values follow iota: adding, inserting, or reordering kinds is a wire-affecting change (see
+// VersionMajor and VersionMinor).
 const (
 	// TextInputCommitKindNone marks a composition (preedit) update, not a commit.
 	TextInputCommitKindNone TextInputCommitKind = iota
