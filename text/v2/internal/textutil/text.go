@@ -20,24 +20,27 @@ import (
 	"unicode/utf8"
 )
 
+// Lines returns an iterator over the lines of str, each keeping its trailing
+// line break. The returned iterator can be iterated any number of times.
 func Lines(str string) iter.Seq[string] {
 	return func(yield func(s string) bool) {
-		for len(str) > 0 {
-			idx := strings.IndexAny(str, "\n\v\f\r\u0085\u2028\u2029")
+		s := str
+		for len(s) > 0 {
+			idx := strings.IndexAny(s, "\n\v\f\r\u0085\u2028\u2029")
 			var length int
 			if idx < 0 {
-				length = len(str)
+				length = len(s)
 			} else {
-				_, size := utf8.DecodeRuneInString(str[idx:])
+				_, size := utf8.DecodeRuneInString(s[idx:])
 				length = idx + size
-				if str[idx] == '\r' && length < len(str) && str[length] == '\n' {
+				if s[idx] == '\r' && length < len(s) && s[length] == '\n' {
 					length++
 				}
 			}
-			if !yield(str[:length]) {
+			if !yield(s[:length]) {
 				return
 			}
-			str = str[length:]
+			s = s[length:]
 		}
 	}
 }

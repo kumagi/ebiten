@@ -50,14 +50,11 @@ func TestLines(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%q", tc.In), func(t *testing.T) {
-			got := slices.Collect(textutil.Lines(tc.In))
-			want := tc.Out
-			if len(got) != len(want) {
-				t.Errorf("len(got): %d, len(want): %d", len(got), len(want))
-			}
-			for i := range got {
-				if got[i] != want[i] {
-					t.Errorf("got[%d]: %q, want[%d]: %q", i, got[i], i, want[i])
+			lines := textutil.Lines(tc.In)
+			for iteration := range 2 {
+				got := slices.Collect(lines)
+				if !slices.Equal(got, tc.Out) {
+					t.Errorf("iteration %d: got %q, want %q", iteration, got, tc.Out)
 				}
 			}
 		})
@@ -114,5 +111,21 @@ func TestTrimTailingLineBreak(t *testing.T) {
 				t.Errorf("got: %q, want: %q", got, want)
 			}
 		})
+	}
+}
+
+func TestLinesAfterEarlyStop(t *testing.T) {
+	lines := textutil.Lines("a\nb\nc\nd")
+	var count int
+	for range lines {
+		count++
+		if count == 2 {
+			break
+		}
+	}
+	got := slices.Collect(lines)
+	want := []string{"a\n", "b\n", "c\n", "d"}
+	if !slices.Equal(got, want) {
+		t.Errorf("after early stop: got %q, want %q", got, want)
 	}
 }
