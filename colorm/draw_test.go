@@ -16,6 +16,7 @@ package colorm_test
 
 import (
 	"fmt"
+	"image"
 	"image/color"
 	"math"
 	"testing"
@@ -308,6 +309,28 @@ func TestColorScale(t *testing.T) {
 	colorm.DrawImage(dst, src, cm, op)
 	if got, want := dst.At(0, 0).(color.RGBA), (color.RGBA{0x20, 0x20, 0x40, 0x40}); !sameColors(got, want, 1) {
 		t.Errorf("got: %v, want: %v", got, want)
+	}
+}
+
+func TestDrawImageEmptySourceValidatesFilter(t *testing.T) {
+	dst := ebiten.NewImage(1, 1)
+	defer dst.Deallocate()
+	src := dst.SubImage(image.Rectangle{}).(*ebiten.Image)
+	colorm.DrawImage(dst, src, colorm.ColorM{}, nil)
+	for _, filter := range []ebiten.Filter{ebiten.FilterNearest, ebiten.FilterLinear, ebiten.FilterPixelated, -1, 99} {
+		t.Run(fmt.Sprint(filter), func(t *testing.T) {
+			if filter == -1 || filter == 99 {
+				defer func() {
+					if got, want := fmt.Sprint(recover()), fmt.Sprintf("colorm: invalid filter: %d", filter); got != want {
+						t.Errorf("panic = %q, want %q", got, want)
+					}
+				}()
+			}
+			colorm.DrawImage(dst, src, colorm.ColorM{}, &colorm.DrawImageOptions{Filter: filter})
+		})
+	}
+	if got := dst.At(0, 0); got != (color.RGBA{}) {
+		t.Errorf("empty source changed destination: %v", got)
 	}
 }
 

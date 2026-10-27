@@ -55,6 +55,10 @@ func DrawImage(dst, src *ebiten.Image, colorM ColorM, op *DrawImageOptions) {
 		op = &DrawImageOptions{}
 	}
 
+	filter := colormshader.Filter(op.Filter)
+	if filter < 0 || filter >= colormshader.FilterCount {
+		panic(fmt.Sprintf("colorm: invalid filter: %d", filter))
+	}
 	if src.Bounds().Empty() {
 		return
 	}
@@ -68,7 +72,7 @@ func DrawImage(dst, src *ebiten.Image, colorM ColorM, op *DrawImageOptions) {
 	defer releaseUniforms(u)
 	opShader.Uniforms = u.uniforms
 	opShader.Images[0] = src
-	s := builtinShader(colormshader.Filter(op.Filter), colormshader.AddressUnsafe)
+	s := builtinShader(filter, colormshader.AddressUnsafe)
 	dst.DrawRectShader(src.Bounds().Dx(), src.Bounds().Dy(), s, opShader)
 }
 
