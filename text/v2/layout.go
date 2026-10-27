@@ -388,12 +388,13 @@ var theAppendGlyphsLazyBufPool = sync.Pool{
 
 // forEachLine iterates lines.
 func forEachLine(text string, face Face, options *LayoutOptions, f func(text string, indexOffset int, originX, originY float64)) {
-	if text == "" {
-		return
-	}
-
 	if options == nil {
 		options = &LayoutOptions{}
+	}
+	d := face.direction()
+	h, v := calcAligns(d, options.PrimaryAlign, options.SecondaryAlign)
+	if text == "" {
+		return
 	}
 
 	// Calculate the advances for each line.
@@ -408,7 +409,6 @@ func forEachLine(text string, face Face, options *LayoutOptions, f func(text str
 		longestAdvance = max(longestAdvance, a)
 	}
 
-	d := face.direction()
 	m := face.Metrics()
 
 	var boundaryWidth, boundaryHeight float64
@@ -424,7 +424,6 @@ func forEachLine(text string, face Face, options *LayoutOptions, f func(text str
 	var offsetX, offsetY float64
 
 	// Adjust the offset based on the secondary alignments.
-	h, v := calcAligns(d, options.PrimaryAlign, options.SecondaryAlign)
 	switch d {
 	case DirectionLeftToRight, DirectionRightToLeft:
 		offsetY += m.HAscent

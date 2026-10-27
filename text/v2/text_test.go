@@ -41,6 +41,7 @@ import (
 	t "github.com/hajimehoshi/ebiten/v2/internal/testing"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"github.com/hajimehoshi/ebiten/v2/text/v2/internal/textutil"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 func TestMain(m *testing.M) {
@@ -408,6 +409,61 @@ func TestDrawOptionsNotModified(t *testing.T) {
 	}
 	if got, want := op.ColorScale, (ebiten.ColorScale{}); got != want {
 		t.Errorf("got: %v, want: %v", got, want)
+	}
+}
+
+func TestEmptyTextValidatesLayout(t *testing.T) {
+	source, err := text.NewGoTextFaceSource(bytes.NewReader(goregular.TTF))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst := ebiten.NewImage(1, 1)
+	defer dst.Deallocate()
+	apis := map[string]func(text.Face, *text.LayoutOptions){
+		"Draw": func(face text.Face, op *text.LayoutOptions) {
+			text.Draw(dst, "", face, &text.DrawOptions{LayoutOptions: *op})
+		},
+		"AppendGlyphs": func(face text.Face, op *text.LayoutOptions) {
+			if got := text.AppendGlyphs(nil, "", face, op); len(got) != 0 {
+				t.Errorf("unexpected glyphs: %v", got)
+			}
+		},
+		"AppendLazyGlyphs": func(face text.Face, op *text.LayoutOptions) {
+			if got := text.AppendLazyGlyphs(nil, "", face, op); len(got) != 0 {
+				t.Errorf("unexpected glyphs: %v", got)
+			}
+		},
+		"AppendVectorPath": func(face text.Face, op *text.LayoutOptions) {
+			var path vector.Path
+			text.AppendVectorPath(&path, "", face, op)
+		},
+	}
+	for name, call := range apis {
+		t.Run(name, func(t *testing.T) {
+			call(&text.GoTextFace{Source: source, Size: 16}, &text.LayoutOptions{})
+			for _, invalid := range []string{"direction", "primary", "secondary"} {
+				t.Run(invalid, func(t *testing.T) {
+					face := &text.GoTextFace{Source: source, Size: 16}
+					op := &text.LayoutOptions{}
+					want := "invalid align: 99"
+					switch invalid {
+					case "direction":
+						face.Direction = text.Direction(99)
+						want = "invalid direction: 99"
+					case "primary":
+						op.PrimaryAlign = text.Align(99)
+					case "secondary":
+						op.SecondaryAlign = text.Align(99)
+					}
+					defer func() {
+						if got := fmt.Sprint(recover()); !strings.Contains(got, want) {
+							t.Errorf("panic = %q, want %q", got, want)
+						}
+					}()
+					call(face, op)
+				})
+			}
+		})
 	}
 }
 
