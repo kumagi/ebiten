@@ -154,6 +154,10 @@ func (g *Graphics) NewShader(program *shaderir.Program) (graphicsdriver.Shader, 
 }
 
 func (g *Graphics) DrawTriangles(dst graphicsdriver.ImageID, srcs [graphics.ShaderSrcImageCount]graphicsdriver.ImageID, shader graphicsdriver.ShaderID, dstRegions []graphicsdriver.DstRegion, indexOffset int, blend graphicsdriver.Blend, uniforms []uint32) error {
+	if shader == graphicsdriver.InvalidShaderID {
+		return fmt.Errorf("playstation5: shader ID is invalid")
+	}
+
 	cSrcs := make([]C.int, len(srcs))
 	for i, src := range srcs {
 		cSrcs[i] = C.int(src)
