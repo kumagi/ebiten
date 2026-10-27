@@ -74,8 +74,10 @@ func (g *Game) Update() error {
 
 func (g *Game) Draw(screen *ebiten.Image) {
 	pos := g.player.Position()
-	if pos > 5*time.Second {
-		pos = (g.player.Position()-5*time.Second)%(4*time.Second) + 5*time.Second
+	intro := time.Duration(introLengthInSecond) * time.Second
+	loop := time.Duration(loopLengthInSecond) * time.Second
+	if pos > intro {
+		pos = (pos-intro)%loop + intro
 	}
 	msg := fmt.Sprintf(`TPS: %0.2f
 This is an example using
