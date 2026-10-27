@@ -29,26 +29,39 @@ var cpuProfile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 func main() {
 	flag.Parse()
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() (err error) {
 	if *cpuProfile != "" {
-		f, err := os.Create(*cpuProfile)
-		if err != nil {
-			log.Fatal(err)
+		f, createErr := os.Create(*cpuProfile)
+		if createErr != nil {
+			return createErr
 		}
 		w := bufio.NewWriter(f)
-		if err := pprof.StartCPUProfile(w); err != nil {
-			log.Fatal(err)
-		}
+		var profiling bool
 		defer func() {
-			if err := w.Flush(); err != nil {
-				log.Fatal(err)
+			if profiling {
+				pprof.StopCPUProfile()
+			}
+			flushErr := w.Flush()
+			closeErr := f.Close()
+			if err == nil {
+				err = flushErr
+			}
+			if err == nil {
+				err = closeErr
 			}
 		}()
-		defer pprof.StopCPUProfile()
+		if err := pprof.StartCPUProfile(w); err != nil {
+			return err
+		}
+		profiling = true
 	}
 
 	ebiten.SetWindowSize(blocks.ScreenWidth*2, blocks.ScreenHeight*2)
 	ebiten.SetWindowTitle("Blocks (Ebitengine Demo)")
-	if err := ebiten.RunGame(&blocks.Game{}); err != nil {
-		log.Fatal(err)
-	}
+	return ebiten.RunGame(&blocks.Game{})
 }
