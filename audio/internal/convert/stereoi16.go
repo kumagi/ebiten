@@ -15,6 +15,7 @@
 package convert
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -205,6 +206,11 @@ func (s *StereoI16ReadSeeker) Seek(offset int64, whence int) (int64, error) {
 		}
 		end, err := s.source.Seek(0, io.SeekEnd)
 		if err != nil {
+			// The probe may have moved the source before failing, so restore
+			// the position before returning the error.
+			if _, uerr := s.source.Seek(cur, io.SeekStart); uerr != nil {
+				return 0, errors.Join(err, uerr)
+			}
 			return 0, err
 		}
 		// Undo the probe so that a rejected seek leaves the source where it was.
