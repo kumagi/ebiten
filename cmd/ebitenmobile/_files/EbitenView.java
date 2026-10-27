@@ -113,6 +113,10 @@ public class EbitenView extends ViewGroup implements InputManager.InputDeviceLis
         }
     }
 
+    // Track forwarded key presses across focus changes between this view and
+    // the hidden edit text.
+    private final Set<Integer> pressedKeyCodes = new HashSet<Integer>();
+
     private double pxToDp(double x) {
         return x / this.deviceScale;
     }
@@ -224,6 +228,7 @@ public class EbitenView extends ViewGroup implements InputManager.InputDeviceLis
         if (event.getRepeatCount() > 0) {
             return super.onKeyDown(keyCode, event);
         }
+        pressedKeyCodes.add(keyCode);
         Ebitenmobileview.onKeyDownOnAndroid(keyCode, event.getUnicodeChar(), event.getSource(), event.getDeviceId(), event.getMetaState());
         return true;
     }
@@ -231,6 +236,7 @@ public class EbitenView extends ViewGroup implements InputManager.InputDeviceLis
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {
         Ebitenmobileview.onKeyUpOnAndroid(keyCode, event.getSource(), event.getDeviceId(), event.getMetaState());
+        pressedKeyCodes.remove(keyCode);
         return true;
     }
 
@@ -786,10 +792,6 @@ public class EbitenView extends ViewGroup implements InputManager.InputDeviceLis
             Ebitenmobileview.onKeyDownOnAndroid(keyCode, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0);
             Ebitenmobileview.onKeyUpOnAndroid(keyCode, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0);
         }
-
-        // pressedKeyCodes holds the key codes whose press the game has seen
-        // and whose release it has not.
-        private final Set<Integer> pressedKeyCodes = new HashSet<Integer>();
     }
 
     // startTextInput implements TextInputDriver. It is called from the Go side
