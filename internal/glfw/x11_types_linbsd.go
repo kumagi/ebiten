@@ -27,10 +27,13 @@ import (
 // extracted from the C headers with offsetof/sizeof.
 //
 // Type mapping: C int/Bool -> int32, C long/unsigned long (and the XID
-// family) -> _Clong/_Culong, C pointers -> uintptr. Pointers received from
-// Xlib are C-owned memory; they are stored as uintptr and must be released
-// with XFree (or the extension's free function) where the X11 protocol
-// requires it.
+// family) -> _Clong/_Culong. C pointers are usually uintptr. Some fields
+// use typed pointers or unsafe.Pointer for borrowed callback data or
+// Go-managed memory.
+//
+// Pointer representation does not imply ownership. Release Xlib allocations
+// according to the API's ownership contract, using its specified release
+// function. Never pass Go-managed memory to XFree.
 //
 // The X11 resource ID types Window, Cursor, Pixmap, and Colormap are all
 // represented as XID; the names Window and Cursor are already taken by GLFW
