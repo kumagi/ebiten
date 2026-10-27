@@ -30,26 +30,28 @@ type graphicsPlatform struct {
 // NewGraphics creates an implementation of graphicsdriver.Graphics for OpenGL.
 // The returned graphics value is nil iff the error is not nil.
 func NewGraphics(canvas js.Value, colorSpace color.ColorSpace) (graphicsdriver.Graphics, error) {
-	var glContext js.Value
+	// Validate first so an unsupported color space does not put the canvas into WebGL mode.
+	var drawingBufferColorSpace string
+	switch colorSpace {
+	case color.ColorSpaceSRGB:
+		drawingBufferColorSpace = "srgb"
+	case color.ColorSpaceDisplayP3:
+		drawingBufferColorSpace = "display-p3"
+	default:
+		return nil, fmt.Errorf("opengl: unsupported color space: %d", colorSpace)
+	}
 
 	attr := js.Global().Get("Object").New()
 	attr.Set("alpha", true)
 	attr.Set("premultipliedAlpha", true)
 
-	glContext = canvas.Call("getContext", "webgl2", attr)
+	glContext := canvas.Call("getContext", "webgl2", attr)
 
 	if !glContext.Truthy() {
 		return nil, fmt.Errorf("opengl: getContext for webgl2 failed")
 	}
 
-	switch colorSpace {
-	case color.ColorSpaceSRGB:
-		glContext.Set("drawingBufferColorSpace", "srgb")
-	case color.ColorSpaceDisplayP3:
-		glContext.Set("drawingBufferColorSpace", "display-p3")
-	default:
-		return nil, fmt.Errorf("opengl: unsupported color space: %d", colorSpace)
-	}
+	glContext.Set("drawingBufferColorSpace", drawingBufferColorSpace)
 
 	ctx, err := gl.NewDefaultContext(glContext)
 	if err != nil {
