@@ -86,7 +86,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	// Scale the image by the device ratio so that the rendering result can be the same
 	// on various (different-DPI) environments.
-	scale := ebiten.Monitor().DeviceScaleFactor()
+	scale := deviceScaleFactor()
 	op.GeoM.Scale(scale, scale)
 
 	// Move the image's center to the screen's center.
@@ -110,8 +110,16 @@ func (g *Game) Draw(screen *ebiten.Image) {
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 	// The unit of outsideWidth/Height is device-independent pixels.
 	// By multiplying them by the device scale factor, we can get a hi-DPI screen size.
-	s := ebiten.Monitor().DeviceScaleFactor()
+	s := deviceScaleFactor()
 	return int(float64(outsideWidth) * s), int(float64(outsideHeight) * s)
+}
+
+func deviceScaleFactor() float64 {
+	m := ebiten.Monitor()
+	if m == nil {
+		return 1
+	}
+	return m.DeviceScaleFactor()
 }
 
 var flagDisable = flag.Bool("disable", false, "disables HiDPI rendering (only on browsers)")
