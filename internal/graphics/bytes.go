@@ -106,6 +106,10 @@ func (b *bytesPool) get(size int) *ManagedBytes {
 }
 
 func (b *bytesPool) getFromCache(size int) []byte {
+	if size == 0 {
+		return nil
+	}
+
 	b.m.Lock()
 	defer b.m.Unlock()
 
