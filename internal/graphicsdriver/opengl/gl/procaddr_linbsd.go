@@ -70,7 +70,7 @@ func (c *defaultContext) init() error {
 		errs = append(errs, errors.New("gl: libGL.so needs a window system, and none is available"))
 	}
 
-	errs = append([]error{fmt.Errorf("gl: failed to load libGL.so and libGLESv2.so")}, errs...)
+	errs = append([]error{errors.New("gl: failed to load an OpenGL library")}, errs...)
 	return errors.Join(errs...)
 }
 
