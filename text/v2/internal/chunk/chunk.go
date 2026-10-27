@@ -57,12 +57,9 @@ type Chunk struct {
 	Level bidi.Level
 }
 
-// fallbackBytes is the soft upper bound on chunk size. When a chunk
-// has grown past this many bytes without hitting a sentence terminator,
-// the chunker breaks at the next safe boundary instead of letting the
-// chunk grow unbounded, so a single edit in a long no-terminator span
-// (HTML, JSON, code blobs) reshapes only a portion of that span rather
-// than the whole thing.
+// fallbackBytes is a soft target for chunk size. After this many bytes
+// without a sentence terminator, the chunker breaks at the next ASCII
+// space or tab. Without such a boundary, a chunk can exceed this size.
 const fallbackBytes = 4 * 1024
 
 // AppendChunks appends the chunks of text's first line to dst and
