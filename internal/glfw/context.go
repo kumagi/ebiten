@@ -513,6 +513,10 @@ func (w *Window) SwapInterval(interval int) error {
 		return NotInitialized
 	}
 
+	if w.context.client == NoAPI {
+		return fmt.Errorf("glfw: cannot set the swap interval of a window that has no OpenGL or OpenGL ES context: %w", NoWindowContext)
+	}
+
 	if err := w.context.swapInterval(w, interval); err != nil {
 		return err
 	}
@@ -527,6 +531,10 @@ func (w *Window) ExtensionSupported(extension string) (bool, error) {
 
 	if !_glfw.initialized {
 		return false, NotInitialized
+	}
+
+	if w.context.client == NoAPI {
+		return false, fmt.Errorf("glfw: cannot query the extensions of a window that has no OpenGL or OpenGL ES context: %w", NoWindowContext)
 	}
 
 	if w.context.major >= 3 {
