@@ -91,6 +91,7 @@ func main() {
 
 	player, err := newMPEGPlayer(in)
 	if err != nil {
+		_ = in.Close()
 		log.Fatal(err)
 	}
 	g := &Game{
