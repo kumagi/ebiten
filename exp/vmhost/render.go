@@ -233,6 +233,9 @@ func (f *frameRenderer) renderOne(c vmprotocol.GraphicsCommand) error {
 				return fmt.Errorf("vmhost: DrawTriangles takes %d indices from index %d, outside the %d indices set",
 					dr.IndexCount, offset, len(f.indices))
 			}
+			if dr.IndexCount%3 != 0 {
+				return fmt.Errorf("vmhost: DrawTriangles takes %d indices, which is not a multiple of 3", dr.IndexCount)
+			}
 			idx := f.indices[offset : offset+dr.IndexCount]
 			offset += dr.IndexCount
 			if len(idx) == 0 {
