@@ -36,7 +36,10 @@ const (
 	CallerTypeInternal
 )
 
-// FirstCaller returns the file and line number of the first caller outside of Ebitengine.
+// FirstCaller walks outward from Ebitengine's root-package frames, skipping other Ebitengine
+// packages except internal packages and examples. It returns CallerTypeRegular for an external
+// caller (including examples), or CallerTypeInternal for an Ebitengine internal caller.
+// CallerTypeNone means the source directory or such a caller could not be found.
 func FirstCaller() (file string, line int, callerType CallerType) {
 	ebitengineFileDirOnce.Do(func() {
 		pkg, err := build.Default.Import("github.com/hajimehoshi/ebiten/v2", "", build.FindOnly)
