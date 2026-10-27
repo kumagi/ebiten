@@ -168,8 +168,8 @@ func drawKey(dst *ebiten.Image, name string, x, y, width int) {
 	}, textOp)
 }
 
-func outputKeyboardImage() (map[ebiten.Key]image.Rectangle, error) {
-	keyMap := map[ebiten.Key]image.Rectangle{}
+func outputKeyboardImage() (keyMap map[ebiten.Key]image.Rectangle, err error) {
+	keyMap = map[ebiten.Key]image.Rectangle{}
 	img := ebiten.NewImage(320, 240)
 	var x, y int
 	for j, line := range keyboardKeys {
@@ -219,7 +219,11 @@ func outputKeyboardImage() (map[ebiten.Key]image.Rectangle, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer out.Close()
+	defer func() {
+		if closeErr := out.Close(); err == nil {
+			err = closeErr
+		}
+	}()
 
 	w := bufio.NewWriter(out)
 	if err := png.Encode(w, img); err != nil {
@@ -270,14 +274,18 @@ func KeyRect(key ebiten.Key) (image.Rectangle, bool) {
 	return r, ok
 }`
 
-func outputKeyRectsGo(k map[ebiten.Key]image.Rectangle) error {
+func outputKeyRectsGo(k map[ebiten.Key]image.Rectangle) (err error) {
 	path := "keyrects.go"
 
 	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
+		}
+	}()
 
 	tmpl, err := template.New(path).Parse(keyRectTmpl)
 	if err != nil {
