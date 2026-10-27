@@ -64,7 +64,10 @@ type defaultContext struct {
 	fnGetShaderParameter      js.Value
 	fnGetUniformLocation      js.Value
 	fnIsBuffer                js.Value
+	fnIsFramebuffer           js.Value
 	fnIsProgram               js.Value
+	fnIsShader                js.Value
+	fnIsTexture               js.Value
 	fnIsVertexArray           js.Value
 	fnLinkProgram             js.Value
 	fnPixelStorei             js.Value
@@ -187,7 +190,10 @@ func NewDefaultContext(v js.Value) (Context, error) {
 		fnGetShaderParameter:      v.Get("getShaderParameter").Call("bind", v),
 		fnGetUniformLocation:      v.Get("getUniformLocation").Call("bind", v),
 		fnIsBuffer:                v.Get("isBuffer").Call("bind", v),
+		fnIsFramebuffer:           v.Get("isFramebuffer").Call("bind", v),
 		fnIsProgram:               v.Get("isProgram").Call("bind", v),
+		fnIsShader:                v.Get("isShader").Call("bind", v),
+		fnIsTexture:               v.Get("isTexture").Call("bind", v),
 		fnIsVertexArray:           v.Get("isVertexArray").Call("bind", v),
 		fnLinkProgram:             v.Get("linkProgram").Call("bind", v),
 		fnPixelStorei:             v.Get("pixelStorei").Call("bind", v),
@@ -322,7 +328,10 @@ func (c *defaultContext) DeleteBuffer(buffer uint32) {
 }
 
 func (c *defaultContext) DeleteFramebuffer(framebuffer uint32) {
-	c.fnDeleteFramebuffer.Invoke(c.framebuffers.get(framebuffer))
+	// Context restoration invalidates old objects, but their IDs must still be released.
+	if v := c.framebuffers.get(framebuffer); c.fnIsFramebuffer.Invoke(v).Bool() {
+		c.fnDeleteFramebuffer.Invoke(v)
+	}
 	c.framebuffers.delete(framebuffer)
 }
 
@@ -340,7 +349,10 @@ func (c *defaultContext) DeleteProgram(program uint32) {
 }
 
 func (c *defaultContext) DeleteShader(shader uint32) {
-	c.fnDeleteShader.Invoke(c.shaders.get(shader))
+	// Context restoration invalidates old objects, but their IDs must still be released.
+	if v := c.shaders.get(shader); c.fnIsShader.Invoke(v).Bool() {
+		c.fnDeleteShader.Invoke(v)
+	}
 	c.shaders.delete(shader)
 }
 
@@ -350,7 +362,10 @@ func (c *defaultContext) DeleteSync(sync uintptr) {
 }
 
 func (c *defaultContext) DeleteTexture(texture uint32) {
-	c.fnDeleteTexture.Invoke(c.textures.get(texture))
+	// Context restoration invalidates old objects, but their IDs must still be released.
+	if v := c.textures.get(texture); c.fnIsTexture.Invoke(v).Bool() {
+		c.fnDeleteTexture.Invoke(v)
+	}
 	c.textures.delete(texture)
 }
 
