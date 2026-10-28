@@ -1,4 +1,4 @@
-name: Isolated Linux 386 baseline comparison
+name: Isolated candidate Linux validation
 
 on:
   push:
@@ -9,27 +9,42 @@ permissions:
   contents: read
 
 jobs:
-  baseline:
-    name: Baseline atlas tests on ${{ matrix.os }}
+  candidate:
+    name: ${{ matrix.candidate.name }} / Go ${{ matrix.go }} / Ubuntu 24.04
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-26.04]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+        go: ['1.26.10', '1.27.1']
+        candidate:
+          - name: x11-queued-commits
+            sha: 90f94387e41ae7a8535e4ddbc5a3a35ada02c4c0
+          - name: browser-user-end
+            sha: 0a39363e2efe94f6512a5c3bfc9484d21b680f83
+          - name: cocoa-marked-range
+            sha: b161440fb385fe4426859785e61929660aa1ca53
+          - name: windows-fullscreen-topmost
+            sha: 13a09ec9b76012abef2e3659d058eb992e4feb36
+          - name: monitor-window-position
+            sha: 2c718aea261797f1b1cca1cf983f9a058cb5349b
+          - name: atlas-source-type
+            sha: 83ddc71a4f1ac8b5d4ac3c27bcc7fd613be2b51e
+          - name: gsettings-timeout
+            sha: cf619a3495771edce6a39776f9580ff7af7d1362
     env:
-      SOURCE_SHA: 379849fe8f2c15caed074b738c870bf4bb6f463e
+      SOURCE_SHA: ${{ matrix.candidate.sha }}
       GOTOOLCHAIN: local
       GOFLAGS: -mod=readonly
     defaults:
       run:
         shell: bash
     steps:
-      - name: Checkout unchanged baseline
+      - name: Checkout exact candidate source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: kumagi/ebiten
-          ref: 379849fe8f2c15caed074b738c870bf4bb6f463e
+          ref: ${{ matrix.candidate.sha }}
           persist-credentials: false
 
       - name: Verify source and workflow identities
@@ -39,47 +54,66 @@ jobs:
           echo "source_sha=$SOURCE_SHA"
           echo "workflow_sha=$GITHUB_SHA"
           git hash-object go.mod go.sum
-          git ls-tree HEAD .github/workflows/test.yml
 
-      - name: Setup matching Go version
+      - name: Setup pinned Go version
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
-          go-version: '1.26.10'
+          go-version: ${{ matrix.go }}
           cache: false
 
-      - name: Install Linux 386 graphics dependencies
+      - name: Install Linux graphics dependencies
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y xvfb xauth libgl1:i386 libgl1-mesa-dri:i386 libx11-6:i386 libxcursor1:i386 libxext6:i386 libxi6:i386 libxinerama1:i386 libxrandr2:i386 libxrender1:i386
+          sudo apt-get install -y xvfb xauth libgl1 libgl1-mesa-dri libx11-6 libxcursor1 libxext6 libxi6 libxinerama1 libxrandr2 libxrender1 libegl1 libgles2 libgl1:i386 libgl1-mesa-dri:i386 libx11-6:i386 libxcursor1:i386 libxext6:i386 libxi6:i386 libxinerama1:i386 libxrandr2:i386 libxrender1:i386
 
       - name: Record comparison environment
+        env:
+          EXPECTED_GO: ${{ matrix.go }}
         run: |
-          test "$(go env GOVERSION)" = go1.26.10
+          test "$(go env GOVERSION)" = "go$EXPECTED_GO"
           cat /etc/os-release
-          uname -m
-          env GOARCH=386 CGO_ENABLED=0 go env GOOS GOARCH CGO_ENABLED GOVERSION
+          go env GOOS GOARCH CGO_ENABLED GOVERSION
           go list -m github.com/ebitengine/purego
-          dpkg-query -W -f='${Package} ${Architecture} ${Version}\n' libc6:i386 libglx0:i386 libglx-mesa0:i386 libgl1-mesa-dri:i386 libx11-6:i386
+          dpkg-query -W -f='${Package} ${Architecture} ${Version}\n' libc6:i386 libglx0:i386 libglx-mesa0:i386 libx11-6:i386
 
-      - name: Run existing atlas suite on Linux 386
-        id: tests
+      - name: Standard and repository vet
         run: |
-          xvfb-run -a -s '-screen 0 1024x768x24' env GOARCH=386 CGO_ENABLED=0 go test -count=1 -shuffle=on -v -p=1 ./internal/atlas
+          go list ./... ./skills/run-ebitengine-app-headless/_driver | grep -v -x -F -f .github/workflows/govetblock_linbsd.txt | xargs go vet
+          go install ./internal/vettools
+          go vet -vettool="$(go env GOPATH)/bin/vettools" -v ./... ./skills/run-ebitengine-app-headless/_driver
 
-      - name: Verify unchanged dependencies and summarize
+      - name: Build normally and without optimization
+        run: |
+          go build -v ./... ./skills/run-ebitengine-app-headless/_driver
+          go build '-gcflags=all=-N -l' -v ./...
+
+      - name: Test Linux amd64
+        run: xvfb-run -a -s '-screen 0 1024x768x24' go test -count=1 -shuffle=on -v -p=1 ./...
+
+      - name: Test Linux amd64 race
+        if: matrix.go == '1.27.1'
+        run: xvfb-run -a -s '-screen 0 1024x768x24' go test -race -count=1 -shuffle=on -v -p=1 ./...
+
+      - name: Test Linux 386
+        run: xvfb-run -a -s '-screen 0 1024x768x24' env GOARCH=386 CGO_ENABLED=0 go test -count=1 -shuffle=on -v -p=1 ./...
+
+      - name: Test explicit OpenGL selection
+        run: xvfb-run -a -s '-screen 0 1024x768x24' env EBITENGINE_GRAPHICS_LIBRARY=opengl go test -count=1 -shuffle=on -v -p=1 ./...
+
+      - name: Verify source and dependency integrity
         if: always()
         env:
-          TEST_OUTCOME: ${{ steps.tests.outcome }}
-          RUNNER_LABEL: ${{ matrix.os }}
+          CANDIDATE_NAME: ${{ matrix.candidate.name }}
+          GO_VERSION: ${{ matrix.go }}
         run: |
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-          git diff --exit-code -- go.mod go.sum
+          git diff --exit-code
           {
+            echo "Candidate: $CANDIDATE_NAME"
             echo "Source SHA: $SOURCE_SHA"
             echo "Workflow SHA: $GITHUB_SHA"
-            echo "Runner: $RUNNER_LABEL; Go: 1.26.10; target: linux/386; CGO_ENABLED=0"
-            echo "Existing test suite: ./internal/atlas under Xvfb"
-            echo "Test outcome: $TEST_OUTCOME"
-            echo 'Supplemental baseline comparison; this does not replace checks on the eight contribution branches.'
+            echo "Ubuntu 24.04; Go $GO_VERSION; Xvfb; amd64 and 386 tests"
+            echo 'Supplemental exact-source checks; original candidate workflow results remain unchanged.'
+            echo 'Excluded: other OSes, browser/Wasm, GBM, mobile/Cgo binding, cross-build matrix, vendoring, formatting checks and physical device/IME tests.'
           } >> "$GITHUB_STEP_SUMMARY"
