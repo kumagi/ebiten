@@ -1,0 +1,85 @@
+name: Isolated Linux 386 baseline comparison
+
+on:
+  push:
+    branches:
+      - codex/ci-linux386-compare-20261028
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    name: Baseline atlas tests on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-26.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      SOURCE_SHA: 379849fe8f2c15caed074b738c870bf4bb6f463e
+      GOTOOLCHAIN: local
+      GOFLAGS: -mod=readonly
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout unchanged baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: kumagi/ebiten
+          ref: 379849fe8f2c15caed074b738c870bf4bb6f463e
+          persist-credentials: false
+
+      - name: Verify source and workflow identities
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          echo "source_sha=$SOURCE_SHA"
+          echo "workflow_sha=$GITHUB_SHA"
+          git hash-object go.mod go.sum
+          git ls-tree HEAD .github/workflows/test.yml
+
+      - name: Setup matching Go version
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: '1.26.10'
+          cache: false
+
+      - name: Install Linux 386 graphics dependencies
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth libgl1:i386 libgl1-mesa-dri:i386 libx11-6:i386 libxcursor1:i386 libxext6:i386 libxi6:i386 libxinerama1:i386 libxrandr2:i386 libxrender1:i386
+
+      - name: Record comparison environment
+        run: |
+          test "$(go env GOVERSION)" = go1.26.10
+          cat /etc/os-release
+          uname -m
+          env GOARCH=386 CGO_ENABLED=0 go env GOOS GOARCH CGO_ENABLED GOVERSION
+          go list -m github.com/ebitengine/purego
+          dpkg-query -W -f='${Package} ${Architecture} ${Version}\n' libc6:i386 libglx0:i386 libglx-mesa0:i386 libgl1-mesa-dri:i386 libx11-6:i386
+
+      - name: Run existing atlas suite on Linux 386
+        id: tests
+        run: |
+          xvfb-run -a -s '-screen 0 1024x768x24' env GOARCH=386 CGO_ENABLED=0 go test -count=1 -shuffle=on -v -p=1 ./internal/atlas
+
+      - name: Verify unchanged dependencies and summarize
+        if: always()
+        env:
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+          RUNNER_LABEL: ${{ matrix.os }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git diff --exit-code -- go.mod go.sum
+          {
+            echo "Source SHA: $SOURCE_SHA"
+            echo "Workflow SHA: $GITHUB_SHA"
+            echo "Runner: $RUNNER_LABEL; Go: 1.26.10; target: linux/386; CGO_ENABLED=0"
+            echo "Existing test suite: ./internal/atlas under Xvfb"
+            echo "Test outcome: $TEST_OUTCOME"
+            echo 'Supplemental baseline comparison; this does not replace checks on the eight contribution branches.'
+          } >> "$GITHUB_STEP_SUMMARY"
