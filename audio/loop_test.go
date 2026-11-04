@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"testing"
@@ -1466,5 +1467,74 @@ func TestInfiniteLoopSeekEndUnsupported(t *testing.T) {
 	l := audio.NewInfiniteLoop(bytes.NewReader(src), int64(len(src)))
 	if _, err := l.Seek(0, io.SeekEnd); !errors.Is(err, errors.ErrUnsupported) {
 		t.Errorf("Seek(0, io.SeekEnd): got %v, want errors.ErrUnsupported", err)
+	}
+}
+
+func TestInfiniteLoopSeekAfterEarlySourceEnd(t *testing.T) {
+	for _, frame := range []int{4, 8} {
+		for _, intro := range []int{0, 1} {
+			for _, tail := range []int{0, frame - 1} {
+				for _, short := range []bool{false, true} {
+					t.Run(fmt.Sprintf("frame=%d/intro=%d/tail=%d/short=%t", frame, intro, tail, short), func(t *testing.T) {
+						src := make([]byte, 4*frame+tail)
+						for i := range src {
+							src[i] = byte(i)
+						}
+						var loop *audio.InfiniteLoop
+						if frame == 4 {
+							loop = audio.NewInfiniteLoopWithIntro(bytes.NewReader(src), int64(intro*frame), int64(8*frame))
+						} else {
+							loop = audio.NewInfiniteLoopWithIntroF32(bytes.NewReader(src), int64(intro*frame), int64(8*frame))
+						}
+						// Read through EOF so the actual end, including an incomplete final sample, is known.
+						for range 8 {
+							if short {
+								if n, err := loop.Read(make([]byte, 1)); n != 0 || !errors.Is(err, io.ErrShortBuffer) {
+									t.Fatalf("short Read = (%d, %v)", n, err)
+								}
+							}
+							if _, err := io.ReadFull(loop, make([]byte, frame)); err != nil {
+								t.Fatal(err)
+							}
+						}
+						for _, whence := range []int{io.SeekStart, io.SeekCurrent} {
+							if _, err := loop.Seek(0, io.SeekStart); err != nil {
+								t.Fatal(err)
+							}
+							target := 5 * frame
+							wantPos := (target-intro*frame)%((4-intro)*frame) + intro*frame
+							pos, err := loop.Seek(int64(target), whence)
+							if err != nil {
+								t.Fatal(err)
+							}
+							if pos != int64(wantPos) {
+								t.Errorf("Seek(%d, %d) = %d, want %d", target, whence, pos, wantPos)
+							}
+							got := make([]byte, frame)
+							if _, err := io.ReadFull(loop, got); err != nil {
+								t.Fatal(err)
+							}
+							if !bytes.Equal(got, src[wantPos:wantPos+frame]) {
+								t.Errorf("Read after Seek(%d, %d) = %v, want %v", target, whence, got, src[wantPos:wantPos+frame])
+							}
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+func TestInfiniteLoopDoesNotInferSourceEndFromSeekPastEnd(t *testing.T) {
+	loop := audio.NewInfiniteLoop(bytes.NewReader(make([]byte, 16)), 32)
+	if _, err := loop.Seek(24, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(loop, make([]byte, 4)); err != nil {
+		t.Fatal(err)
+	}
+	// EOF at a position reached only by seeking does not establish the source length.
+	if pos, err := loop.Seek(28, io.SeekStart); err != nil || pos != 28 {
+		t.Errorf("Seek = (%d, %v), want (28, nil)", pos, err)
 	}
 }

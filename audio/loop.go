@@ -30,6 +30,11 @@ type InfiniteLoop struct {
 	// pos is the position of src. This is ahead of the position of the data returned so far by len(extra).
 	pos int64
 
+	// readEnd is the source position just after the last non-empty read.
+	// sourceEnd is the whole-sample end confirmed by EOF, or zero if not known.
+	readEnd   int64
+	sourceEnd int64
+
 	bitDepthInBytes int
 	bytesPerSample  int
 
@@ -211,6 +216,7 @@ func (i *InfiniteLoop) readShortBuffer() error {
 		n, err := i.src.Read(buf[:size])
 		i.extra = append(i.extra, buf[:n]...)
 		i.pos += int64(n)
+		i.recordSourceRead(n, err)
 		if err != nil && err != io.EOF {
 			return err
 		}
@@ -257,6 +263,7 @@ func (i *InfiniteLoop) read(b []byte) (int, error) {
 		}
 	}
 	i.pos += int64(n)
+	i.recordSourceRead(n, err)
 	n += extralen
 	if i.pos > i.length() {
 		panic(fmt.Sprintf("audio: position %d exceeds length %d at (*InfiniteLoop).Read", i.pos, i.length()))
@@ -344,6 +351,16 @@ func (i *InfiniteLoop) read(b []byte) (int, error) {
 	return n, err
 }
 
+// recordSourceRead distinguishes an observed end from EOF after seeking past the source.
+func (i *InfiniteLoop) recordSourceRead(n int, err error) {
+	if n > 0 {
+		i.readEnd = i.pos
+	}
+	if err == io.EOF && i.pos == i.readEnd {
+		i.sourceEnd = i.pos / int64(i.bytesPerSample) * int64(i.bytesPerSample)
+	}
+}
+
 // rewind moves the position back to the loop start.
 func (i *InfiniteLoop) rewind() error {
 	// Ignore the new position returned by Seek since the source position might not match the position
@@ -396,7 +413,11 @@ func (i *InfiniteLoop) Seek(offset int64, whence int) (int64, error) {
 	// would return bytes straddling two samples.
 	next = next / int64(i.bytesPerSample) * int64(i.bytesPerSample)
 	if next > i.lstart {
-		next = ((next - i.lstart) % i.llength) + i.lstart
+		loopLength := i.llength
+		if i.sourceEnd > i.lstart {
+			loopLength = min(loopLength, i.sourceEnd-i.lstart)
+		}
+		next = ((next - i.lstart) % loopLength) + i.lstart
 	}
 	// Ignore the new position returned by Seek since the source position might not match the position
 	// managed by this.
