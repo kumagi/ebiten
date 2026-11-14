@@ -12,17 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package textinput
+package textinput_test
 
 import (
 	"syscall/js"
 	"testing"
+
+	"github.com/hajimehoshi/ebiten/v2/exp/textinput"
 )
 
 func TestCommittedCompositionInput(t *testing.T) {
-	impl := &theTextInputImpl
-	old := impl.composing
-	defer func() { impl.composing = old }()
+	old := textinput.Composing()
+	defer textinput.SetComposing(old)
 	for _, tc := range []struct {
 		name  string
 		value any
@@ -33,14 +34,14 @@ func TestCommittedCompositionInput(t *testing.T) {
 		{"legacy_missing_property", nil, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			impl.composing = false
+			textinput.SetComposing(false)
 			e := js.Global().Get("InputEvent").New("input", map[string]any{"inputType": "insertCompositionText", "isComposing": tc.value == true})
 			if tc.value == nil {
 				js.Global().Get("Object").Call("defineProperty", e, "isComposing", map[string]any{"value": js.Undefined()})
 			}
-			impl.textareaElement.Call("dispatchEvent", e)
-			if impl.composing != tc.want {
-				t.Errorf("composing = %t, want %t", impl.composing, tc.want)
+			textinput.DispatchInputEvent(e)
+			if textinput.Composing() != tc.want {
+				t.Errorf("composing = %t, want %t", textinput.Composing(), tc.want)
 			}
 		})
 	}
