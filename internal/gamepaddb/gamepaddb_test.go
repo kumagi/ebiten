@@ -17,6 +17,7 @@ package gamepaddb_test
 import (
 	"bytes"
 	"embed"
+	"encoding/hex"
 	"runtime"
 	"slices"
 	"sync"
@@ -92,6 +93,38 @@ func TestUpdate(t *testing.T) {
 		{
 			Input: "00000000000000000000000000000000,foo,leftx:a:",
 			Err:   true,
+		},
+		{
+			Input: "00000000000000000000000000000000,foo,leftx:a-1",
+			Err:   true,
+		},
+		{
+			Input: "00000000000000000000000000000000,foo,leftx:+a-1",
+			Err:   true,
+		},
+		{
+			Input: "00000000000000000000000000000000,foo,leftx:-a-1~",
+			Err:   true,
+		},
+		{
+			Input: "00000000000000000000000000000000,foo,leftx:a18446744073709551616",
+			Err:   true,
+		},
+		{
+			Input: "00000000000000000000000000000000,foo,a:b-1",
+			Err:   true,
+		},
+		{
+			Input: "00000000000000000000000000000000,foo,a:h-1.1",
+			Err:   true,
+		},
+		{
+			Input: "00000000000000000000000000000000,foo,a:h0.-4",
+			Err:   true,
+		},
+		{
+			Input: "00000000000000000000000000000000,foo,a:-a0,b:+a0~,x:b0,y:h0.4",
+			Err:   false,
 		},
 	}
 
@@ -248,11 +281,12 @@ func TestUpdateMappingWithoutContent(t *testing.T) {
 }
 
 type stubGamepadState struct {
-	axes    map[int]float64
-	buttons map[int]bool
+	axes        map[int]float64
+	buttons     map[int]bool
+	unreadyAxes map[int]bool
 }
 
-func (s stubGamepadState) IsAxisReady(index int) bool { return true }
+func (s stubGamepadState) IsAxisReady(index int) bool { return !s.unreadyAxes[index] }
 func (s stubGamepadState) Axis(index int) float64     { return s.axes[index] }
 func (s stubGamepadState) Button(index int) bool      { return s.buttons[index] }
 func (s stubGamepadState) Hat(index int) int          { return 0 }
@@ -341,6 +375,27 @@ func TestHalfAxisMapping(t *testing.T) {
 		State stubGamepadState
 		Want  float64
 	}{
+		{
+			Name:  "positive half from an unavailable axis",
+			Line:  "+leftx:+a0,",
+			Axis:  gamepaddb.StandardAxisLeftStickHorizontal,
+			State: stubGamepadState{unreadyAxes: map[int]bool{0: true}},
+			Want:  0,
+		},
+		{
+			Name:  "negative half from an unavailable axis",
+			Line:  "-leftx:-a0,",
+			Axis:  gamepaddb.StandardAxisLeftStickHorizontal,
+			State: stubGamepadState{unreadyAxes: map[int]bool{0: true}},
+			Want:  0,
+		},
+		{
+			Name:  "one available half and one unavailable half",
+			Line:  "+leftx:+a0,-leftx:-a1,",
+			Axis:  gamepaddb.StandardAxisLeftStickHorizontal,
+			State: stubGamepadState{axes: map[int]float64{0: 0.75}, unreadyAxes: map[int]bool{1: true}},
+			Want:  0.75,
+		},
 		{
 			Name: "positive half from a released button",
 			Line: "+leftx:b0,",
@@ -652,5 +707,32 @@ func TestAddAndroidDefaultMappings(t *testing.T) {
 		if got, want := gamepaddb.AddAndroidDefaultMappings(id), false; got != want {
 			t.Errorf("gamepaddb.AddAndroidDefaultMappings(%q): got: %t, want: %t", id, got, want)
 		}
+	}
+}
+
+func TestAndroidBackButtonFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		buttons         uint16
+		wantB, wantBack bool
+	}{
+		{"neither B nor Back", 1 << gamepaddb.SDLControllerButtonA, false, false},
+		{"Back without B", 1<<gamepaddb.SDLControllerButtonA | 1<<gamepaddb.SDLControllerButtonBack, true, false},
+		{"B and Back", 1<<gamepaddb.SDLControllerButtonA | 1<<gamepaddb.SDLControllerButtonB | 1<<gamepaddb.SDLControllerButtonBack, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var guid [16]byte
+			guid[12], guid[13] = byte(tc.buttons), byte(tc.buttons>>8)
+			id := hex.EncodeToString(guid[:])
+			if !gamepaddb.AddAndroidDefaultMappings(id) {
+				t.Fatal("failed to add Android mappings")
+			}
+			if got := gamepaddb.StandardButtonMapping(id, gamepaddb.StandardButtonRightRight).IsMapped(); got != tc.wantB {
+				t.Errorf("B is mapped = %v, want %v", got, tc.wantB)
+			}
+			if got := gamepaddb.StandardButtonMapping(id, gamepaddb.StandardButtonCenterLeft).IsMapped(); got != tc.wantBack {
+				t.Errorf("Back is mapped = %v, want %v", got, tc.wantBack)
+			}
+		})
 	}
 }

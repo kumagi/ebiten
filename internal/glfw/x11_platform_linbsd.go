@@ -111,8 +111,9 @@ type platformLibraryWindowState struct {
 	imStyle _XIMStyle
 	// The previous X error handler, to be restored later
 	errorHandler uintptr
-	// Most recent error code received by X error handler
-	errorCode int
+	// Most recent error code received by X error handler since
+	// grabErrorHandlerX11, or nil outside a grab
+	errorCode *int
 	// Primary selection string (while the primary selection is owned)
 	primarySelectionString string
 	// Clipboard string (while the selection is owned)
@@ -274,6 +275,11 @@ type platformLibraryWindowState struct {
 		// pendingScroll holds the scroll offsets of each device's latest raw motion event, keyed by
 		// the source device ID, until the device motion event of the same input report takes them.
 		pendingScroll map[int32]xiPendingScroll
+
+		// gestureAvailable reports XI 2.4 touchpad gestures, both on the server and in libXi.
+		gestureAvailable bool
+		// pinch tracks the pinch gesture in progress.
+		pinch xiPinch
 
 		QueryVersion   func(display uintptr, majorVersionInOut, minorVersionInOut *int32) int32
 		SelectEvents   func(display uintptr, window _XID, masks *_XIEventMask, numMasks int32) int32

@@ -244,7 +244,7 @@ func (g *nativeGamepadsImpl) openEventNode(gamepads *gamepads, path string) (*Ga
 		n.keyMap[code-_BTN_MISC] = buttonCount
 		buttonCount++
 	}
-	for code := 0; code < _ABS_CNT; code++ {
+	for code := range _ABS_CNT {
 		if !isBitSet(info.absBits, code) {
 			continue
 		}
@@ -739,7 +739,7 @@ func (g *nativeGamepadImpl) handleAbsEvent(code int, value int32) {
 	info := g.absInfo[code]
 	v := float64(value)
 	if r := float64(info.maximum) - float64(info.minimum); r != 0 {
-		v = (v - float64(info.minimum)) / r
+		v = mathutil.Clamp01((v - float64(info.minimum)) / r)
 		v = v*2 - 1
 	}
 	g.axes[index] = v

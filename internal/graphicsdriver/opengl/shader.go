@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/hajimehoshi/ebiten/v2/internal/graphics"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/opengl/gl"
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir"
@@ -33,6 +34,12 @@ type Shader struct {
 
 	ir *shaderir.Program
 	p  program
+
+	// uniformNames holds the names of the uniform variables in the GLSL source.
+	uniformNames []string
+
+	// uniformDwordCounts holds the dword counts of the uniform variables.
+	uniformDwordCounts []int
 }
 
 func newShader(id graphicsdriver.ShaderID, graphics *Graphics, program *shaderir.Program) (*Shader, error) {
@@ -40,6 +47,14 @@ func newShader(id graphicsdriver.ShaderID, graphics *Graphics, program *shaderir
 		id:       id,
 		graphics: graphics,
 		ir:       program,
+	}
+	s.uniformDwordCounts = make([]int, len(program.Uniforms))
+	for i, typ := range program.Uniforms {
+		s.uniformDwordCounts[i] = typ.DwordCount()
+	}
+	s.uniformNames = make([]string, len(program.Uniforms))
+	for i := range s.uniformNames {
+		s.uniformNames[i] = fmt.Sprintf("U%d", i)
 	}
 	if err := s.compile(); err != nil {
 		return nil, err
@@ -67,7 +82,7 @@ func (s *Shader) compile() error {
 	if vs, fs, ok := shaderprecomp.GLSL(s.ir.SourceID, version == glsl.GLSLVersionES300); ok {
 		vssrc, fssrc = string(vs), string(fs)
 	} else {
-		vssrc, fssrc = glsl.Compile(s.ir, version)
+		vssrc, fssrc = glsl.Compile(s.ir, version, graphics.ProjectionMatrixUniformVariableIndex)
 	}
 
 	vs, err := s.graphics.context.newShader(gl.VERTEX_SHADER, vssrc)
@@ -108,6 +123,9 @@ func (s *Shader) compile() error {
 			programInfo, vertexShaderInfo, vssrc, fragmentShaderInfo, fssrc)
 	}
 
+	// Detach the linked shaders so the deferred deletions can release them while the program lives.
+	s.graphics.context.ctx.DetachShader(uint32(p), uint32(vs))
+	s.graphics.context.ctx.DetachShader(uint32(p), uint32(fs))
 	s.p = p
 	return nil
 }

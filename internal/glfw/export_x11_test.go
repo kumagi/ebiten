@@ -17,7 +17,25 @@
 package glfw
 
 import (
+	"errors"
 	"fmt"
+)
+
+// XIPinchDeltasForTest feeds a sequence of pinch gesture events, given as event types and scales, to
+// the conversion that turns their scales into changes, and returns the changes.
+func XIPinchDeltasForTest(evtypes []int32, scales []float64) []float64 {
+	var p xiPinch
+	deltas := make([]float64, len(evtypes))
+	for i := range evtypes {
+		deltas[i] = p.delta(evtypes[i], scales[i])
+	}
+	return deltas
+}
+
+const (
+	XIGesturePinchBeginForTest  = _XI_GesturePinchBegin
+	XIGesturePinchUpdateForTest = _XI_GesturePinchUpdate
+	XIGesturePinchEndForTest    = _XI_GesturePinchEnd
 )
 
 // SmokeTestX11 exercises the purego foundation against a live X server: the
@@ -41,10 +59,7 @@ func SmokeTestX11() error {
 	// the handler with BadWindow.
 	grabErrorHandlerX11()
 	xDestroyWindow(_glfw.platformWindow.display, 0xdeadbeef)
-	xSync(_glfw.platformWindow.display, false)
-	errorCode := _glfw.platformWindow.errorCode
-	releaseErrorHandlerX11()
-	if errorCode == _Success {
+	if releaseErrorHandlerX11() == _Success {
 		return fmt.Errorf("glfw: smoke: the X error handler was not invoked")
 	}
 
@@ -96,9 +111,7 @@ func SmokeTestX11() error {
 	}
 	grabErrorHandlerX11()
 	cursorErr := destroyCursors()
-	xSync(_glfw.platformWindow.display, false)
-	cursorErrorCode := _glfw.platformWindow.errorCode
-	releaseErrorHandlerX11()
+	cursorErrorCode := releaseErrorHandlerX11()
 	if cursorErr != nil {
 		return fmt.Errorf("glfw: smoke: destroyCursors failed: %w", cursorErr)
 	}
@@ -106,7 +119,22 @@ func SmokeTestX11() error {
 		return fmt.Errorf("glfw: smoke: cursor teardown raised an X error (code %d), likely a double free", cursorErrorCode)
 	}
 
+	xDestroyWindow(_glfw.platformWindow.display, 0xdeadbeef)
+	xSync(_glfw.platformWindow.display, false)
+	if err := PollEvents(); !errors.Is(err, ErrPlatform) {
+		return fmt.Errorf("glfw: smoke: PollEvents after an X error outside a grabErrorHandlerX11 bracket returned %v, want ErrPlatform", err)
+	}
+	if err := PollEvents(); err != nil {
+		return fmt.Errorf("glfw: smoke: PollEvents reported an already reported X error again: %w", err)
+	}
+
 	return nil
+}
+
+// SendFailingXRequestForTest sends a request that fails with BadWindow, without waiting for the
+// error to arrive.
+func SendFailingXRequestForTest() {
+	xDestroyWindow(_glfw.platformWindow.display, 0xdeadbeef)
 }
 
 type XIScrollAxis = xiScrollAxis

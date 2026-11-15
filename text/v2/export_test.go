@@ -15,8 +15,16 @@
 package text
 
 import (
+	"image"
+	"slices"
+
 	"github.com/go-text/typesetting/bidi"
+	"github.com/go-text/typesetting/font"
+	"github.com/go-text/typesetting/shaping"
 	"golang.org/x/image/math/fixed"
+
+	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/text/v2/internal/opentypesvg"
 )
 
 func L2VisualOrder(levels []bidi.Level) []int {
@@ -49,12 +57,6 @@ func (rtb *RuneToBoolMap) Get(rune rune) (bool, bool) {
 	return rtb.get(rune)
 }
 
-// SVGGlyphDocument extracts the SVG document describing only the glyph
-// gid from an OpenType SVG document.
-func SVGGlyphDocument(source []byte, gid uint32) []byte {
-	return newSVGDocIndex(source).glyphDocument(gid)
-}
-
 // GlyphImageCacheCount returns the number of the glyph image caches of the source, one per face size.
 func GlyphImageCacheCount(source *GoTextFaceSource) int {
 	c := &source.glyphImageCache
@@ -84,4 +86,47 @@ func NewCacheForTesting[Key comparable, Value any](softLimit int) *cache[Key, Va
 
 func (c *cache[Key, Value]) GetOrCreateAt(key Key, tick int64, create func() (Value, bool)) Value {
 	return c.getOrCreateAt(key, tick, create)
+}
+
+// SVGAcceptanceGlyph prepares an SVG record through the text cache, bypassing format selection.
+func SVGAcceptanceGlyph(face *GoTextFace, gid uint16, offset float64, realize bool) (*ebiten.Image, image.Rectangle, error) {
+	s := face.Source.svgFont
+	document, ok := s.documentIndex(font.GID(gid))
+	if !ok {
+		return nil, image.Rectangle{}, opentypesvg.ErrGlyphNotFound
+	}
+	colors := face.svgColors()
+	key := svgGlyphKey{
+		document: document,
+		gid:      gid,
+		size:     float64ToFixed26_6(face.Size),
+		xoffset:  adjustGranularity(float64ToFixed26_6(offset), granularityFactor(face)) & 63,
+		colors:   colors.key,
+	}
+	layout := s.prepare(key, colors, float64(face.Source.f.Upem()))
+	if layout.err != nil || layout.bounds.Empty() || !realize {
+		return nil, layout.bounds, layout.err
+	}
+	return s.image(key, layout, float64(face.Source.f.Upem())), layout.bounds, nil
+}
+
+// SVGAcceptanceOffset returns the horizontal fractional origin used by text layout.
+func SVGAcceptanceOffset(face *GoTextFace, offset float64) float64 {
+	return fixed26_6ToFloat64(adjustGranularity(float64ToFixed26_6(offset), granularityFactor(face)) & 63)
+}
+
+func NewSVGMemoForTesting[K comparable, V any]() *svgMemo[K, V] {
+	return &svgMemo[K, V]{}
+}
+
+func (m *svgMemo[K, V]) GetSized(key K, entryLimit, byteLimit, sizeBytes int, create func() V) V {
+	return m.getSized(key, entryLimit, byteLimit, sizeBytes, create)
+}
+
+func GoTextFaceVariationState(face *GoTextFace) ([]font.Variation, string) {
+	return slices.Clone(face.variations.values()), face.variations.key
+}
+
+func GoTextFaceFeatureState(face *GoTextFace) ([]shaping.FontFeature, string) {
+	return slices.Clone(face.features.values()), face.features.key
 }

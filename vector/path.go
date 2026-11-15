@@ -112,6 +112,16 @@ func (s *subPath) reset() {
 	s.invalid = false
 }
 
+func checkRegularNonNegative(value float64, name string) bool {
+	if !isRegular(value) {
+		return false
+	}
+	if value < 0 {
+		panic("vector: " + name + " must be non-negative")
+	}
+	return true
+}
+
 func isRegular(x float64) bool {
 	return !math.IsNaN(x) && !math.IsInf(x, 0)
 }
@@ -202,8 +212,7 @@ func (s *subPath) endDir(index int) vec2 {
 
 // Path represents a collection of vector graphics operations.
 //
-// All the coordinates in a path must be finite.
-// A path with a non-finite coordinate produces an undefined result.
+// Methods that take coordinates, radii, or angles ignore calls with infinite or NaN arguments.
 type Path struct {
 	subPaths []subPath
 
@@ -237,6 +246,9 @@ func (p *Path) addSubPaths(n int) {
 // MoveTo starts a new sub-path with the given position (x, y), without adding any line segments.
 // If the last sub-path is still empty, MoveTo updates its start position instead of adding a new one.
 func (p *Path) MoveTo(x, y float32) {
+	if !isRegular(float64(x)) || !isRegular(float64(y)) {
+		return
+	}
 	p.moveTo(float64(x), float64(y))
 }
 
@@ -256,6 +268,9 @@ func (p *Path) moveTo(x, y float64) {
 // If p doesn't have any sub-paths, LineTo sets (x, y) as the start position of a new sub-path.
 // If the last sub-path is closed, LineTo creates a new sub-path whose start position is the same as the closed sub-path's.
 func (p *Path) LineTo(x, y float32) {
+	if !isRegular(float64(x)) || !isRegular(float64(y)) {
+		return
+	}
 	p.lineTo(float64(x), float64(y))
 }
 
@@ -283,6 +298,9 @@ func (p *Path) lineTo(x, y float64) {
 // QuadTo adds a quadratic Bézier curve to the path.
 // (x1, y1) is the control point, and (x2, y2) is the destination.
 func (p *Path) QuadTo(x1, y1, x2, y2 float32) {
+	if !isRegular(float64(x1)) || !isRegular(float64(y1)) || !isRegular(float64(x2)) || !isRegular(float64(y2)) {
+		return
+	}
 	p.quadTo(float64(x1), float64(y1), float64(x2), float64(y2))
 }
 
@@ -314,6 +332,9 @@ func (p *Path) quadTo(x1, y1, x2, y2 float64) {
 // CubicTo adds a cubic Bézier curve to the path.
 // (x1, y1) and (x2, y2) are the control points, and (x3, y3) is the destination.
 func (p *Path) CubicTo(x1, y1, x2, y2, x3, y3 float32) {
+	if !isRegular(float64(x1)) || !isRegular(float64(y1)) || !isRegular(float64(x2)) || !isRegular(float64(y2)) || !isRegular(float64(x3)) || !isRegular(float64(y3)) {
+		return
+	}
 	p.addCubic(float64(x1), float64(y1), float64(x2), float64(y2), float64(x3), float64(y3))
 }
 
@@ -482,12 +503,28 @@ func (p *Path) currentPosition() (point, bool) {
 // (x1, y1) is the corner point where the two tangent lines meet, and (x2, y2) gives the direction of the second
 // tangent line. The arc ends at the tangent point on the second tangent line, which is at the distance of
 // radius / tan(θ/2) from (x1, y1), where θ is the angle at (x1, y1) between the two rays.
-// radius must be non-negative. A negative radius produces an undefined result.
+// If any numeric argument is infinite or NaN, ArcTo does nothing.
+// Otherwise, ArcTo starts a sub-path at (x1, y1) if none exists, then panics if radius is negative.
+// If radius is zero, ArcTo adds a line to (x1, y1).
 func (p *Path) ArcTo(x1, y1, x2, y2, radius float32) {
+	if !isRegular(float64(x1)) || !isRegular(float64(y1)) || !isRegular(float64(x2)) || !isRegular(float64(y2)) || !isRegular(float64(radius)) {
+		return
+	}
+	if len(p.subPaths) == 0 {
+		p.moveTo(float64(x1), float64(y1))
+	}
+	if !checkRegularNonNegative(float64(radius), "radius") {
+		return
+	}
 	p.arcTo(float64(x1), float64(y1), float64(x2), float64(y2), float64(radius))
 }
 
 func (p *Path) arcTo(x1, y1, x2, y2, radius float64) {
+	if radius == 0 {
+		p.lineTo(x1, y1)
+		return
+	}
+
 	p0, ok := p.currentPosition()
 	if !ok {
 		p0 = point{x: x1, y: y1}
@@ -555,12 +592,25 @@ func euclideanMod(a, b float32) float32 {
 
 // Arc adds an arc to the path.
 // (x, y) is the center of the arc.
-// radius must be non-negative. A negative radius produces an undefined result.
+// If any coordinate, radius, or angle is infinite or NaN, Arc does nothing.
+// Otherwise, Arc panics if radius is negative, leaving the path unchanged.
+// If radius is zero, Arc adds a line to (x, y), or starts a sub-path there if none exists.
 func (p *Path) Arc(x, y, radius, startAngle, endAngle float32, dir Direction) {
+	if !isRegular(float64(x)) || !isRegular(float64(y)) || !isRegular(float64(startAngle)) || !isRegular(float64(endAngle)) {
+		return
+	}
+	if !checkRegularNonNegative(float64(radius), "radius") {
+		return
+	}
 	p.addArc(float64(x), float64(y), float64(radius), startAngle, endAngle, dir)
 }
 
 func (p *Path) addArc(x, y, radius float64, startAngle, endAngle float32, dir Direction) {
+	if radius == 0 {
+		p.lineTo(x, y)
+		return
+	}
+
 	origStartAngle := startAngle
 	origEndAngle := endAngle
 
@@ -659,12 +709,20 @@ type AddPathOptions struct {
 }
 
 // AddPath adds the given path src to this path p as a sub-path.
+// If the geometry matrix has an infinite or NaN element, AddPath does nothing.
 func (p *Path) AddPath(src *Path, options *AddPathOptions) {
-	p.resetFlatPaths()
-
 	if options == nil {
 		options = &AddPathOptions{}
 	}
+
+	for i := range 2 {
+		for j := range 3 {
+			if !isRegular(options.GeoM.Element(i, j)) {
+				return
+			}
+		}
+	}
+	p.resetFlatPaths()
 
 	srcN := len(src.subPaths)
 	n := len(p.subPaths)

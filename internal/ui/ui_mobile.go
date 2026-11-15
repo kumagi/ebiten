@@ -17,7 +17,6 @@
 package ui
 
 import (
-	stdcontext "context"
 	"fmt"
 	"math"
 	"runtime"
@@ -71,9 +70,6 @@ func (u *UserInterface) Update() error {
 		return err
 	}
 
-	ctx, cancel := stdcontext.WithCancel(stdcontext.Background())
-	defer cancel()
-
 	// The game loop goroutine exits after reporting an error, so waiting only on renderCh would
 	// block forever if the error arrived after the check above.
 	select {
@@ -81,12 +77,8 @@ func (u *UserInterface) Update() error {
 	case err := <-u.errCh:
 		return err
 	}
-	go func() {
-		<-renderEndCh
-		cancel()
-	}()
 
-	graphicscommand.LoopRenderThread(ctx)
+	graphicscommand.LoopRenderThread(renderEndCh)
 	return nil
 }
 
@@ -118,6 +110,17 @@ type userInterfaceImpl struct {
 	inputState InputState
 	touches    []touchInClient
 	touchIDs   touchIDAllocator
+
+	// pinchDelta and rotationDelta are the amounts of the gestures the platform reported since the last
+	// frame. gestureCenterXInClient and gestureCenterYInClient are the point the platform reported they are
+	// done around, in device-independent pixels. gestureCenterReported reports whether a point is reported
+	// since the last frame. They are moved into inputState together at the next frame, so that a tick gets
+	// the amounts of the gestures with the point.
+	pinchDelta             float64
+	rotationDelta          float64
+	gestureCenterXInClient float64
+	gestureCenterYInClient float64
+	gestureCenterReported  bool
 
 	fpsMode  atomic.Int32
 	renderer atomic.Pointer[rendererHolder]
@@ -360,6 +363,24 @@ func (u *UserInterface) Monitor() *Monitor {
 
 func (u *UserInterface) UpdateInput(keys []KeyEvent, runes []rune, touches []TouchForInput, capsLock, numLock LockKeyState) {
 	u.updateInputStateFromOutside(keys, runes, touches, capsLock, numLock)
+	u.requestRenderForInput()
+}
+
+// UpdatePinch records the amount of a pinch gesture, as the change of the scale it asks for, and the point
+// it is done around in device-independent pixels.
+func (u *UserInterface) UpdatePinch(delta float64, centerX, centerY float64) {
+	u.updatePinchFromOutside(delta, centerX, centerY)
+	u.requestRenderForInput()
+}
+
+// UpdateRotation records the angle of a rotation gesture, in radians, and the point it is done around in
+// device-independent pixels. A positive value is clockwise.
+func (u *UserInterface) UpdateRotation(delta float64, centerX, centerY float64) {
+	u.updateRotationFromOutside(delta, centerX, centerY)
+	u.requestRenderForInput()
+}
+
+func (u *UserInterface) requestRenderForInput() {
 	if FPSModeType(u.fpsMode.Load()) == FPSModeVsyncOffMinimum {
 		// The renderer might not be set yet. In this case, the rendering request can be dropped
 		// as the first rendering happens when the renderer is set.

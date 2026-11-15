@@ -27,6 +27,10 @@ func terminate() error {
 
 	err = errors.Join(err, platformTerminate())
 
+	// Report the errors queued since the last event processing, including those raised while
+	// tearing down, as no later call can report them.
+	err = errors.Join(err, takeErrors())
+
 	_glfw.initialized = false
 
 	return err
@@ -59,15 +63,7 @@ func destroyCursors() error {
 func Init() (err error) {
 	defer func() {
 		if err != nil {
-			// InvalidValue can happen when specific joysticks are used. This issue
-			// will be fixed in GLFW 3.3.5. As a temporary fix, ignore this error.
-			// See go-gl/glfw#292, go-gl/glfw#324, and glfw/glfw#1763
-			// (#1229).
-			if errors.Is(err, InvalidValue) {
-				err = nil
-				return
-			}
-			_ = terminate()
+			err = errors.Join(err, terminate())
 		}
 	}()
 

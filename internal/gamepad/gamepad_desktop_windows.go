@@ -441,7 +441,7 @@ func supportsXInput(guid windows.GUID) (bool, error) {
 		ridl = buf
 	}
 
-	for i := 0; i < int(count); i++ {
+	for i := range int(count) {
 		if ridl[i].dwType != _RIM_TYPEHID {
 			continue
 		}
@@ -464,8 +464,8 @@ func supportsXInput(guid windows.GUID) (bool, error) {
 		// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getrawinputdeviceinfow
 		size = uint32(len(name))
 		if _, err := _GetRawInputDeviceInfoW(ridl[i].hDevice, _RIDI_DEVICENAME, unsafe.Pointer(&name[0]), &size); err != nil {
-			// The device can be removed between listing and querying it. As in GLFW, treat this as not XInput.
-			return false, nil
+			// Skip devices whose names cannot be queried and keep checking for XInput devices.
+			continue
 		}
 
 		if strings.Contains(windows.UTF16ToString(name[:]), "IG_") {
@@ -637,6 +637,8 @@ func (g *nativeGamepadDesktop) close() {
 		g.dinputDevice = nil
 	}
 	g.rumble.close()
+	// Get can return a gamepad just before disconnection closes it.
+	g.rumble = noRumbler{}
 }
 
 func (g *nativeGamepadDesktop) update(gamepads *gamepads) (err error) {

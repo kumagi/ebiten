@@ -25,6 +25,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/internal/color"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphics"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver"
+	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/readbackcache"
 	"github.com/hajimehoshi/ebiten/v2/internal/microsoftgdk"
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir"
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir/hlsl"
@@ -95,10 +96,20 @@ type graphics12 struct {
 	// frameStarted is true from Begin until the frame completes.
 	frameStarted bool
 
-	images         map[graphicsdriver.ImageID]*image12
-	screenImage    *image12
-	nextImageID    graphicsdriver.ImageID
-	disposedImages [frameCount][]*image12
+	images                   map[graphicsdriver.ImageID]*image12
+	screenImage              *image12
+	nextImageID              graphicsdriver.ImageID
+	disposedImages           [frameCount][]*image12
+	disposedReadbacks        [frameCount][]*readback12
+	disposedUploadingBuffers [frameCount][]*_ID3D12Resource
+
+	// readbackFence is signaled with an increasing value after each pixel read-back's copy.
+	readbackFence      *_ID3D12Fence
+	readbackFenceValue uint64
+
+	// readbackBuffers are idle READBACK-heap buffers for pixel read-backs available for reuse.
+	// Only completed read-backs enter this cache; pending read-backs own their buffers.
+	readbackBuffers readbackcache.Cache[uint64, *_ID3D12Resource]
 
 	shaders         map[graphicsdriver.ShaderID]*shader12
 	nextShaderID    graphicsdriver.ShaderID
@@ -394,6 +405,13 @@ func (g *graphics12) initializeMembers() (err error) {
 		g.fences[i] = f
 	}
 
+	// Create a fence for pixel read-backs.
+	rf, err := g.device.CreateFence(0, _D3D12_FENCE_FLAG_NONE)
+	if err != nil {
+		return err
+	}
+	g.readbackFence = rf
+
 	// Create command lists.
 	dcl, err := g.device.CreateCommandList(0, _D3D12_COMMAND_LIST_TYPE_DIRECT, g.drawCommandAllocators[0], nil)
 	if err != nil {
@@ -452,6 +470,11 @@ func (g *graphics12) releaseMembers() {
 	if g.drawCommandList != nil {
 		g.drawCommandList.Release()
 		g.drawCommandList = nil
+	}
+
+	if g.readbackFence != nil {
+		g.readbackFence.Release()
+		g.readbackFence = nil
 	}
 
 	for i := range frameCount {
@@ -778,6 +801,11 @@ func (g *graphics12) Begin() error {
 	}
 	g.frameStarted = true
 
+	// End has submitted all the commands, so the frame's resources can be reclaimed once the GPU finishes them.
+	if err := g.reclaimFrameResources(); err != nil {
+		return err
+	}
+
 	if g.prevBeginFrameIndex != g.frameIndex {
 		if err := g.drawCommandAllocators[g.frameIndex].Reset(); err != nil {
 			return err
@@ -810,7 +838,8 @@ func (g *graphics12) End(mode graphicsdriver.FlushMode) error {
 	// The swap chain might still be nil when Begin-End is invoked not by a frame (e.g., Image.At).
 
 	// As copyCommandList and drawCommandList are exclusive, the order should not matter here.
-	if err := g.flushCommandList(g.copyCommandList); err != nil {
+	// Submit pending copies without resetting their allocator or waiting for the GPU.
+	if err := g.submitCommandList(g.copyCommandList); err != nil {
 		return err
 	}
 	if err := g.copyCommandList.Close(); err != nil {
@@ -832,18 +861,14 @@ func (g *graphics12) End(mode graphicsdriver.FlushMode) error {
 	// would submit an empty command list and wait for the GPU for nothing.
 	g.needFlushDrawCommandList = false
 
-	// Release the vertex and index buffers when too many have been created.
-	// The threshold is an arbitrary number.
-	// Tests can submit command batches without completing a frame.
-	if len(g.vertices[g.frameIndex]) >= 16 {
-		if err := g.waitForCommandQueue(); err != nil {
+	// The frame continues after an intermediate flush. Signal the frame's fence so that the next Begin can tell
+	// whether the GPU has finished the commands submitted so far.
+	if mode == graphicsdriver.FlushModeIntermediate {
+		g.fenceValues[g.frameIndex]++
+		if err := g.commandQueue.Signal(g.fences[g.frameIndex], g.fenceValues[g.frameIndex]); err != nil {
 			return err
 		}
-		g.releaseResources(g.frameIndex)
-		g.resetVerticesAndIndices(g.frameIndex, true)
 	}
-
-	g.pipelineStates.resetConstantBuffers(g.frameIndex)
 
 	if mode == graphicsdriver.FlushModePresent {
 		if microsoftgdk.IsXbox() {
@@ -872,7 +897,8 @@ func (g *graphics12) End(mode graphicsdriver.FlushMode) error {
 		g.prevBeginFrameIndex = -1
 
 		g.releaseResources(g.frameIndex)
-		g.resetVerticesAndIndices(g.frameIndex, false)
+		g.resetVerticesAndIndices(g.frameIndex)
+		g.pipelineStates.resetFrame(g.frameIndex)
 
 		g.frameStarted = false
 	}
@@ -938,6 +964,17 @@ func (g *graphics12) moveToNextFrame() error {
 }
 
 func (g *graphics12) releaseResources(frameIndex int) {
+	for j, r := range g.disposedReadbacks[frameIndex] {
+		r.disposeImpl()
+		g.disposedReadbacks[frameIndex][j] = nil
+	}
+	g.disposedReadbacks[frameIndex] = g.disposedReadbacks[frameIndex][:0]
+	for j, b := range g.disposedUploadingBuffers[frameIndex] {
+		b.Release()
+		g.disposedUploadingBuffers[frameIndex][j] = nil
+	}
+	g.disposedUploadingBuffers[frameIndex] = g.disposedUploadingBuffers[frameIndex][:0]
+
 	for i, img := range g.disposedImages[frameIndex] {
 		img.disposeImpl()
 		g.disposedImages[frameIndex][i] = nil
@@ -951,51 +988,90 @@ func (g *graphics12) releaseResources(frameIndex int) {
 	g.disposedShaders[frameIndex] = g.disposedShaders[frameIndex][:0]
 }
 
-func (g *graphics12) resetVerticesAndIndices(frameIndex int, release bool) {
-	if release {
-		// An entry can be nil when SetVertices failed to create a buffer.
-		for i, v := range g.vertices[frameIndex] {
-			if v != nil {
-				v.release()
-			}
-			g.vertices[frameIndex][i] = nil
+// reclaimFrameResources makes the current frame's resources reusable if the GPU has finished the commands submitted
+// so far. Otherwise, it waits for the GPU first if too many vertex buffers have been created.
+func (g *graphics12) reclaimFrameResources() error {
+	if g.fences[g.frameIndex].GetCompletedValue() < g.fenceValues[g.frameIndex] {
+		// Tests can submit command batches without completing a frame. Wait for the GPU when too many command
+		// batches are pending, so that the resources stay bounded. The threshold is an arbitrary number.
+		if len(g.vertices[g.frameIndex]) < 16 {
+			return nil
+		}
+		if err := g.waitForCommandQueue(); err != nil {
+			return err
 		}
 	}
-	g.vertices[frameIndex] = g.vertices[frameIndex][:0]
+	g.releaseResources(g.frameIndex)
+	g.resetVerticesAndIndices(g.frameIndex)
+	g.pipelineStates.resetFrame(g.frameIndex)
+	return nil
+}
 
-	if release {
-		for i, idx := range g.indices[frameIndex] {
-			if idx != nil {
-				idx.release()
-			}
-			g.indices[frameIndex][i] = nil
-		}
-	}
+// resetVerticesAndIndices makes the vertex and index buffers of the frame reusable.
+// The GPU must have finished the commands using them.
+func (g *graphics12) resetVerticesAndIndices(frameIndex int) {
+	g.vertices[frameIndex] = g.vertices[frameIndex][:0]
 	g.indices[frameIndex] = g.indices[frameIndex][:0]
+}
+
+// executeCommandList submits pending commands without waiting or resetting their allocator.
+func (g *graphics12) executeCommandList(commandList *_ID3D12GraphicsCommandList) (bool, error) {
+	switch commandList {
+	case g.drawCommandList:
+		if !g.needFlushDrawCommandList {
+			return false, nil
+		}
+		g.needFlushDrawCommandList = false
+	case g.copyCommandList:
+		if !g.needFlushCopyCommandList {
+			return false, nil
+		}
+		g.needFlushCopyCommandList = false
+	}
+
+	if err := commandList.Close(); err != nil {
+		return false, g.withDeviceRemovedReason(err)
+	}
+
+	g.commandQueue.ExecuteCommandLists([]*_ID3D12GraphicsCommandList{commandList})
+
+	return true, nil
+}
+
+// submitCommandList submits the pending commands without waiting for the GPU, and reopens the command list.
+func (g *graphics12) submitCommandList(commandList *_ID3D12GraphicsCommandList) error {
+	submitted, err := g.executeCommandList(commandList)
+	if err != nil {
+		return err
+	}
+	if !submitted {
+		return nil
+	}
+	switch commandList {
+	case g.drawCommandList:
+		return commandList.Reset(g.drawCommandAllocators[g.frameIndex], nil)
+	case g.copyCommandList:
+		// Upload buffers still referenced by this submission cannot be released or reused yet.
+		for _, img := range g.images {
+			g.disposedUploadingBuffers[g.frameIndex] = append(g.disposedUploadingBuffers[g.frameIndex], img.uploadingStagingBuffers...)
+			img.uploadingStagingBuffers = nil
+		}
+		return commandList.Reset(g.copyCommandAllocators[g.frameIndex], nil)
+	}
+	return nil
 }
 
 // flushCommandList executes commands in the command list and waits for its completion.
 //
 // TODO: This is not efficient. Is it possible to make two command lists work in parallel?
 func (g *graphics12) flushCommandList(commandList *_ID3D12GraphicsCommandList) error {
-	switch commandList {
-	case g.drawCommandList:
-		if !g.needFlushDrawCommandList {
-			return nil
-		}
-		g.needFlushDrawCommandList = false
-	case g.copyCommandList:
-		if !g.needFlushCopyCommandList {
-			return nil
-		}
-		g.needFlushCopyCommandList = false
+	submitted, err := g.executeCommandList(commandList)
+	if err != nil {
+		return err
 	}
-
-	if err := commandList.Close(); err != nil {
-		return g.withDeviceRemovedReason(err)
+	if !submitted {
+		return nil
 	}
-
-	g.commandQueue.ExecuteCommandLists([]*_ID3D12GraphicsCommandList{commandList})
 
 	if err := g.waitForCommandQueue(); err != nil {
 		return err
@@ -1165,7 +1241,7 @@ func (g *graphics12) NewImage(width, height int) (graphicsdriver.Image, error) {
 		Width:            uint64(graphics.InternalImageSize(width)),
 		Height:           uint32(graphics.InternalImageSize(height)),
 		DepthOrArraySize: 1,
-		MipLevels:        0,
+		MipLevels:        1,
 		Format:           _DXGI_FORMAT_R8G8B8A8_UNORM,
 		SampleDesc: _DXGI_SAMPLE_DESC{
 			Count:   1,
@@ -1217,7 +1293,7 @@ func (g *graphics12) NewScreenFramebufferImage(width, height int) (graphicsdrive
 		width:    width,
 		height:   height,
 		screen:   true,
-		states:   [frameCount]_D3D12_RESOURCE_STATES{0, 0},
+		states:   [frameCount]_D3D12_RESOURCE_STATES{_D3D12_RESOURCE_STATE_PRESENT(), _D3D12_RESOURCE_STATE_PRESENT()},
 	}
 	g.addImage(i)
 	g.screenImage = i
@@ -1290,17 +1366,10 @@ func (g *graphics12) DrawTriangles(dstID graphicsdriver.ImageID, srcs [graphics.
 		return fmt.Errorf("directx: shader ID is invalid")
 	}
 
-	if err := g.flushCommandList(g.copyCommandList); err != nil {
+	// Submit earlier copies without resetting their allocator or waiting for the GPU.
+	// Both lists are DIRECT lists on one queue, so submission order is execution order.
+	if err := g.submitCommandList(g.copyCommandList); err != nil {
 		return err
-	}
-
-	// Release constant buffers when too many ones will be created.
-	numPipelines := 1
-	if len(g.pipelineStates.constantBuffers[g.frameIndex])+numPipelines > numDescriptorsPerFrame {
-		if err := g.flushCommandList(g.drawCommandList); err != nil {
-			return err
-		}
-		g.pipelineStates.releaseConstantBuffers(g.frameIndex)
 	}
 
 	dst := g.images[dstID]

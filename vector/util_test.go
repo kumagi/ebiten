@@ -15,6 +15,7 @@
 package vector_test
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/color"
@@ -23,12 +24,10 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	t "github.com/hajimehoshi/ebiten/v2/internal/testing"
-	"github.com/hajimehoshi/ebiten/v2/internal/ui"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 func TestMain(m *testing.M) {
-	ui.SetPanicOnErrorOnReadingPixelsForTesting(true)
 	ebiten.SetWindowVisible(false)
 	t.MainWithRunLoop(m)
 }
@@ -119,7 +118,7 @@ func TestCircleVertexCount(t *testing.T) {
 		{
 			name:   "small",
 			radius: 0.5,
-			want:   2,
+			want:   3,
 		},
 		{
 			name:   "ordinary",
@@ -556,5 +555,322 @@ func TestStrokeRectThickStrokeWideOffset(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestStrokeRectNegativeSize(t *testing.T) {
+	tests := []struct {
+		name   string
+		x      float32
+		y      float32
+		width  float32
+		height float32
+	}{
+		{
+			name:   "negative width",
+			x:      44,
+			y:      24,
+			width:  -20,
+			height: 16,
+		},
+		{
+			name:   "negative height",
+			x:      24,
+			y:      40,
+			width:  20,
+			height: -16,
+		},
+		{
+			name:   "negative width and height",
+			x:      44,
+			y:      40,
+			width:  -20,
+			height: -16,
+		},
+	}
+	for _, antialias := range []bool{false, true} {
+		for _, strokeWidth := range []float32{2, 24} {
+			t.Run(fmt.Sprintf("antialias=%v/strokeWidth=%v", antialias, strokeWidth), func(t *testing.T) {
+				reference := ebiten.NewImage(64, 64)
+				defer reference.Deallocate()
+				vector.StrokeRect(reference, 24, 24, 20, 16, strokeWidth, color.White, antialias)
+				want := make([]byte, 64*64*4)
+				reference.ReadPixels(want)
+				for _, test := range tests {
+					t.Run(test.name, func(t *testing.T) {
+						dst := ebiten.NewImage(64, 64)
+						defer dst.Deallocate()
+						vector.StrokeRect(dst, test.x, test.y, test.width, test.height, strokeWidth, color.White, antialias)
+						got := make([]byte, len(want))
+						dst.ReadPixels(got)
+						if !bytes.Equal(got, want) {
+							t.Error("negative-size rectangle differs from the same rectangle with positive size")
+						}
+					})
+				}
+			})
+		}
+	}
+}
+
+func TestFillRectNegativeSize(t *testing.T) {
+	for _, antialias := range []bool{false, true} {
+		for _, draw := range []struct {
+			name string
+			fill func(*ebiten.Image, float32, float32, float32, float32, color.Color, bool)
+		}{
+			{
+				name: "FillRect",
+				fill: vector.FillRect,
+			},
+			{
+				name: "DrawFilledRect",
+				fill: vector.DrawFilledRect,
+			},
+		} {
+			t.Run(fmt.Sprintf("%s/antialias=%t", draw.name, antialias), func(t *testing.T) {
+				clr := color.RGBA{R: 0x60, G: 0x30, B: 0x18, A: 0x80}
+				reference := ebiten.NewImage(32, 32)
+				defer reference.Deallocate()
+				vector.FillRect(reference, 8.25, 8.5, 16, 12, clr, antialias)
+				want := make([]byte, 32*32*4)
+				reference.ReadPixels(want)
+				for _, signs := range [][2]float32{{-1, 1}, {1, -1}, {-1, -1}} {
+					t.Run(fmt.Sprintf("signs=%v", signs), func(t *testing.T) {
+						x, y := float32(8.25), float32(8.5)
+						if signs[0] < 0 {
+							x += 16
+						}
+						if signs[1] < 0 {
+							y += 12
+						}
+						dst := ebiten.NewImage(32, 32)
+						defer dst.Deallocate()
+						draw.fill(dst, x, y, 16*signs[0], 12*signs[1], clr, antialias)
+						got := make([]byte, len(want))
+						dst.ReadPixels(got)
+						if !bytes.Equal(got, want) {
+							t.Error("negative-size rectangle differs from the same rectangle with positive size")
+						}
+					})
+				}
+			})
+		}
+	}
+}
+
+func TestZeroSizeDrawing(t *testing.T) {
+	for _, aa := range []bool{false, true} {
+		for _, zero := range []float32{0, float32(math.Copysign(0, -1))} {
+			t.Run(fmt.Sprintf("AA=%v/zero=%v", aa, zero), func(t *testing.T) {
+				dst := ebiten.NewImage(32, 32)
+				defer dst.Deallocate()
+				dst.Fill(color.RGBA{R: 40, G: 80, B: 120, A: 255})
+				before := make([]byte, 32*32*4)
+				dst.ReadPixels(before)
+				for _, size := range []float32{-8, zero, 8} {
+					vector.FillRect(dst, 16, 16, zero, size, color.White, aa)
+					vector.FillRect(dst, 16, 16, size, zero, color.White, aa)
+					vector.DrawFilledRect(dst, 16, 16, zero, size, color.White, aa)
+					vector.DrawFilledRect(dst, 16, 16, size, zero, color.White, aa)
+				}
+				for _, width := range []float32{4, -2, float32(math.NaN()), float32(math.Inf(1))} {
+					vector.StrokeRect(dst, 16, 16, zero, zero, width, color.White, aa)
+					vector.StrokeCircle(dst, 16, 16, zero, width, color.White, aa)
+				}
+				vector.FillCircle(dst, 16, 16, zero, color.White, aa)
+				vector.DrawFilledCircle(dst, 16, 16, zero, color.White, aa)
+				after := make([]byte, len(before))
+				dst.ReadPixels(after)
+				if !bytes.Equal(after, before) {
+					t.Error("zero-size geometry changed the destination")
+				}
+			})
+		}
+	}
+}
+
+func TestStrokeRectZeroDimension(t *testing.T) {
+	for _, aa := range []bool{false, true} {
+		for _, zero := range []float32{0, float32(math.Copysign(0, -1))} {
+			for _, length := range []float32{-8, 8} {
+				for _, vertical := range []bool{false, true} {
+					t.Run(fmt.Sprintf("AA=%v/zero=%v/length=%v/vertical=%v", aa, zero, length, vertical), func(t *testing.T) {
+						dst := ebiten.NewImage(32, 32)
+						defer dst.Deallocate()
+						width, height := length, zero
+						if vertical {
+							width, height = zero, length
+						}
+						clr := color.RGBA{R: 64, G: 32, B: 16, A: 128}
+						vector.StrokeRect(dst, 16, 16, width, height, 4, clr, aa)
+						pixels := make([]byte, 32*32*4)
+						dst.ReadPixels(pixels)
+						for y := range 32 {
+							for x := range 32 {
+								along, across := x, y
+								if vertical {
+									along, across = y, x
+								}
+								var want color.RGBA
+								if along >= min(16, 16+int(length)) && along < max(16, 16+int(length)) && across >= 14 && across < 18 {
+									want = clr
+								}
+								i := 4 * (32*y + x)
+								got := color.RGBA{R: pixels[i], G: pixels[i+1], B: pixels[i+2], A: pixels[i+3]}
+								if got != want {
+									t.Errorf("pixel (%d, %d): got %v, want %v", x, y, got, want)
+									return
+								}
+							}
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+func checkStrokeWidthPanic(t *testing.T, width float32, f func()) {
+	t.Helper()
+	defer func() {
+		want := width < 0 && !math.IsInf(float64(width), -1)
+		if got := recover() != nil; got != want {
+			t.Errorf("panicked: %v, want: %v", got, want)
+		}
+	}()
+	f()
+}
+
+func TestInvalidStrokeWidth(t *testing.T) {
+	var path vector.Path
+	path.MoveTo(4, 4)
+	path.LineTo(28, 28)
+	draws := []struct {
+		name string
+		draw func(*ebiten.Image, float32, bool)
+	}{
+		{
+			name: "Line",
+			draw: func(dst *ebiten.Image, width float32, aa bool) {
+				vector.StrokeLine(dst, 4, 4, 28, 28, width, color.White, aa)
+			},
+		},
+		{
+			name: "Rect",
+			draw: func(dst *ebiten.Image, width float32, aa bool) {
+				vector.StrokeRect(dst, 4, 4, 24, 24, width, color.White, aa)
+			},
+		},
+		{
+			name: "Circle",
+			draw: func(dst *ebiten.Image, width float32, aa bool) {
+				vector.StrokeCircle(dst, 16, 16, 12, width, color.White, aa)
+			},
+		},
+		{
+			name: "Path",
+			draw: func(dst *ebiten.Image, width float32, aa bool) {
+				vector.StrokePath(dst, &path, &vector.StrokeOptions{
+					Width: width,
+				}, &vector.DrawPathOptions{
+					AntiAlias: aa,
+				})
+			},
+		},
+	}
+	for _, draw := range draws {
+		for _, aa := range []bool{false, true} {
+			for _, width := range []float32{0, float32(math.Copysign(0, -1)), -2, float32(math.NaN()), float32(math.Inf(1)), float32(math.Inf(-1))} {
+				t.Run(fmt.Sprintf("%s/AA=%v/width=%v", draw.name, aa, width), func(t *testing.T) {
+					dst := ebiten.NewImage(32, 32)
+					defer dst.Deallocate()
+					dst.Fill(color.RGBA{R: 40, G: 80, B: 120, A: 255})
+					before := make([]byte, 32*32*4)
+					dst.ReadPixels(before)
+					checkStrokeWidthPanic(t, width, func() { draw.draw(dst, width, aa) })
+					after := make([]byte, len(before))
+					dst.ReadPixels(after)
+					if !bytes.Equal(after, before) {
+						t.Error("invalid stroke width changed the destination")
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestDrawingNonFiniteGeometry(t *testing.T) {
+	draws := []struct {
+		name string
+		draw func(*ebiten.Image, [4]float32, float32, bool)
+	}{
+		{
+			name: "StrokeLine",
+			draw: func(dst *ebiten.Image, a [4]float32, width float32, aa bool) {
+				vector.StrokeLine(dst, a[0], a[1], a[2], a[3], width, color.White, aa)
+			},
+		},
+		{
+			name: "FillRect",
+			draw: func(dst *ebiten.Image, a [4]float32, _ float32, aa bool) {
+				vector.FillRect(dst, a[0], a[1], a[2], a[3], color.White, aa)
+			},
+		},
+		{
+			name: "DrawFilledRect",
+			draw: func(dst *ebiten.Image, a [4]float32, _ float32, aa bool) {
+				vector.DrawFilledRect(dst, a[0], a[1], a[2], a[3], color.White, aa)
+			},
+		},
+		{
+			name: "StrokeRect",
+			draw: func(dst *ebiten.Image, a [4]float32, width float32, aa bool) {
+				vector.StrokeRect(dst, a[0], a[1], a[2], a[3], width, color.White, aa)
+			},
+		},
+	}
+	for _, draw := range draws {
+		for _, aa := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/AA=%v", draw.name, aa), func(t *testing.T) {
+				dst := ebiten.NewImage(32, 32)
+				defer dst.Deallocate()
+				dst.Fill(color.RGBA{R: 40, G: 80, B: 120, A: 255})
+				before := make([]byte, 32*32*4)
+				dst.ReadPixels(before)
+				for _, value := range []float32{float32(math.NaN()), float32(math.Inf(1)), float32(math.Inf(-1))} {
+					for i := range 4 {
+						args := [4]float32{4, 6, 20, 18}
+						args[i] = value
+						draw.draw(dst, args, 2, aa)
+						// Geometry rejection precedes stroke-width validation.
+						checkRadiusPanic(t, false, func() { draw.draw(dst, args, -1, aa) })
+					}
+				}
+				after := make([]byte, len(before))
+				dst.ReadPixels(after)
+				if !bytes.Equal(after, before) {
+					t.Error("non-finite geometry changed the destination")
+				}
+			})
+		}
+	}
+}
+
+func TestSmallCirclesNonAntiAlias(t *testing.T) {
+	for _, stroke := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stroke=%t", stroke), func(t *testing.T) {
+			dst := ebiten.NewImage(16, 16)
+			defer dst.Deallocate()
+			if stroke {
+				// The pixel center is between the inner and outer boundaries of the ring.
+				vector.StrokeCircle(dst, 8.1, 8.5, 0.4, 0.4, color.White, false)
+			} else {
+				vector.FillCircle(dst, 8.5, 8.5, 0.5, color.White, false)
+			}
+			if got := dst.At(8, 8).(color.RGBA); got != (color.RGBA{R: 255, G: 255, B: 255, A: 255}) {
+				t.Errorf("pixel inside the circle: got %v, want white", got)
+			}
+		})
 	}
 }

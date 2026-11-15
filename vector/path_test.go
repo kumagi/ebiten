@@ -15,9 +15,11 @@
 package vector_test
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"math"
+	"reflect"
 	"runtime"
 	"sync"
 	"testing"
@@ -601,6 +603,139 @@ func TestFillPathFillRule(t *testing.T) {
 
 			if got, want := dst.At(8, 8), tc.expected; got != want {
 				t.Errorf("got: %v, want: %v", got, want)
+			}
+		})
+	}
+}
+
+func TestFillPathManyCrossings(t *testing.T) {
+	const teeth = 100
+	const width, height = 8*teeth - 4, 48
+
+	var comb vector.Path
+	comb.MoveTo(0, 0)
+	comb.LineTo(0, height)
+	comb.LineTo(width, height)
+	comb.LineTo(width, 0)
+	for k := teeth - 1; k >= 1; k-- {
+		comb.LineTo(float32(8*k), 0)
+		comb.LineTo(float32(8*k), 40)
+		comb.LineTo(float32(8*k-4), 40)
+		comb.LineTo(float32(8*k-4), 0)
+	}
+	comb.Close()
+
+	var rect vector.Path
+	rect.MoveTo(0, 0)
+	rect.LineTo(width, 0)
+	rect.LineTo(width, height)
+	rect.LineTo(0, height)
+	rect.Close()
+
+	paintImage := ebiten.NewImage(width, height)
+	defer paintImage.Deallocate()
+	paintImage.Fill(color.White)
+
+	for _, kind := range []string{"fill", "clip", "paint"} {
+		for _, fillRule := range []vector.FillRule{vector.FillRuleNonZero, vector.FillRuleEvenOdd} {
+			for _, antialias := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/rule=%d/antialias=%t", kind, fillRule, antialias), func(t *testing.T) {
+					dst := ebiten.NewImage(width, height)
+					defer dst.Deallocate()
+
+					drawOp := &vector.DrawPathOptions{
+						AntiAlias: antialias,
+					}
+					switch kind {
+					case "fill":
+						vector.FillPath(dst, &comb, &vector.FillOptions{
+							FillRule: fillRule,
+						}, drawOp)
+					case "clip":
+						drawOp.Clip = &vector.PathClip{
+							Path:     &comb,
+							FillRule: fillRule,
+						}
+						vector.FillPath(dst, &rect, nil, drawOp)
+					case "paint":
+						drawOp.Paint = &vector.ImagePaint{
+							Image: paintImage,
+						}
+						vector.FillPath(dst, &comb, &vector.FillOptions{
+							FillRule: fillRule,
+						}, drawOp)
+					}
+
+					var mismatches int
+					check := func(x, y int, want color.RGBA) {
+						got := dst.At(x, y)
+						if got == want {
+							return
+						}
+						if mismatches == 0 {
+							t.Errorf("dst.At(%d, %d): got: %v, want: %v", x, y, got, want)
+						}
+						mismatches++
+					}
+					for k := range teeth {
+						for _, x := range []int{8*k + 1, 8*k + 2} {
+							for y := 1; y < height-1; y++ {
+								check(x, y, color.RGBA{0xff, 0xff, 0xff, 0xff})
+							}
+						}
+						if k == teeth-1 {
+							continue
+						}
+						for _, x := range []int{8*k + 5, 8*k + 6} {
+							for y := 1; y < 39; y++ {
+								check(x, y, color.RGBA{})
+							}
+						}
+					}
+					if mismatches > 0 {
+						t.Errorf("%d pixels mismatched", mismatches)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestStrokePathManyCrossings(t *testing.T) {
+	const segments = 40
+
+	var p vector.Path
+	p.MoveTo(4, 48)
+	for i := 1; i <= segments; i++ {
+		y := float32(88)
+		if i%2 == 0 {
+			y = 8
+		}
+		p.LineTo(float32(8*i), y)
+	}
+
+	for _, antialias := range []bool{false, true} {
+		t.Run(fmt.Sprintf("antialias=%t", antialias), func(t *testing.T) {
+			dst := ebiten.NewImage(8*segments+8, 96)
+			defer dst.Deallocate()
+
+			vector.StrokePath(dst, &p, &vector.StrokeOptions{
+				Width: 4,
+			}, &vector.DrawPathOptions{
+				AntiAlias: antialias,
+			})
+
+			for i := 1; i < segments; i++ {
+				for _, x := range []int{8*i + 3, 8*i + 4} {
+					if got, want := dst.At(x, 48), (color.RGBA{0xff, 0xff, 0xff, 0xff}); got != want {
+						t.Errorf("dst.At(%d, 48): got: %v, want: %v", x, got, want)
+					}
+				}
+				for _, x := range []int{8*i + 7, 8*i + 8} {
+					if got, want := dst.At(x, 48), (color.RGBA{}); got != want {
+						t.Errorf("dst.At(%d, 48): got: %v, want: %v", x, got, want)
+					}
+				}
 			}
 		})
 	}
@@ -1202,5 +1337,157 @@ func TestAddStrokeAllocs(t *testing.T) {
 				t.Errorf("allocations: got: %v, want: 0", got)
 			}
 		})
+	}
+}
+
+func TestAddStrokeInvalidWidth(t *testing.T) {
+	var src vector.Path
+	src.MoveTo(4, 4)
+	src.LineTo(28, 28)
+	for _, width := range []float32{0, -2, float32(math.NaN()), float32(math.Inf(1)), float32(math.Inf(-1))} {
+		var dst vector.Path
+		dst.MoveTo(1, 2)
+		dst.LineTo(3, 4)
+		before := vector.PathOperationsString(&dst)
+		checkStrokeWidthPanic(t, width, func() {
+			dst.AddStroke(&src, &vector.AddStrokeOptions{
+				StrokeOptions: vector.StrokeOptions{
+					Width: width,
+				},
+			})
+		})
+		if got := vector.PathOperationsString(&dst); got != before {
+			t.Errorf("width %v changed the path", width)
+		}
+		// Continuing the path checks that rejection preserved its current position.
+		dst.LineTo(5, 6)
+		var want vector.Path
+		want.MoveTo(1, 2)
+		want.LineTo(3, 4)
+		want.LineTo(5, 6)
+		if vector.PathOperationsString(&dst) != vector.PathOperationsString(&want) {
+			t.Errorf("width %v changed subsequent path operations", width)
+		}
+	}
+}
+
+func TestPathNonFiniteArguments(t *testing.T) {
+	operations := []struct {
+		name string
+		args []float32
+		call func(*vector.Path, []float32)
+	}{
+		{
+			name: "MoveTo",
+			args: []float32{12, 18},
+			call: func(p *vector.Path, a []float32) { p.MoveTo(a[0], a[1]) },
+		},
+		{
+			name: "LineTo",
+			args: []float32{12, 18},
+			call: func(p *vector.Path, a []float32) { p.LineTo(a[0], a[1]) },
+		},
+		{
+			name: "QuadTo",
+			args: []float32{12, 18, 24, 8},
+			call: func(p *vector.Path, a []float32) { p.QuadTo(a[0], a[1], a[2], a[3]) },
+		},
+		{
+			name: "CubicTo",
+			args: []float32{12, 18, 24, 8, 28, 20},
+			call: func(p *vector.Path, a []float32) { p.CubicTo(a[0], a[1], a[2], a[3], a[4], a[5]) },
+		},
+	}
+	for _, operation := range operations {
+		for _, state := range []string{"empty", "move", "open", "closed"} {
+			t.Run(operation.name+"/"+state, func(t *testing.T) {
+				var got, want vector.Path
+				for _, p := range []*vector.Path{&got, &want} {
+					if state != "empty" {
+						p.MoveTo(2, 3)
+					}
+					if state == "open" || state == "closed" {
+						p.LineTo(20, 4)
+						p.LineTo(18, 16)
+					}
+					if state == "closed" {
+						p.Close()
+					}
+				}
+				// Populate the legacy cache before ignored operations.
+				got.AppendVerticesAndIndicesForFilling(nil, nil)
+				for _, value := range []float32{float32(math.NaN()), float32(math.Inf(1)), float32(math.Inf(-1))} {
+					for i := range operation.args {
+						args := append([]float32(nil), operation.args...)
+						args[i] = value
+						operation.call(&got, args)
+					}
+				}
+				// Continuation exposes changes to the current position and closure.
+				for _, p := range []*vector.Path{&got, &want} {
+					p.LineTo(25, 25)
+					p.LineTo(4, 28)
+				}
+				gotVertices, gotIndices := got.AppendVerticesAndIndicesForFilling(nil, nil)
+				wantVertices, wantIndices := want.AppendVerticesAndIndicesForFilling(nil, nil)
+				if !reflect.DeepEqual(gotVertices, wantVertices) || !reflect.DeepEqual(gotIndices, wantIndices) {
+					t.Error("ignored geometry changed the continued path")
+				}
+				if got, want := got.Bounds(), want.Bounds(); got != want {
+					t.Errorf("Bounds: got %v, want %v", got, want)
+				}
+			})
+		}
+	}
+}
+
+func TestPathNonFiniteTransform(t *testing.T) {
+	for _, stroke := range []bool{false, true} {
+		for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+			var got, want vector.Path
+			for _, p := range []*vector.Path{&got, &want} {
+				p.MoveTo(2, 3)
+				p.LineTo(20, 4)
+			}
+			if stroke {
+				var matrix ebiten.GeoM
+				matrix.SetElement(0, 0, value)
+				checkStrokeWidthPanic(t, -1, func() {
+					got.AddStroke(&got, &vector.AddStrokeOptions{
+						StrokeOptions: vector.StrokeOptions{
+							Width: -1,
+						},
+						GeoM: matrix,
+					})
+				})
+			}
+			for i := range 2 {
+				for j := range 3 {
+					var matrix ebiten.GeoM
+					matrix.SetElement(i, j, value)
+					if stroke {
+						got.AddStroke(&got, &vector.AddStrokeOptions{
+							StrokeOptions: vector.StrokeOptions{
+								Width: 2,
+							},
+							GeoM: matrix,
+						})
+					} else {
+						got.AddPath(&got, &vector.AddPathOptions{
+							GeoM: matrix,
+						})
+					}
+				}
+			}
+			for _, p := range []*vector.Path{&got, &want} {
+				p.LineTo(25, 25)
+				p.Close()
+			}
+			gotVertices, gotIndices := got.AppendVerticesAndIndicesForFilling(nil, nil)
+			wantVertices, wantIndices := want.AppendVerticesAndIndicesForFilling(nil, nil)
+			if !reflect.DeepEqual(gotVertices, wantVertices) || !reflect.DeepEqual(gotIndices, wantIndices) {
+				t.Errorf("stroke=%v, transform=%v: ignored transform changed the continued path", stroke, value)
+			}
+		}
 	}
 }

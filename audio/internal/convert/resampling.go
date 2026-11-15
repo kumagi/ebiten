@@ -20,6 +20,7 @@ import (
 	"io"
 	"math"
 	"sync"
+	"sync/atomic"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/mathutil"
 )
@@ -81,6 +82,9 @@ func sinc01(x float64) float64 {
 	return fastSin01(x) / (x * 2 * math.Pi)
 }
 
+// errSourceNotReady defers output until a source block can be completed.
+var errSourceNotReady = errors.New("convert: source made no progress")
+
 type Resampling struct {
 	source io.Reader
 
@@ -89,7 +93,7 @@ type Resampling struct {
 
 	// derivedSrcLength is the length in bytes determined when the source reaches its end.
 	// derivedSrcLength is used only when declaredSrcLength is -1. -1 indicates the length is not determined yet.
-	derivedSrcLength int64
+	derivedSrcLength atomic.Int64
 
 	// srcReadEnd is the offset in bytes just past the last byte the source has delivered so far.
 	srcReadEnd int64
@@ -109,7 +113,7 @@ type Resampling struct {
 	lruSrcBlocks          []int64
 	eof                   bool
 
-	// partialSrcBuf is the beginning of the block partialSrcBlock read before a source error.
+	// partialSrcBuf is the beginning of the block partialSrcBlock read before a source error or an empty read.
 	// The source position is right after it. partialSrcBuf is nil when there is no such block.
 	partialSrcBlock int64
 	partialSrcBuf   []byte
@@ -124,7 +128,6 @@ func NewResampling(source io.Reader, length int64, from, to int, bitDepthInBytes
 	r := &Resampling{
 		source:                source,
 		declaredSrcLength:     length,
-		derivedSrcLength:      -1,
 		from:                  from,
 		bitDepthInBytes:       bitDepthInBytes,
 		to:                    to,
@@ -134,6 +137,7 @@ func NewResampling(source io.Reader, length int64, from, to int, bitDepthInBytes
 		srcBufL:               map[int64][]float64{},
 		srcBufR:               map[int64][]float64{},
 	}
+	r.derivedSrcLength.Store(-1)
 	return r
 }
 
@@ -156,7 +160,7 @@ func (r *Resampling) srcLength() int64 {
 	if r.declaredSrcLength >= 0 {
 		return r.declaredSrcLength
 	}
-	return r.derivedSrcLength
+	return r.derivedSrcLength.Load()
 }
 
 // resampledLength returns the length of the resampled stream in bytes for a source stream of the given length.
@@ -196,14 +200,22 @@ func (r *Resampling) src(i int64) (float64, float64, error) {
 		for c < len(buf) {
 			n, err := r.source.Read(buf[c:])
 			c += n
+			if n == 0 && err == nil {
+				// Preserve the existing silence padding past a declared end.
+				if length := r.srcLength(); length >= 0 && blockStart+int64(c) >= length {
+					r.lastReadSrcBlockValid = false
+					break
+				}
+				err = errSourceNotReady
+			}
 			if err != nil {
 				if err == io.EOF {
 					eof = true
 					// Determine the source length the first time the source reaches its end.
 					// A block beyond the bytes delivered so far is reached only by seeking, and its end
 					// without any byte tells only that the source ends at or before the block.
-					if r.declaredSrcLength < 0 && r.derivedSrcLength < 0 && (c > 0 || blockStart <= r.srcReadEnd) {
-						r.derivedSrcLength = blockStart + int64(c)
+					if r.declaredSrcLength < 0 && r.derivedSrcLength.Load() < 0 && (c > 0 || blockStart <= r.srcReadEnd) {
+						r.derivedSrcLength.Store(blockStart + int64(c))
 					}
 					r.lastReadSrcBlock = nextPos
 					r.lastReadSrcBlockValid = true
@@ -211,17 +223,14 @@ func (r *Resampling) src(i int64) (float64, float64, error) {
 				}
 				r.lastReadSrcBlockValid = false
 				// Keep the bytes read so far, as a source that is not an io.Seeker cannot deliver them again.
-				if c > 0 {
+				if c > 0 || err == errSourceNotReady {
 					r.partialSrcBlock = nextPos
 					r.partialSrcBuf = buf[:c]
-					r.srcReadEnd = max(r.srcReadEnd, blockStart+int64(c))
+					if c > 0 {
+						r.srcReadEnd = max(r.srcReadEnd, blockStart+int64(c))
+					}
 				}
 				return 0, 0, err
-			}
-			// A source making no progress must not spin here.
-			if n == 0 {
-				r.lastReadSrcBlockValid = false
-				break
 			}
 		}
 		if c == len(buf) {
@@ -331,6 +340,9 @@ func (r *Resampling) Read(b []byte) (int, error) {
 			// Resolve EOF through the source cache without advancing the output position.
 			_, _, err := r.at(r.pos / int64(size))
 			if err != nil && err != io.EOF {
+				if err == errSourceNotReady {
+					err = io.ErrShortBuffer
+				}
 				return 0, err
 			}
 			if (err == io.EOF && r.srcLength() < 0) || (r.srcLength() >= 0 && r.pos >= r.Length()) {
@@ -348,6 +360,9 @@ func (r *Resampling) Read(b []byte) (int, error) {
 			ldata, rdata, err := r.at(r.pos/int64(size) + int64(i))
 			if err != nil && err != io.EOF {
 				r.pos += int64(size * i)
+				if err == errSourceNotReady {
+					err = nil
+				}
 				return size * i, err
 			}
 			// EOF from the at method indicates that the source reaches the end, and doesn't indicate the resampled data ends.
@@ -379,6 +394,9 @@ func (r *Resampling) Read(b []byte) (int, error) {
 			ldata, rdata, err := r.at(r.pos/int64(size) + int64(i))
 			if err != nil && err != io.EOF {
 				r.pos += int64(size * i)
+				if err == errSourceNotReady {
+					err = nil
+				}
 				return size * i, err
 			}
 			if err == io.EOF && r.srcLength() < 0 {

@@ -113,7 +113,7 @@ func (w *Window) choosePixelFormat(ctxconfig *ctxconfig, fbconfig_ *fbconfig) (i
 	}
 
 	usableConfigs := make([]*fbconfig, 0, nativeCount)
-	for i := int32(0); i < nativeCount; i++ {
+	for i := range nativeCount {
 		var u fbconfig
 		pixelFormat := uintptr(i) + 1
 
@@ -271,7 +271,7 @@ func swapBuffersWGL(window *Window) error {
 
 		// HACK: Use DwmFlush when desktop composition is enabled
 		if enabled {
-			for i := 0; i < window.context.platform.interval; i++ {
+			for range window.context.platform.interval {
 				// Ignore an error from DWM functions as they might not be implemented e.g. on Proton (#2113).
 				_ = _DwmFlush()
 			}
@@ -367,7 +367,7 @@ func initWGL() error {
 	// opengl32.dll must be loaded first. The loading state might affect Windows APIs.
 	// This is needed at least before SetPixelFormat.
 	if err := opengl32.Load(); err != nil {
-		return err
+		return fmt.Errorf("glfw: %w", err)
 	}
 
 	// NOTE: A dummy context has to be created for opengl32.dll to load the
@@ -406,9 +406,7 @@ func initWGL() error {
 	prc := wglGetCurrentContext()
 
 	if err := wglMakeCurrent(dc, rc); err != nil {
-		_ = wglMakeCurrent(pdc, prc)
-		_ = wglDeleteContext(rc)
-		return err
+		return errors.Join(err, wglMakeCurrent(pdc, prc), wglDeleteContext(rc))
 	}
 
 	// NOTE: Functions must be loaded first as they're needed to retrieve the
@@ -433,8 +431,7 @@ func initWGL() error {
 	_glfw.platformContext.ARB_context_flush_control = extensionSupportedWGL("WGL_ARB_context_flush_control")
 
 	if err := wglMakeCurrent(pdc, prc); err != nil {
-		_ = wglDeleteContext(rc)
-		return err
+		return errors.Join(err, wglDeleteContext(rc))
 	}
 	if err := wglDeleteContext(rc); err != nil {
 		return err
@@ -474,15 +471,15 @@ func (w *Window) createContextWGL(ctxconfig *ctxconfig, fbconfig *fbconfig) erro
 
 	if ctxconfig.client == OpenGLAPI {
 		if ctxconfig.forward && !_glfw.platformContext.ARB_create_context {
-			return fmt.Errorf("glfw: a forward compatible OpenGL context requested but WGL_ARB_create_context is unavailable: %w", VersionUnavailable)
+			return fmt.Errorf("%w: a forward compatible OpenGL context requested but WGL_ARB_create_context is unavailable", ErrVersionUnavailable)
 		}
 
 		if ctxconfig.profile != 0 && !_glfw.platformContext.ARB_create_context_profile {
-			return fmt.Errorf("glfw: OpenGL profile requested but WGL_ARB_create_context_profile is unavailable: %w", VersionUnavailable)
+			return fmt.Errorf("%w: OpenGL profile requested but WGL_ARB_create_context_profile is unavailable", ErrVersionUnavailable)
 		}
 	} else {
 		if !_glfw.platformContext.ARB_create_context || !_glfw.platformContext.ARB_create_context_profile || !_glfw.platformContext.EXT_create_context_es2_profile {
-			return fmt.Errorf("glfw: OpenGL ES requested but WGL_ARB_create_context_es2_profile is unavailable: %w", APIUnavailable)
+			return fmt.Errorf("%w: OpenGL ES requested but WGL_ARB_create_context_es2_profile is unavailable", ErrAPIUnavailable)
 		}
 	}
 
@@ -590,7 +587,7 @@ func (w *Window) createContextWGL(ctxconfig *ctxconfig, fbconfig *fbconfig) erro
 func getWGLContext(handle *Window) _HGLRC {
 	window := handle
 	if !_glfw.initialized {
-		panic(NotInitialized)
+		panic(ErrNotInitialized)
 	}
 	if window.context.source != NativeContextAPI {
 		// TODO: Should this return an error?

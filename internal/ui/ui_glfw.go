@@ -353,7 +353,11 @@ func (u *glfwBackend) setWindowMonitor(monitor *Monitor) error {
 	mwInGLFWPixels := int(math.Round(dipToGLFWPixel(mw, s)))
 	mhInGLFWPixels := int(math.Round(dipToGLFWPixel(mh, s)))
 	px, py := InitialWindowPosition(mwInGLFWPixels, mhInGLFWPixels, w, h)
-	if err := u.window.SetPos(mx+px, my+py); err != nil {
+	px, py, err = u.adjustWindowPosition(mx+max(px, 0), my+max(py, 0), monitor)
+	if err != nil {
+		return err
+	}
+	if err := u.window.SetPos(px, py); err != nil {
 		return err
 	}
 
@@ -694,6 +698,7 @@ func (u *glfwBackend) registerWindowPosCallback() error {
 				u.setError(err)
 				return
 			}
+			u.desktopWindow.windowPositionInDIP.observe(image.Pt(nx, ny))
 		}
 	}
 	if _, err := u.window.SetPosCallback(u.posCallback); err != nil {
@@ -796,6 +801,7 @@ func (u *glfwBackend) registerWindowFramebufferSizeCallback() error {
 				u.setError(err)
 				return
 			}
+			u.desktopWindow.windowSizeInDIP.observe(image.Pt(ww, wh))
 
 			// While the window is being resized on macOS or Windows, the OS traps the main
 			// thread in an event-handling loop and the game loop cannot proceed. Render a frame
@@ -843,7 +849,7 @@ func (u *glfwBackend) forceUpdateFrameDuringPollEvents(outsideWidth, outsideHeig
 
 	// In the single-thread mode, the game loop runs on the main thread and cannot be resumed here.
 	mainThread, ok := u.mainThread.(interface {
-		NestedLoop(ctx stdcontext.Context) error
+		NestedLoop(done <-chan struct{})
 	})
 	if !ok {
 		return
@@ -865,7 +871,7 @@ func (u *glfwBackend) forceUpdateFrameDuringPollEvents(outsideWidth, outsideHeig
 		defer cancel()
 		err = u.context.forceUpdateFrame(u.graphicsDriver, outsideWidth, outsideHeight, screenWidth, screenHeight, deviceScaleFactor, u.UserInterface)
 	}()
-	_ = mainThread.NestedLoop(ctx)
+	mainThread.NestedLoop(ctx.Done())
 	if err != nil {
 		u.setError(err)
 	}
@@ -1576,10 +1582,16 @@ func (u *glfwBackend) updateGame() error {
 		}, u)
 	})
 
-	// When a window is not focused or in another space, SwapBuffers might return immediately and CPU might be busy.
-	// Mitigate this by sleeping (#982, #2521).
-	if r.unfocused {
-		const wait = time.Second / 60
+	// When a window is not focused or in another space, SwapBuffers might return immediately even with vsync enabled,
+	// and CPU might be busy. Mitigate this by sleeping for one refresh interval (#982, #2521). With vsync disabled,
+	// swapping buffers is not expected to wait, so do not sleep (#3920). A frame that is not presented is paced by
+	// updateFrame instead.
+	if r.unfocused && r.present && u.FPSMode() == FPSModeVsyncOn {
+		// Assume 60 [Hz] when the refresh rate is unknown.
+		wait := time.Second / 60
+		if refreshRate := u.RefreshRate(); refreshRate > 0 {
+			wait = time.Second / time.Duration(refreshRate)
+		}
 		now := time.Now()
 		if next := u.unfocusedNextWake.Add(wait); next.After(now) {
 			u.unfocusedNextWake = next
@@ -1620,7 +1632,8 @@ func (u *glfwBackend) updateIconIfNeeded() error {
 		newImgs[i] = rgba
 	}
 
-	// Catch a possible error at 'At' (#2647).
+	// Catch a possible error of the graphics driver at 'At' (#2647).
+	// Package ebiten reports other errors at 'At' at the next Update.
 	if err := u.error(); err != nil {
 		return err
 	}
@@ -2606,7 +2619,7 @@ func (u *glfwBackend) runMultiThread(game Game, options *RunOptions) error {
 	wg.Go(func() error {
 		defer cancel()
 
-		graphicscommand.LoopRenderThread(ctx)
+		graphicscommand.LoopRenderThread(ctx.Done())
 		return nil
 	})
 
@@ -2632,7 +2645,7 @@ func (u *glfwBackend) runMultiThread(game Game, options *RunOptions) error {
 
 	// Run the main thread. The loop is the thread's whole life, so a call arriving after
 	// it ends is a no-op rather than a block forever.
-	_ = u.mainThread.LoopAndStop(ctx)
+	u.mainThread.LoopAndStop(ctx.Done())
 	return wg.Wait()
 }
 

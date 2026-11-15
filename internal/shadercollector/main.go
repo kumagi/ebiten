@@ -41,6 +41,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/packages"
 
+	"github.com/hajimehoshi/ebiten/v2/internal/graphics"
 	"github.com/hajimehoshi/ebiten/v2/internal/legacyshader"
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir/glsl"
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir/hlsl"
@@ -107,28 +108,39 @@ func xmain() error {
 	var targets []string
 	if ft := strings.TrimSpace(*flagTarget); ft != "" {
 		for t := range strings.SplitSeq(ft, ",") {
-			targets = append(targets, strings.TrimSpace(t))
+			target := strings.TrimSpace(t)
+			switch target {
+			case "glsl", "hlsl", "msl", "pssl":
+			default:
+				return fmt.Errorf("unsupported target: %s", target)
+			}
+			targets = append(targets, target)
 		}
 	}
 
 	// Collect shader information.
 	// Even if no shader is found, the output should be a JSON array. Start with an empty slice, not nil.
 	shaders := []Shader{}
+	visitedPaths := map[string]struct{}{}
 
 	// Collect shaders statically discovered in the given packages.
 	if args := flag.Args(); len(args) > 0 {
 		pkgs, err := packages.Load(&packages.Config{
-			Mode: packages.NeedName | packages.NeedImports | packages.NeedDeps | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo,
+			Mode: packages.NeedName | packages.NeedImports | packages.NeedDeps | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedModule,
 		}, args...)
 		if err != nil {
 			return err
 		}
 
+		if packages.PrintErrors(pkgs) > 0 {
+			return errors.New("shadercollector: loading packages failed")
+		}
+
 		var visitErr error
 		packages.Visit(pkgs, func(pkg *packages.Package) bool {
 			path := pkg.PkgPath
-			// A standard library should not have a directive for shaders. Skip them.
-			if isStandardImportPath(path) {
+			// Skip standard libraries, but not local modules with dotless paths.
+			if pkg.Module == nil && isStandardImportPath(path) {
 				return true
 			}
 			// A semi-standard library should not have a directive for shaders. Skip them.
@@ -138,7 +150,7 @@ func xmain() error {
 
 			origN := len(shaders)
 			var err error
-			shaders, err = appendShaderSources(shaders, pkg)
+			shaders, err = appendShaderSources(shaders, pkg, visitedPaths)
 			if err != nil {
 				visitErr = err
 				return false
@@ -156,11 +168,11 @@ func xmain() error {
 	}
 
 	// Collect shaders listed in the manifest file given via the -manifest flag.
-	// These are not tied to any package.
+	// Only new paths are appended without a package; paths already collected from packages keep their records.
 	if manifest := *flagManifest; manifest != "" {
 		origN := len(shaders)
 		var err error
-		shaders, err = appendShadersFromManifest(shaders, manifest)
+		shaders, err = appendShadersFromManifest(shaders, manifest, visitedPaths)
 		if err != nil {
 			return err
 		}
@@ -197,7 +209,7 @@ const (
 
 var (
 	reShaderSourceDirective = regexp.MustCompile(`^\s*//` + regexp.QuoteMeta(shaderSourceDirective) + `$`)
-	reShaderFileDirective   = regexp.MustCompile(`^\s*//` + regexp.QuoteMeta(shaderFileDirective) + ` `)
+	reShaderFileDirective   = regexp.MustCompile(`^\s*//` + regexp.QuoteMeta(shaderFileDirective) + `[ \t]`)
 )
 
 func hasShaderSourceDirectiveInComment(commentGroup *ast.CommentGroup) bool {
@@ -221,10 +233,9 @@ func includesGlobMetaChar(str string) bool {
 	return strings.ContainsAny(str, "*?[]")
 }
 
-func appendShaderSources(shaders []Shader, pkg *packages.Package) ([]Shader, error) {
+func appendShaderSources(shaders []Shader, pkg *packages.Package, visitedPaths map[string]struct{}) ([]Shader, error) {
 	// Resolve ebitengine:shaderfile directives.
 	visitedPatterns := map[string]struct{}{}
-	visitedPaths := map[string]struct{}{}
 	for _, f := range pkg.Syntax {
 		var funcs []*ast.FuncDecl
 		for _, decl := range f.Decls {
@@ -447,8 +458,8 @@ func appendShaderSources(shaders []Shader, pkg *packages.Package) ([]Shader, err
 
 // appendShadersFromManifest reads the JSON manifest file at manifest, whose "ShaderFiles" array holds
 // shader source file paths resolved relative to the manifest's directory, and appends each as a shader.
-// Duplicate paths are skipped.
-func appendShadersFromManifest(shaders []Shader, manifest string) ([]Shader, error) {
+// Duplicate paths, including paths already collected from packages, are skipped.
+func appendShadersFromManifest(shaders []Shader, manifest string, visitedPaths map[string]struct{}) ([]Shader, error) {
 	content, err := os.ReadFile(manifest)
 	if err != nil {
 		return nil, err
@@ -462,16 +473,19 @@ func appendShadersFromManifest(shaders []Shader, manifest string) ([]Shader, err
 	}
 
 	dir := filepath.Dir(manifest)
-	visitedPaths := map[string]struct{}{}
 	for _, s := range m.ShaderFiles {
 		path := filepath.FromSlash(s)
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(dir, path)
 		}
-		if _, ok := visitedPaths[path]; ok {
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := visitedPaths[absPath]; ok {
 			continue
 		}
-		visitedPaths[path] = struct{}{}
+		visitedPaths[absPath] = struct{}{}
 		shaders, err = appendShaderFromFile(shaders, "", "", path)
 		if err != nil {
 			return nil, err
@@ -553,12 +567,12 @@ func compile(shader *Shader, targets []string) error {
 	for _, target := range targets {
 		switch target {
 		case "glsl":
-			vs, fs := glsl.Compile(ir, glsl.GLSLVersionDefault)
+			vs, fs := glsl.Compile(ir, glsl.GLSLVersionDefault, graphics.ProjectionMatrixUniformVariableIndex)
 			shader.GLSL = &GLSL{
 				Vertex:   vs,
 				Fragment: fs,
 			}
-			esVS, esFS := glsl.Compile(ir, glsl.GLSLVersionES300)
+			esVS, esFS := glsl.Compile(ir, glsl.GLSLVersionES300, graphics.ProjectionMatrixUniformVariableIndex)
 			shader.GLSLES = &GLSLES{
 				Vertex:   esVS,
 				Fragment: esFS,

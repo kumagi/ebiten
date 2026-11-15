@@ -102,7 +102,7 @@ func DecodeF32(src io.Reader) (*Stream, error) {
 		sampleRate: r.SampleRate(),
 	}
 	// Read some data for performance (#297).
-	if seekable {
+	if seekable && r.Length() > 0 {
 		if _, err := stream.Read(make([]byte, 65536)); err != nil && err != io.EOF {
 			return nil, err
 		}
@@ -138,7 +138,7 @@ retry:
 
 func (s *i16Stream) Seek(offset int64, whence int) (int64, error) {
 	if !s.seekable {
-		return 0, fmt.Errorf("vorbis: the source must be io.Seeker to seek: %w", errors.ErrUnsupported)
+		return 0, fmt.Errorf("vorbis: source must be io.Seeker: %w", errors.ErrUnsupported)
 	}
 
 	var base int64
@@ -196,7 +196,7 @@ func decodeI16(in io.Reader) (*i16Stream, error) {
 		vorbisReader: r,
 	}
 	// Read some data for performance (#297).
-	if seekable {
+	if seekable && r.Length() > 0 {
 		if _, err := s.Read(make([]byte, 65536)); err != nil && err != io.EOF {
 			return nil, err
 		}
@@ -271,7 +271,11 @@ func DecodeWithSampleRate(sampleRate int, src io.Reader) (*Stream, error) {
 		if srcLength == 0 {
 			srcLength = -1
 		}
-		r := convert.NewResampling(s, srcLength, i16Stream.vorbisReader.SampleRate(), sampleRate, bitDepthInBytesInt16)
+		var source io.Reader = s
+		if !i16Stream.seekable {
+			source = struct{ io.Reader }{source}
+		}
+		r := convert.NewResampling(source, srcLength, i16Stream.vorbisReader.SampleRate(), sampleRate, bitDepthInBytesInt16)
 		s = r
 		// TODO: Let Stream.Length return -1 instead of 0 for an unknown length (#3395).
 		length = max(r.Length(), 0)

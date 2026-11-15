@@ -31,17 +31,20 @@ import (
 // * https://github.com/microsoft/win32metadata
 
 const (
-	_D3D12_APPEND_ALIGNED_ELEMENT            = 0xffffffff
-	_D3D12_DEFAULT_DEPTH_BIAS                = 0
-	_D3D12_DEFAULT_DEPTH_BIAS_CLAMP          = 0.0
-	_D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS   = 0.0
-	_D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND    = 0xffffffff
-	_D3D12_MAX_DEPTH                         = 1.0
-	_D3D12_MIN_DEPTH                         = 0.0
-	_D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION    = 16384
-	_D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES = 0xffffffff
-	_D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT  = 512
-	_D3D12XBOX_DEFAULT_SIZE_BYTES            = 0xffffffff
+	_D3D12_APPEND_ALIGNED_ELEMENT                           = 0xffffffff
+	_D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT         = 256
+	_D3D12_DEFAULT_DEPTH_BIAS                               = 0
+	_D3D12_DEFAULT_DEPTH_BIAS_CLAMP                         = 0.0
+	_D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS                  = 0.0
+	_D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND                   = 0xffffffff
+	_D3D12_MAX_DEPTH                                        = 1.0
+	_D3D12_MAX_SHADER_VISIBLE_DESCRIPTOR_HEAP_SIZE_TIER_1   = 1000000
+	_D3D12_MIN_DEPTH                                        = 0.0
+	_D3D12_REQ_RESOURCE_SIZE_IN_MEGABYTES_EXPRESSION_A_TERM = 128
+	_D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION                   = 16384
+	_D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES                = 0xffffffff
+	_D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT                 = 512
+	_D3D12XBOX_DEFAULT_SIZE_BYTES                           = 0xffffffff
 )
 
 type _D3D12_BLEND int32
@@ -942,9 +945,11 @@ func _D3D12SerializeRootSignature(pRootSignature *_D3D12_ROOT_SIGNATURE_DESC, ve
 		proc = procD3D12SerializeRootSignature
 	}
 	r, _, _ := proc.Call(uintptr(unsafe.Pointer(pRootSignature)), uintptr(version), uintptr(unsafe.Pointer(&blob)), uintptr(unsafe.Pointer(&errorBlob)))
+	if errorBlob != nil {
+		defer errorBlob.Release()
+	}
 	if uint32(r) != uint32(windows.S_OK) {
 		if errorBlob != nil {
-			defer errorBlob.Release()
 			return nil, fmt.Errorf("directx: D3D12SerializeRootSignature failed: %s: %w", errorBlob.String(), handleError(windows.Handle(uint32(r))))
 		}
 		return nil, fmt.Errorf("directx: D3D12SerializeRootSignature failed: %w", handleError(windows.Handle(uint32(r))))

@@ -19,10 +19,15 @@
 // operation at a time; the guest sends back a sequence of GuestMessages belonging to that operation
 // — graphics-command batches, audio control and data, and queries, concluded by a done message — in
 // lockstep. A query suspends the operation until the host answers it with the corresponding
-// HostMessage. The encoding is gob.
+// HostMessage.
+//
+// A message is encoded with gob. Its bulk payloads (vertices, indices, and pixels) are not part of the
+// gob data: they follow it as raw length-prefixed data, so that each one is read into a buffer of
+// exactly its size.
 package vmprotocol
 
 import (
+	"bufio"
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
@@ -31,7 +36,9 @@ import (
 	"net"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/color"
@@ -66,8 +73,8 @@ const (
 	// player's samples (identified by AudioPlayerID). The guest answers with GuestMessageKindAudioData.
 	HostMessageKindReadAudio
 
-	// HostMessageKindAnswerReadPixels answers a GuestMessageKindQueryReadPixels.
-	HostMessageKindAnswerReadPixels
+	// HostMessageKindAnswerReadPixelsAsync answers a read-back start, poll, or wait query.
+	HostMessageKindAnswerReadPixelsAsync
 	// HostMessageKindAnswerMaxImageSize answers a GuestMessageKindQueryMaxImageSize.
 	HostMessageKindAnswerMaxImageSize
 	// HostMessageKindAnswerDeviceScaleFactor answers a GuestMessageKindQueryDeviceScaleFactor.
@@ -85,6 +92,14 @@ const (
 	// HostMessageKindScroll injects a scroll movement in device-independent pixels, feeding the guest's
 	// scroll-delta values as HostMessageKindScrollWheel feeds the guest's wheel values.
 	HostMessageKindScroll
+
+	// HostMessageKindPinch injects a pinch gesture on a touchpad, feeding the guest's pinch-delta value.
+	// X carries the change of the scale.
+	HostMessageKindPinch
+
+	// HostMessageKindRotate injects a rotation gesture on a touchpad, feeding the guest's rotation-delta
+	// value. X carries the angle in radians, where a positive value is clockwise.
+	HostMessageKindRotate
 )
 
 // HostMessage is a message the host sends to a guest: an operation to perform, or the answer to a
@@ -107,7 +122,8 @@ type HostMessage struct {
 	// PressTouch/MoveTouch/ReleaseTouch carry a ui.TouchID.
 	Code int
 
-	// MoveCursor, ScrollWheel, and Scroll; also PressTouch and MoveTouch carry the touch position.
+	// MoveCursor, ScrollWheel, and Scroll; also PressTouch and MoveTouch carry the touch position. Pinch
+	// carries the change of the scale in X, and Rotate carries the angle in X.
 	X float64
 	Y float64
 
@@ -119,11 +135,17 @@ type HostMessage struct {
 	GamepadStates []GamepadState
 
 	// Err is the query failure, if any, as a string (gob cannot carry an error value). Set on
-	// HostMessageKindAnswerReadPixels.
+	// HostMessageKindAnswerReadPixelsAsync.
 	Err string
 
-	// Pixels is set on HostMessageKindAnswerReadPixels: one buffer per requested region.
+	// Pixels carries one buffer per region in a completed read-back answer.
 	Pixels [][]byte
+
+	// ReadbackID identifies an asynchronous read-back returned by a start query.
+	ReadbackID uint64
+
+	// ReadbackDone reports completion in a read-back poll or wait answer.
+	ReadbackDone bool
 
 	// MaxImageSize is set on HostMessageKindAnswerMaxImageSize.
 	MaxImageSize int
@@ -202,10 +224,6 @@ const (
 	// GuestMessageKindGraphicsCommands carries a batch of graphics commands for the host to replay.
 	// Zero or more precede the concluding GuestMessageKindDone within one operation.
 	GuestMessageKindGraphicsCommands
-	// GuestMessageKindQueryReadPixels asks the host to read pixels back (from the commands already
-	// sent) before the guest can finish the operation. The host answers with
-	// HostMessageKindAnswerReadPixels.
-	GuestMessageKindQueryReadPixels
 	// GuestMessageKindQueryMaxImageSize asks the host for its graphics driver's maximum image size
 	// before the guest can finish the operation. The host answers with
 	// HostMessageKindAnswerMaxImageSize.
@@ -252,12 +270,24 @@ const (
 	// after a tick whenever the value changes, so a host can mirror the shape on its own cursor. Zero
 	// or one precedes the concluding GuestMessageKindDone of an advance-tick operation.
 	GuestMessageKindCursorShape
+
+	// GuestMessageKindQueryReadPixelsAsync starts a read-back without waiting for the GPU.
+	GuestMessageKindQueryReadPixelsAsync
+	// GuestMessageKindQueryPollReadPixels polls the read-back identified by ReadbackID.
+	GuestMessageKindQueryPollReadPixels
+	// GuestMessageKindQueryWaitReadPixels waits for the read-back identified by ReadbackID.
+	GuestMessageKindQueryWaitReadPixels
+	// GuestMessageKindDisposeReadPixels releases the read-back identified by ReadbackID, without an answer.
+	GuestMessageKindDisposeReadPixels
 )
 
 // GuestMessage is a message a guest sends to the host while handling an operation: recorded graphics
 // commands, a query, or the operation's conclusion. Only the fields relevant to Kind are populated.
 type GuestMessage struct {
 	Kind GuestMessageKind
+
+	// ReadbackID identifies the asynchronous read-back to poll, wait for, or release.
+	ReadbackID uint64
 
 	// Err is the deferred game error, if any, as a string (gob cannot carry an error value). Set on
 	// GuestMessageKindDone.
@@ -272,7 +302,7 @@ type GuestMessage struct {
 	// GuestMessageKindGraphicsCommands.
 	GraphicsCommands []GraphicsCommand
 
-	// ReadImageID and ReadRegions identify the read-back request on GuestMessageKindQueryReadPixels.
+	// ReadImageID and ReadRegions identify the image and regions in a start read-back query.
 	ReadImageID graphicsdriver.ImageID
 	ReadRegions []image.Rectangle
 
@@ -410,36 +440,128 @@ type TextInputState struct {
 
 // Encoder writes messages to a connection.
 type Encoder struct {
-	enc *gob.Encoder
+	mu   sync.Mutex
+	w    *bufio.Writer
+	enc  *gob.Encoder
+	bulk bulkWriter
+
+	// commandsBuf holds the graphics commands of the message being encoded without their bulk payloads.
+	commandsBuf []GraphicsCommand
 }
 
 // Decoder reads messages from a connection.
 type Decoder struct {
-	dec *gob.Decoder
+	mu   sync.Mutex
+	dec  *gob.Decoder
+	bulk bulkReader
 }
 
 func NewEncoder(w io.Writer) *Encoder {
-	return &Encoder{enc: gob.NewEncoder(w)}
+	bw := bufio.NewWriter(w)
+	return &Encoder{
+		w:    bw,
+		enc:  gob.NewEncoder(bw),
+		bulk: newBulkWriter(bw),
+	}
 }
 
 func NewDecoder(r io.Reader) *Decoder {
-	return &Decoder{dec: gob.NewDecoder(r)}
+	// gob reads exactly one message at a time from a reader that is also an io.ByteReader, so the bulk
+	// payloads following a message are still unread when the message is decoded.
+	br := bufio.NewReader(r)
+	return &Decoder{
+		dec:  gob.NewDecoder(br),
+		bulk: newBulkReader(br),
+	}
 }
 
 func (e *Encoder) EncodeHostMessage(msg *HostMessage) error {
-	return e.enc.Encode(msg)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	header := *msg
+	header.Pixels = nil
+	if err := e.enc.Encode(&header); err != nil {
+		return err
+	}
+	if err := e.bulk.writeBytesList(msg.Pixels); err != nil {
+		return err
+	}
+	return e.w.Flush()
 }
 
 func (d *Decoder) DecodeHostMessage(msg *HostMessage) error {
-	return d.dec.Decode(msg)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if err := d.dec.Decode(msg); err != nil {
+		return err
+	}
+	pixels, err := d.bulk.readBytesList()
+	if err != nil {
+		return err
+	}
+	msg.Pixels = pixels
+	return nil
 }
 
 func (e *Encoder) EncodeGuestMessage(msg *GuestMessage) error {
-	return e.enc.Encode(msg)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// Drop the references to the caller's data whatever the outcome, keeping the capacity.
+	defer func() {
+		e.commandsBuf = slices.Delete(e.commandsBuf, 0, len(e.commandsBuf))
+	}()
+	e.commandsBuf = append(e.commandsBuf, msg.GraphicsCommands...)
+	for i := range e.commandsBuf {
+		c := &e.commandsBuf[i]
+		c.Vertices = nil
+		c.Indices = nil
+		c.Pixels = nil
+	}
+
+	header := *msg
+	header.GraphicsCommands = e.commandsBuf
+	if err := e.enc.Encode(&header); err != nil {
+		return err
+	}
+	for i := range msg.GraphicsCommands {
+		c := &msg.GraphicsCommands[i]
+		if err := e.bulk.writeFloat32s(c.Vertices); err != nil {
+			return err
+		}
+		if err := e.bulk.writeUint32s(c.Indices); err != nil {
+			return err
+		}
+		if err := e.bulk.writeBytesList(c.Pixels); err != nil {
+			return err
+		}
+	}
+	return e.w.Flush()
 }
 
 func (d *Decoder) DecodeGuestMessage(msg *GuestMessage) error {
-	return d.dec.Decode(msg)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if err := d.dec.Decode(msg); err != nil {
+		return err
+	}
+	for i := range msg.GraphicsCommands {
+		c := &msg.GraphicsCommands[i]
+		var err error
+		if c.Vertices, err = d.bulk.readFloat32s(); err != nil {
+			return err
+		}
+		if c.Indices, err = d.bulk.readUint32s(); err != nil {
+			return err
+		}
+		if c.Pixels, err = d.bulk.readBytesList(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GuestMessageEncoder encodes a guest message to the host. A post-tick hook receives one so a guest
@@ -538,8 +660,9 @@ type Endpoint struct {
 func ParseEndpoint(endpoint string) (Endpoint, error) {
 	if p, ok := strings.CutPrefix(endpoint, "unix://"); ok {
 		// The path keeps a leading slash. On Unix it is part of the absolute socket path; on Windows the
-		// path is drive-lettered (unix:///C:/foo), so the leading slash is dropped to recover C:/foo.
-		if runtime.GOOS == "windows" {
+		// path can be drive-lettered (unix:///C:/foo), so the added slash is dropped to recover C:/foo.
+		// Preserve the two leading slashes of UNC and device paths.
+		if runtime.GOOS == "windows" && !strings.HasPrefix(p, "//") {
 			p = strings.TrimPrefix(p, "/")
 		}
 		addr := filepath.FromSlash(p)

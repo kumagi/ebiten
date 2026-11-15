@@ -67,10 +67,30 @@ func (i *glfwInput) HandleScrollForTest(wheelX, wheelY, scrollDeltaX, scrollDelt
 	i.handleScroll(wheelX, wheelY, scrollDeltaX, scrollDeltaY, unit)
 }
 
+func (i *glfwInput) HandlePinchForTest(delta float64) {
+	i.handlePinch(delta)
+}
+
 func (i *glfwInput) SetContentSizeForTest(width, height float64) {
 	i.setContentSize(width, height)
 }
 
 func (i *glfwInput) ReadForTest(dst *InputState) {
 	i.read(dst)
+}
+
+func (i *glfwInput) SyncModKeysForTest(mods glfw.ModifierKey) {
+	i.syncModKeys(mods)
+}
+
+type WindowSettingForTest[T comparable] struct {
+	windowSetting[T]
+}
+
+func (s *WindowSettingForTest[T]) ApplyForTest(f func(T) error) error {
+	return s.apply(f)
+}
+
+func (s *WindowSettingForTest[T]) ObserveForTest(value T) {
+	s.observe(value)
 }

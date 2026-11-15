@@ -30,7 +30,7 @@ func TestNestedLoop(t *testing.T) {
 
 	ctx := t.Context()
 	go func() {
-		_ = th.Loop(ctx)
+		th.Loop(ctx.Done())
 	}()
 
 	var values []int
@@ -46,7 +46,7 @@ func TestNestedLoop(t *testing.T) {
 				values = append(values, 2)
 			})
 		}()
-		_ = th.NestedLoop(nestedCtx)
+		th.NestedLoop(nestedCtx.Done())
 
 		values = append(values, 3)
 	})
@@ -69,14 +69,55 @@ func TestLoopAndStopUnblocksCall(t *testing.T) {
 		thread.Call(th, func() {})
 	}()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_ = th.LoopAndStop(ctx)
+	done := make(chan struct{})
+	close(done)
+	th.LoopAndStop(done)
 
 	select {
 	case <-returned:
 	case <-time.After(5 * time.Second):
 		t.Fatal("LoopAndStop must unblock a blocking Call")
+	}
+}
+
+func TestLoopTwice(t *testing.T) {
+	th := thread.NewOSThread()
+	done := make(chan struct{})
+
+	wait := func(ch <-chan struct{}, msg string) {
+		t.Helper()
+		select {
+		case <-ch:
+		case <-time.After(5 * time.Second):
+			t.Fatal(msg)
+		}
+	}
+
+	for i := range 2 {
+		returned := make(chan struct{})
+		go func() {
+			defer close(returned)
+			th.Loop(done)
+		}()
+
+		var called bool
+		callReturned := make(chan struct{})
+		go func() {
+			defer close(callReturned)
+			thread.Call(th, func() { called = true })
+		}()
+		wait(callReturned, "Call did not return")
+		if !called {
+			t.Fatalf("run %d: Loop did not execute the queued call", i)
+		}
+
+		sent := make(chan struct{})
+		go func() {
+			defer close(sent)
+			done <- struct{}{}
+		}()
+		wait(sent, "Loop did not receive from done")
+		wait(returned, "Loop did not return after a send on done")
 	}
 }
 
@@ -91,7 +132,7 @@ func TestCalls(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				_ = th.Loop(ctx)
+				th.Loop(ctx.Done())
 			}()
 			defer func() { cancel(); <-done }()
 
@@ -128,9 +169,7 @@ func TestCalls(t *testing.T) {
 			}
 			cancel()
 			<-done
-			if err := th.LoopAndStop(ctx); err != nil && err != context.Canceled {
-				t.Fatal(err)
-			}
+			th.LoopAndStop(ctx.Done())
 			if got := thread.CallWithArgAndResult(th, add, argument{value: &value, amount: 6}); got != 0 {
 				t.Errorf("stopped Call result = %d, want 0", got)
 			}
@@ -153,7 +192,7 @@ func TestTypedNestedCall(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = th.LoopAndStop(ctx)
+		th.LoopAndStop(ctx.Done())
 	}()
 	defer func() { cancel(); <-done }()
 
@@ -164,7 +203,7 @@ func TestTypedNestedCall(t *testing.T) {
 			defer nestedCancel()
 			nestedResult <- thread.CallWithArgAndResult(th, func(value int) int { return value * 2 }, value)
 		}()
-		_ = th.NestedLoop(nestedCtx)
+		th.NestedLoop(nestedCtx.Done())
 		return <-nestedResult + 1
 	}, 20)
 	if got != 41 {
@@ -178,7 +217,7 @@ func TestConcurrentTypedCalls(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = th.LoopAndStop(ctx)
+		th.LoopAndStop(ctx.Done())
 	}()
 	defer func() { cancel(); <-done }()
 
@@ -226,7 +265,7 @@ func BenchmarkCall(b *testing.B) {
 				done := make(chan struct{})
 				go func() {
 					defer close(done)
-					_ = th.LoopAndStop(ctx)
+					th.LoopAndStop(ctx.Done())
 				}()
 				defer func() { cancel(); <-done }()
 			}
@@ -269,5 +308,86 @@ func BenchmarkCall(b *testing.B) {
 				thread.Call(th, func() {})
 			})
 		})
+	}
+}
+
+func TestTryCallAsync(t *testing.T) {
+	th := thread.NewOSThread()
+	called := make(chan int, 1)
+	call := func(value int) { called <- value }
+	if thread.TryCallAsync(th, call, 1) {
+		t.Error("queued a call before the loop started")
+	}
+
+	done := make(chan struct{})
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(loopDone)
+		th.Loop(done)
+	}()
+	defer func() {
+		close(done)
+		<-loopDone
+	}()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		thread.Call(th, func() {
+			close(entered)
+			<-release
+		})
+	}()
+	<-entered
+	queued := thread.TryCallAsync(th, call, 3)
+	close(release)
+	<-finished
+	if queued {
+		t.Error("queued a call while the loop was busy")
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for !thread.TryCallAsync(th, call, 4) {
+		if time.Now().After(deadline) {
+			t.Fatal("the loop did not accept a call")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case got := <-called:
+		if got != 4 {
+			t.Errorf("callback argument = %d, want 4", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the accepted call did not execute")
+	}
+}
+
+func TestTryCallAsyncAfterLoopReturns(t *testing.T) {
+	th := thread.NewOSThread()
+	done := make(chan struct{})
+	close(done)
+	th.Loop(done)
+	if thread.TryCallAsync(th, func(struct{}) { t.Error("call executed after the loop returned") }, struct{}{}) {
+		t.Error("queued a call after the loop returned")
+	}
+}
+
+func TestTryCallAsyncNoopThread(t *testing.T) {
+	th := thread.NewNoopThread()
+	var got int
+	if !thread.TryCallAsync(th, func(value int) { got = value }, 123) {
+		t.Error("an active NoopThread rejected the call")
+	}
+	if got != 123 {
+		t.Errorf("callback argument = %d, want 123", got)
+	}
+
+	done := make(chan struct{})
+	close(done)
+	th.LoopAndStop(done)
+	if thread.TryCallAsync(th, func(int) { t.Error("a stopped NoopThread executed the call") }, 456) {
+		t.Error("a stopped NoopThread accepted the call")
 	}
 }

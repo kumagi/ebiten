@@ -18,7 +18,9 @@ package file_test
 
 import (
 	"errors"
+	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -238,16 +240,85 @@ func TestFSAbsPath(t *testing.T) {
 		t.Errorf("AbsPath(): got: %s, want: %s", got, want)
 	}
 
-	// An opened file reports its path as well.
-	f, err := vfs.Open("dir/foo.txt")
+	// Opened files and directories report their paths as well, including
+	// directories created only to reach the given files.
+	for _, name := range []string{".", "dir", "dir/foo.txt"} {
+		t.Run(name, func(t *testing.T) {
+			f, err := vfs.Open(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				_ = f.Close()
+			}()
+			if got, want := absPath(t, f), filepath.Join(base, filepath.FromSlash(name)); got != want {
+				t.Errorf("AbsPath(): got: %s, want: %s", got, want)
+			}
+		})
+	}
+}
+
+func TestFSRealDirectoryEntriesAbsPath(t *testing.T) {
+	base, err := filepath.Abs(filepath.Join("testdata", "dir"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		_ = f.Close()
-	}()
-	if got, want := absPath(t, f), filepath.Join(base, "dir", "foo.txt"); got != want {
-		t.Errorf("AbsPath(): got: %s, want: %s", got, want)
+	cases := []struct {
+		name  string
+		given string
+	}{
+		{
+			name:  "dir",
+			given: filepath.Join("testdata", "dir"),
+		},
+		{
+			name:  "testdata/dir",
+			given: "testdata",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			vfs := newVirtualFS(t, []string{c.given})
+			check := func(ents []fs.DirEntry) {
+				for _, ent := range ents {
+					if got, want := absPath(t, ent), filepath.Join(base, ent.Name()); got != want {
+						t.Errorf("AbsPath(): got: %s, want: %s", got, want)
+					}
+				}
+			}
+			ents, err := fs.ReadDir(vfs, c.name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := len(ents), 2; got != want {
+				t.Errorf("len(entries): got %d, want %d", got, want)
+			}
+			check(ents)
+			f, err := vfs.Open(c.name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = f.Close() }()
+			dir, ok := f.(fs.ReadDirFile)
+			if !ok {
+				t.Fatalf("%T must implement fs.ReadDirFile", f)
+			}
+			var count int
+			for {
+				ents, err := dir.ReadDir(1)
+				check(ents)
+				count += len(ents)
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got, want := count, 2; got != want {
+				t.Errorf("opened entries: got %d, want %d", got, want)
+			}
+		})
 	}
 }
 
@@ -273,5 +344,100 @@ func TestFSDirectoryReadError(t *testing.T) {
 		if got, want := pathErr.Op, "read"; got != want {
 			t.Errorf("Op: got %q, want %q", got, want)
 		}
+	}
+}
+
+func TestFSPathErrors(t *testing.T) {
+	vfs := newVirtualFS(t, []string{filepath.Join("testdata", "dir")})
+	const name = "dir/missing"
+	for _, op := range []string{"open", "readfile", "readdir"} {
+		t.Run(op, func(t *testing.T) {
+			var err error
+			switch op {
+			case "open":
+				var f fs.File
+				f, err = vfs.Open(name)
+				if f != nil {
+					defer func() {
+						_ = f.Close()
+					}()
+				}
+			case "readfile":
+				_, err = fs.ReadFile(vfs, name)
+			case "readdir":
+				_, err = fs.ReadDir(vfs, name)
+			}
+			var pathErr *fs.PathError
+			if !errors.As(err, &pathErr) {
+				t.Fatalf("error = %v, want *fs.PathError", err)
+			}
+			if pathErr.Path != name {
+				t.Errorf("Path = %q, want %q", pathErr.Path, name)
+			}
+			if !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("error = %v, want fs.ErrNotExist", err)
+			}
+		})
+	}
+}
+
+func TestFSReadDirSorted(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a", "Z", "b", "Y"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vfs := newVirtualFS(t, []string{dir})
+	entries, err := fs.ReadDir(vfs, filepath.Base(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, len(entries))
+	for i, entry := range entries {
+		names[i] = entry.Name()
+	}
+	if want := []string{"Y", "Z", "a", "b"}; !slices.Equal(names, want) {
+		t.Errorf("ReadDir names: got %v, want %v", names, want)
+	}
+}
+
+func TestFSReadDirResumeAfterError(t *testing.T) {
+	dir := t.TempDir()
+	paths := []string{filepath.Join(dir, "a"), filepath.Join(dir, "b")}
+	for _, path := range paths {
+		if err := os.WriteFile(path, nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vfs := newVirtualFS(t, paths)
+	f, err := vfs.Open(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	if err := os.Remove(paths[1]); err != nil {
+		t.Fatal(err)
+	}
+	d := f.(fs.ReadDirFile)
+	entries, err := d.ReadDir(-1)
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("ReadDir: got %v, want ErrNotExist", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "a" {
+		t.Fatalf("ReadDir: got %v, want only a", entries)
+	}
+	if err := os.WriteFile(paths[1], nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	entries, err = d.ReadDir(-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "b" {
+		t.Errorf("ReadDir retry: got %v, want only b", entries)
+	}
+	if entries, err := d.ReadDir(1); len(entries) != 0 || err != io.EOF {
+		t.Errorf("ReadDir at end: got %v, %v, want EOF", entries, err)
 	}
 }

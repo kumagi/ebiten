@@ -70,6 +70,26 @@ func TestGLFWInputScrollUnits(t *testing.T) {
 	}
 }
 
+// TestGLFWInputPinch tests that the pinch amounts reported within a tick are composed as ratios, and
+// that a tick without a gesture reads 0.
+func TestGLFWInputPinch(t *testing.T) {
+	i := ui.NewGLFWInputForTest()
+	i.HandlePinchForTest(0.25)
+	i.HandlePinchForTest(-0.125)
+
+	var s ui.InputState
+	i.ReadForTest(&s)
+	// 1.25 times 0.875 is 1.09375.
+	if got, want := s.PinchDelta, 0.09375; got != want {
+		t.Errorf("pinch: got %v, want %v", got, want)
+	}
+
+	i.ReadForTest(&s)
+	if got := s.PinchDelta; got != 0 {
+		t.Errorf("pinch after a tick without a gesture: got %v, want 0", got)
+	}
+}
+
 // TestGLFWInputScrollPages tests that page-unit scrolling reaches a tick's input snapshot once the
 // content size is known, including a tick run outside the regular frame.
 func TestGLFWInputScrollPages(t *testing.T) {
@@ -121,5 +141,38 @@ func TestGLFWInputScrollAnomalyDropsBothChannels(t *testing.T) {
 	}
 	if s.ScrollDeltaY != 100 {
 		t.Errorf("scroll: got %v, want 100", s.ScrollDeltaY)
+	}
+}
+
+func TestGLFWInputModifierPolling(t *testing.T) {
+	i := ui.NewGLFWInputForTest()
+	for range 1 << 20 {
+		i.SyncModKeysForTest(0)
+	}
+	i.SyncModKeysForTest(glfw.ModControl | glfw.ModShift)
+	var s ui.InputState
+	i.ReadForTest(&s)
+	pressed := s.KeyPressedTimes[ui.KeyControlLeft]
+	if pressed == 0 {
+		t.Error("Control was not pressed")
+	}
+	if got := s.KeyPressedTimes[ui.KeyShiftLeft]; got != pressed {
+		t.Errorf("Shift press time: got %v, want %v", got, pressed)
+	}
+	for range 1 << 20 {
+		i.SyncModKeysForTest(glfw.ModControl | glfw.ModShift)
+	}
+	i.ReadForTest(&s)
+	if got := s.KeyPressedTimes[ui.KeyControlLeft]; got != pressed {
+		t.Errorf("Control press time changed: got %v, want %v", got, pressed)
+	}
+	i.SyncModKeysForTest(0)
+	i.ReadForTest(&s)
+	released := s.KeyReleasedTimes[ui.KeyControlLeft]
+	if released <= pressed {
+		t.Errorf("Control release time %v must be after press time %v", released, pressed)
+	}
+	if got := s.KeyReleasedTimes[ui.KeyShiftLeft]; got != released {
+		t.Errorf("Shift release time: got %v, want %v", got, released)
 	}
 }

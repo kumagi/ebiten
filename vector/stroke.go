@@ -42,6 +42,7 @@ const (
 // StrokeOptions is options to render a stroke.
 type StrokeOptions struct {
 	// Width is the stroke width in pixels.
+	// Zero, infinite, and NaN widths produce no stroke. Negative finite widths cause a panic.
 	//
 	// The default (zero) value is 0.
 	Width float32
@@ -78,14 +79,23 @@ type AddStrokeOptions struct {
 }
 
 // AddStroke adds a stroke path to the path p.
+// After validating the width, AddStroke does nothing if the geometry matrix has an infinite or NaN element.
 //
 // The added stroke path must be rendered with FillRuleNonZero.
 func (p *Path) AddStroke(src *Path, options *AddStrokeOptions) {
 	if options == nil {
 		return
 	}
-	if options.Width <= 0 {
+	if !checkRegularNonNegative(float64(options.Width), "stroke width") || options.Width == 0 {
 		return
+	}
+
+	for i := range 2 {
+		for j := range 3 {
+			if !isRegular(options.GeoM.Element(i, j)) {
+				return
+			}
+		}
 	}
 
 	halfWidth := float64(options.Width) / 2
@@ -277,7 +287,7 @@ func appendParalleledLineForQuadIfNeeded(path *Path, p0, p1, p2 point, dist floa
 	// A normalized path never has a cusp, whose start and end points are the same,
 	// as normalizeSubPath drops a single point and converts a cusp into two lines.
 	// This can happen only in doAppendParalleledQuad when a tiny curve is split,
-	// and then the split halves are empty in float32.
+	// and then the split halves collapse to the same point.
 	if p0 == p2 {
 		return true
 	}

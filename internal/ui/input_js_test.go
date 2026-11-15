@@ -15,6 +15,7 @@
 package ui_test
 
 import (
+	"syscall/js"
 	"testing"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/ui"
@@ -102,6 +103,79 @@ func TestIsShortcutChord(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := ui.IsShortcutChordForTest(tt.ctrl, tt.alt, tt.meta, tt.altGraph, tt.isApple); got != tt.want {
 				t.Errorf("IsShortcutChordForTest(ctrl: %t, alt: %t, meta: %t, altGraph: %t, isApple: %t): got: %t, want: %t", tt.ctrl, tt.alt, tt.meta, tt.altGraph, tt.isApple, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsKeyString(t *testing.T) {
+	for _, tc := range []struct {
+		key  string
+		want bool
+	}{
+		{"a", true},
+		{"é", true},
+		{"ḍ̇", true}, // NFC example from the UI Events key specification.
+		{"क़", true},
+		{"का", true}, // Spacing combining mark (Mc).
+		{"ArrowLeft", false},
+		{"Dead", false},
+		{"a\n", false},
+		{"\t", false},
+		{"a\u034f", false}, // Mn with combining class zero.
+		{"a\ufe0f", false}, // A variation selector has combining class zero.
+	} {
+		if got := ui.IsKeyStringForTest(tc.key); got != tc.want {
+			t.Errorf("IsKeyString(%q) = %v, want %v", tc.key, got, tc.want)
+		}
+	}
+}
+
+func TestPinchAfterReleasingInputs(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		release       bool
+		newMouseEvent bool
+		wantPinch     bool
+	}{
+		{
+			name: "control_held",
+		},
+		{
+			name:      "released",
+			release:   true,
+			wantPinch: true,
+		},
+		{
+			name:          "new_control_event",
+			release:       true,
+			newMouseEvent: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var u ui.UserInterface
+			mouseEvent := js.Global().Get("MouseEvent").New("mousemove", map[string]any{"ctrlKey": true})
+			if err := u.UpdateInputFromEventForTest(mouseEvent); err != nil {
+				t.Fatal(err)
+			}
+			if tc.release {
+				u.ReleaseAllInputsForTest()
+			}
+			if tc.newMouseEvent {
+				if err := u.UpdateInputFromEventForTest(mouseEvent); err != nil {
+					t.Fatal(err)
+				}
+			}
+			wheelEvent := js.Global().Get("WheelEvent").New("wheel", map[string]any{"ctrlKey": true, "deltaY": -10})
+			if err := u.UpdateInputFromEventForTest(wheelEvent); err != nil {
+				t.Fatal(err)
+			}
+			state := u.InputStateForTest()
+			if got := state.PinchDelta != 0; got != tc.wantPinch {
+				t.Errorf("pinch reported: got %t, want %t", got, tc.wantPinch)
+			}
+			if got := state.WheelY != 0; got == tc.wantPinch {
+				t.Errorf("wheel reported: got %t, want %t", got, !tc.wantPinch)
 			}
 		})
 	}

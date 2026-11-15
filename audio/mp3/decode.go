@@ -71,7 +71,7 @@ func (s *Stream) Read(buf []byte) (int, error) {
 // rounded down to a sample boundary.
 func (s *Stream) Seek(offset int64, whence int) (int64, error) {
 	if !s.seekable {
-		return 0, fmt.Errorf("mp3: the source must be io.Seeker to seek: %w", errors.ErrUnsupported)
+		return 0, fmt.Errorf("mp3: source must be io.Seeker: %w", errors.ErrUnsupported)
 	}
 
 	// A query for the current position does not seek the decoder. A seek restarts decoding from the
@@ -218,7 +218,12 @@ func DecodeWithSampleRate(sampleRate int, src io.Reader) (*Stream, error) {
 	r := newInt16ReadSeeker(d)
 	length := d.Length()
 	if d.SampleRate() != sampleRate {
-		r2 := convert.NewResampling(d, d.Length(), d.SampleRate(), sampleRate, bitDepthInBytesInt16)
+		var source io.Reader = d
+		if !seekable {
+			// The decoder implements io.Seeker even when its source cannot seek.
+			source = struct{ io.Reader }{d}
+		}
+		r2 := convert.NewResampling(source, d.Length(), d.SampleRate(), sampleRate, bitDepthInBytesInt16)
 		r = r2
 		length = r2.Length()
 	}

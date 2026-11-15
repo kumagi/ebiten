@@ -9,6 +9,7 @@
 package glfw
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/draw"
@@ -93,11 +94,11 @@ func (w *Window) inputWindowMonitor(monitor *Monitor) {
 
 func CreateWindow(width, height int, title string, monitor *Monitor, share *Window) (window *Window, err error) {
 	if !_glfw.initialized {
-		return nil, NotInitialized
+		return nil, ErrNotInitialized
 	}
 
 	if width <= 0 || height <= 0 {
-		return nil, fmt.Errorf("glfw: invalid window size %dx%d: %w", width, height, InvalidValue)
+		return nil, fmt.Errorf("%w: invalid window size %dx%d", ErrInvalidValue, width, height)
 	}
 
 	fbconfig := _glfw.hints.framebuffer
@@ -143,7 +144,7 @@ func CreateWindow(width, height int, title string, monitor *Monitor, share *Wind
 	window.inputWindowMonitor(monitor)
 	defer func(window *Window) {
 		if err != nil {
-			_ = window.Destroy()
+			err = errors.Join(err, window.Destroy())
 		}
 	}(window)
 	_glfw.windows = append(_glfw.windows, window)
@@ -158,7 +159,7 @@ func CreateWindow(width, height int, title string, monitor *Monitor, share *Wind
 
 func defaultWindowHints() error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 
 	// The default is NoAPI with minimum version 1.0
@@ -205,7 +206,7 @@ func DefaultWindowHints() error {
 
 func WindowHint(hint Hint, value int) error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 
 	switch hint {
@@ -292,14 +293,14 @@ func WindowHint(hint Hint, value int) error {
 	case CocoaGraphicsSwitching:
 		_glfw.hints.context.nsgl.offline = intToBool(value)
 	default:
-		return fmt.Errorf("glfw: invalid window hint 0x%08X: %w", hint, InvalidEnum)
+		return fmt.Errorf("%w: invalid window hint 0x%08X", ErrInvalidEnum, hint)
 	}
 	return nil
 }
 
 func WindowHintString(hint Hint, value string) error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 
 	switch hint {
@@ -310,14 +311,14 @@ func WindowHintString(hint Hint, value string) error {
 	case X11InstanceName:
 		_glfw.hints.window.instanceName = value
 	default:
-		return fmt.Errorf("glfw: invalid window hint string 0x%08X: %w", hint, InvalidEnum)
+		return fmt.Errorf("%w: invalid window hint string 0x%08X", ErrInvalidEnum, hint)
 	}
 	return nil
 }
 
 func (w *Window) Destroy() error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 
 	// Allow closing of NULL (to match the behavior of free)
@@ -339,6 +340,8 @@ func (w *Window) Destroy() error {
 	w.callbacks.cursorPos = nil
 	w.callbacks.cursorEnter = nil
 	w.callbacks.scroll = nil
+	w.callbacks.pinch = nil
+	w.callbacks.rotate = nil
 	w.callbacks.key = nil
 	w.callbacks.character = nil
 	w.callbacks.charmods = nil
@@ -370,14 +373,14 @@ func (w *Window) Destroy() error {
 
 func (w *Window) ShouldClose() (bool, error) {
 	if !_glfw.initialized {
-		return false, NotInitialized
+		return false, ErrNotInitialized
 	}
 	return w.shouldClose, nil
 }
 
 func (w *Window) SetShouldClose(value bool) error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	w.shouldClose = value
 	return nil
@@ -385,7 +388,7 @@ func (w *Window) SetShouldClose(value bool) error {
 
 func (w *Window) SetTitle(title string) error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	if err := w.platformSetWindowTitle(title); err != nil {
 		return err
@@ -395,14 +398,14 @@ func (w *Window) SetTitle(title string) error {
 
 func (w *Window) SetIcon(images []image.Image) error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 
 	gimgs := make([]*Image, len(images))
 	for i, img := range images {
 		b := img.Bounds()
 		if b.Dx() <= 0 || b.Dy() <= 0 {
-			return fmt.Errorf("glfw: invalid image dimensions for window icon: %w", InvalidValue)
+			return fmt.Errorf("%w: invalid image dimensions for window icon", ErrInvalidValue)
 		}
 		m := image.NewNRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
 		draw.Draw(m, m.Bounds(), img, b.Min, draw.Src)
@@ -421,14 +424,14 @@ func (w *Window) SetIcon(images []image.Image) error {
 
 func (w *Window) GetPos() (xpos, ypos int, err error) {
 	if !_glfw.initialized {
-		return 0, 0, NotInitialized
+		return 0, 0, ErrNotInitialized
 	}
 	return w.platformGetWindowPos()
 }
 
 func (w *Window) SetPos(xpos, ypos int) error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	if w.monitor != nil {
 		return nil
@@ -441,14 +444,14 @@ func (w *Window) SetPos(xpos, ypos int) error {
 
 func (w *Window) GetSize() (width, height int, err error) {
 	if !_glfw.initialized {
-		return 0, 0, NotInitialized
+		return 0, 0, ErrNotInitialized
 	}
 	return w.platformGetWindowSize()
 }
 
 func (w *Window) SetSize(width, height int) error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	w.videoMode.Width = width
 	w.videoMode.Height = height
@@ -460,18 +463,18 @@ func (w *Window) SetSize(width, height int) error {
 
 func (w *Window) SetSizeLimits(minwidth, minheight, maxwidth, maxheight int) error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 
 	if minwidth != DontCare && minheight != DontCare {
 		if minwidth < 0 || minheight < 0 {
-			return fmt.Errorf("glfw: invalid window minimum size %dx%d: %w", minwidth, minheight, InvalidValue)
+			return fmt.Errorf("%w: invalid window minimum size %dx%d", ErrInvalidValue, minwidth, minheight)
 		}
 	}
 
 	if maxwidth != DontCare && maxheight != DontCare {
 		if maxwidth < 0 || maxheight < 0 || maxwidth < minwidth || maxheight < minheight {
-			return fmt.Errorf("glfw: invalid window maximum size %dx%d: %w", maxwidth, maxheight, InvalidValue)
+			return fmt.Errorf("%w: invalid window maximum size %dx%d", ErrInvalidValue, maxwidth, maxheight)
 		}
 	}
 
@@ -493,12 +496,12 @@ func (w *Window) SetSizeLimits(minwidth, minheight, maxwidth, maxheight int) err
 
 func (w *Window) SetAspectRatio(numer, denom int) error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 
 	if numer != DontCare && denom != DontCare {
 		if numer <= 0 || denom <= 0 {
-			return fmt.Errorf("glfw: invalid window aspect ratio %d:%d: %w", numer, denom, InvalidValue)
+			return fmt.Errorf("%w: invalid window aspect ratio %d:%d", ErrInvalidValue, numer, denom)
 		}
 	}
 
@@ -517,39 +520,39 @@ func (w *Window) SetAspectRatio(numer, denom int) error {
 
 func (w *Window) GetFramebufferSize() (width, height int, err error) {
 	if !_glfw.initialized {
-		return 0, 0, NotInitialized
+		return 0, 0, ErrNotInitialized
 	}
 	return w.platformGetFramebufferSize()
 }
 
 func (w *Window) GetFrameSize() (left, top, right, bottom int, err error) {
 	if !_glfw.initialized {
-		return 0, 0, 0, 0, NotInitialized
+		return 0, 0, 0, 0, ErrNotInitialized
 	}
 	return w.platformGetWindowFrameSize()
 }
 
 func (w *Window) GetContentScale() (xscale, yscale float32, err error) {
 	if !_glfw.initialized {
-		return 0, 0, NotInitialized
+		return 0, 0, ErrNotInitialized
 	}
 	return w.platformGetWindowContentScale()
 }
 
 func (w *Window) GetOpacity() (float32, error) {
 	if !_glfw.initialized {
-		return 0, NotInitialized
+		return 0, ErrNotInitialized
 	}
 	return w.platformGetWindowOpacity()
 }
 
 func (w *Window) SetOpacity(opacity float32) error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 
 	if opacity != opacity || opacity < 0 || opacity > 1 {
-		return fmt.Errorf("glfw: invalid window opacity %f: %w", opacity, InvalidValue)
+		return fmt.Errorf("%w: invalid window opacity %f", ErrInvalidValue, opacity)
 	}
 
 	if err := w.platformSetWindowOpacity(opacity); err != nil {
@@ -560,7 +563,7 @@ func (w *Window) SetOpacity(opacity float32) error {
 
 func (w *Window) Iconify() error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	w.platformIconifyWindow()
 	return nil
@@ -568,7 +571,7 @@ func (w *Window) Iconify() error {
 
 func (w *Window) Restore() error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	w.platformRestoreWindow()
 	return nil
@@ -576,7 +579,7 @@ func (w *Window) Restore() error {
 
 func (w *Window) Maximize() error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	if w.monitor != nil {
 		return nil
@@ -590,7 +593,7 @@ func (w *Window) Maximize() error {
 // MaximizeSupported reports whether Maximize can take effect on the window.
 func (w *Window) MaximizeSupported() (bool, error) {
 	if !_glfw.initialized {
-		return false, NotInitialized
+		return false, ErrNotInitialized
 	}
 	if w.monitor != nil {
 		return false, nil
@@ -601,7 +604,7 @@ func (w *Window) MaximizeSupported() (bool, error) {
 // IconifySupported reports whether Iconify can take effect on the window.
 func (w *Window) IconifySupported() (bool, error) {
 	if !_glfw.initialized {
-		return false, NotInitialized
+		return false, ErrNotInitialized
 	}
 	return w.platformIconifySupported(), nil
 }
@@ -609,14 +612,14 @@ func (w *Window) IconifySupported() (bool, error) {
 // RestoreSupported reports whether Restore can take effect on the window.
 func (w *Window) RestoreSupported() (bool, error) {
 	if !_glfw.initialized {
-		return false, NotInitialized
+		return false, ErrNotInitialized
 	}
 	return w.platformRestoreSupported(), nil
 }
 
 func (w *Window) Show() error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	if w.monitor != nil {
 		return nil
@@ -634,7 +637,7 @@ func (w *Window) Show() error {
 
 func (w *Window) RequestAttention() error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	w.platformRequestWindowAttention()
 	return nil
@@ -642,7 +645,7 @@ func (w *Window) RequestAttention() error {
 
 func (w *Window) Hide() error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 
 	if w.monitor != nil {
@@ -655,7 +658,7 @@ func (w *Window) Hide() error {
 
 func (w *Window) Focus() error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	if err := w.platformFocusWindow(); err != nil {
 		return err
@@ -665,7 +668,7 @@ func (w *Window) Focus() error {
 
 func (w *Window) GetAttrib(attrib Hint) (int, error) {
 	if !_glfw.initialized {
-		return 0, NotInitialized
+		return 0, ErrNotInitialized
 	}
 
 	switch attrib {
@@ -720,13 +723,13 @@ func (w *Window) GetAttrib(attrib Hint) (int, error) {
 	case ContextNoError:
 		return boolToInt(w.context.noerror), nil
 	default:
-		return 0, fmt.Errorf("glfw: invalid window attribute 0x%08X: %w", attrib, InvalidEnum)
+		return 0, fmt.Errorf("%w: invalid window attribute 0x%08X", ErrInvalidEnum, attrib)
 	}
 }
 
 func (w *Window) SetAttrib(attrib Hint, value int) error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 
 	bValue := intToBool(value)
@@ -778,28 +781,28 @@ func (w *Window) SetAttrib(attrib Hint, value int) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("glfw: invalid window attribute 0x%08X: %w", attrib, InvalidEnum)
+		return fmt.Errorf("%w: invalid window attribute 0x%08X", ErrInvalidEnum, attrib)
 	}
 }
 
 func (w *Window) GetMonitor() (*Monitor, error) {
 	if !_glfw.initialized {
-		return nil, NotInitialized
+		return nil, ErrNotInitialized
 	}
 	return w.monitor, nil
 }
 
 func (w *Window) SetMonitor(monitor *Monitor, xpos, ypos, width, height, refreshRate int) error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 
 	if width <= 0 || height <= 0 {
-		return fmt.Errorf("glfw: invalid window size %dx%d: %w", width, height, InvalidValue)
+		return fmt.Errorf("%w: invalid window size %dx%d", ErrInvalidValue, width, height)
 	}
 
 	if refreshRate < 0 && refreshRate != DontCare {
-		return fmt.Errorf("glfw: invalid refresh rate %d: %w", refreshRate, InvalidValue)
+		return fmt.Errorf("%w: invalid refresh rate %d", ErrInvalidValue, refreshRate)
 	}
 
 	w.videoMode.Width = width
@@ -814,7 +817,7 @@ func (w *Window) SetMonitor(monitor *Monitor, xpos, ypos, width, height, refresh
 
 func (w *Window) SetUserPointer(pointer unsafe.Pointer) error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	w.userPointer = pointer
 	return nil
@@ -822,14 +825,14 @@ func (w *Window) SetUserPointer(pointer unsafe.Pointer) error {
 
 func (w *Window) GetUserPointer() (unsafe.Pointer, error) {
 	if !_glfw.initialized {
-		return nil, NotInitialized
+		return nil, ErrNotInitialized
 	}
 	return w.userPointer, nil
 }
 
 func (w *Window) SetPosCallback(cbfun PosCallback) (PosCallback, error) {
 	if !_glfw.initialized {
-		return nil, NotInitialized
+		return nil, ErrNotInitialized
 	}
 	old := w.callbacks.pos
 	w.callbacks.pos = cbfun
@@ -838,7 +841,7 @@ func (w *Window) SetPosCallback(cbfun PosCallback) (PosCallback, error) {
 
 func (w *Window) SetSizeCallback(cbfun SizeCallback) (SizeCallback, error) {
 	if !_glfw.initialized {
-		return nil, NotInitialized
+		return nil, ErrNotInitialized
 	}
 	old := w.callbacks.size
 	w.callbacks.size = cbfun
@@ -847,7 +850,7 @@ func (w *Window) SetSizeCallback(cbfun SizeCallback) (SizeCallback, error) {
 
 func (w *Window) SetCloseCallback(cbfun CloseCallback) (CloseCallback, error) {
 	if !_glfw.initialized {
-		return nil, NotInitialized
+		return nil, ErrNotInitialized
 	}
 	old := w.callbacks.close
 	w.callbacks.close = cbfun
@@ -856,7 +859,7 @@ func (w *Window) SetCloseCallback(cbfun CloseCallback) (CloseCallback, error) {
 
 func (w *Window) SetRefreshCallback(cbfun RefreshCallback) (RefreshCallback, error) {
 	if !_glfw.initialized {
-		return nil, NotInitialized
+		return nil, ErrNotInitialized
 	}
 	old := w.callbacks.refresh
 	w.callbacks.refresh = cbfun
@@ -865,7 +868,7 @@ func (w *Window) SetRefreshCallback(cbfun RefreshCallback) (RefreshCallback, err
 
 func (w *Window) SetFocusCallback(cbfun FocusCallback) (FocusCallback, error) {
 	if !_glfw.initialized {
-		return nil, NotInitialized
+		return nil, ErrNotInitialized
 	}
 	old := w.callbacks.focus
 	w.callbacks.focus = cbfun
@@ -874,7 +877,7 @@ func (w *Window) SetFocusCallback(cbfun FocusCallback) (FocusCallback, error) {
 
 func (w *Window) SetIconifyCallback(cbfun IconifyCallback) (IconifyCallback, error) {
 	if !_glfw.initialized {
-		return nil, NotInitialized
+		return nil, ErrNotInitialized
 	}
 	old := w.callbacks.iconify
 	w.callbacks.iconify = cbfun
@@ -883,7 +886,7 @@ func (w *Window) SetIconifyCallback(cbfun IconifyCallback) (IconifyCallback, err
 
 func (w *Window) SetMaximizeCallback(cbfun MaximizeCallback) (MaximizeCallback, error) {
 	if !_glfw.initialized {
-		return nil, NotInitialized
+		return nil, ErrNotInitialized
 	}
 	old := w.callbacks.maximize
 	w.callbacks.maximize = cbfun
@@ -892,7 +895,7 @@ func (w *Window) SetMaximizeCallback(cbfun MaximizeCallback) (MaximizeCallback, 
 
 func (w *Window) SetFramebufferSizeCallback(cbfun FramebufferSizeCallback) (FramebufferSizeCallback, error) {
 	if !_glfw.initialized {
-		return nil, NotInitialized
+		return nil, ErrNotInitialized
 	}
 	old := w.callbacks.fbsize
 	w.callbacks.fbsize = cbfun
@@ -901,49 +904,56 @@ func (w *Window) SetFramebufferSizeCallback(cbfun FramebufferSizeCallback) (Fram
 
 func (w *Window) SetContentScaleCallback(cbfun ContentScaleCallback) (ContentScaleCallback, error) {
 	if !_glfw.initialized {
-		return nil, NotInitialized
+		return nil, ErrNotInitialized
 	}
 	old := w.callbacks.scale
 	w.callbacks.scale = cbfun
 	return old, nil
 }
 
+// takeErrors returns the queued errors joined into one, or nil, and empties the queue.
+func takeErrors() error {
+	err := errors.Join(_glfw.errors...)
+	_glfw.errors = nil
+	return err
+}
+
 func PollEvents() error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	if err := platformPollEvents(); err != nil {
 		return err
 	}
-	return nil
+	return takeErrors()
 }
 
 func WaitEvents() error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	if err := platformWaitEvents(); err != nil {
 		return err
 	}
-	return nil
+	return takeErrors()
 }
 
 func WaitEventsTimeout(timeout float64) error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	if timeout != timeout || timeout < 0.0 || timeout > math.MaxFloat64 {
-		return fmt.Errorf("glfw: invalid time %f: %w", timeout, InvalidValue)
+		return fmt.Errorf("%w: invalid time %f", ErrInvalidValue, timeout)
 	}
 	if err := platformWaitEventsTimeout(timeout); err != nil {
 		return err
 	}
-	return nil
+	return takeErrors()
 }
 
 func PostEmptyEvent() error {
 	if !_glfw.initialized {
-		return NotInitialized
+		return ErrNotInitialized
 	}
 	if err := platformPostEmptyEvent(); err != nil {
 		return err

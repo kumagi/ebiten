@@ -24,6 +24,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/internal/graphics"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/opengl/gl"
+	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/readbackcache"
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir"
 )
 
@@ -56,13 +57,15 @@ type Graphics struct {
 	// drawCalled is true just after DrawTriangles is called. This holds true until WritePixels is called.
 	drawCalled bool
 
-	uniformVariableNameCache map[int]string
-	textureVariableNameCache map[int]string
-
 	uniformVars []uniformVariable
 
 	// activatedTextures is a set of activated textures.
 	activatedTextures []activatedTexture
+
+	// pixelPackBuffers are idle pixel pack buffers available for reuse.
+	// Only completed read-backs enter this cache; pending read-backs own their buffers.
+	// The cache is accessed on the render thread.
+	pixelPackBuffers readbackcache.Cache[int, buffer]
 
 	graphicsPlatform
 }
@@ -94,9 +97,11 @@ func (g *Graphics) End(mode graphicsdriver.FlushMode) error {
 	// TODO: examples/sprites worked without this. Is this really needed?
 	g.context.ctx.Flush()
 
-	// The last uniforms must be reset before swapping the buffer (#2517).
-	if mode == graphicsdriver.FlushModePresent {
+	// Reset the last uniforms at the end of every frame so that each program sends its uniforms again in the next frame (#2517).
+	if mode != graphicsdriver.FlushModeIntermediate {
 		g.state.resetLastUniforms()
+	}
+	if mode == graphicsdriver.FlushModePresent {
 		if err := g.swapBuffers(); err != nil {
 			return err
 		}
@@ -193,24 +198,13 @@ func (g *Graphics) Initialize() error {
 
 // Reset resets or initializes the current OpenGL state.
 func (g *Graphics) Reset() error {
+	g.clearPixelPackBuffers()
 	return g.state.reset(&g.context)
 }
 
 func (g *Graphics) SetVertices(vertices []float32, indices []uint32) error {
 	g.state.setVertices(&g.context, vertices, indices)
 	return nil
-}
-
-func (g *Graphics) uniformVariableName(idx int) string {
-	if v, ok := g.uniformVariableNameCache[idx]; ok {
-		return v
-	}
-	if g.uniformVariableNameCache == nil {
-		g.uniformVariableNameCache = map[int]string{}
-	}
-	name := fmt.Sprintf("U%d", idx)
-	g.uniformVariableNameCache[idx] = name
-	return name
 }
 
 func (g *Graphics) DrawTriangles(dstID graphicsdriver.ImageID, srcIDs [graphics.ShaderSrcImageCount]graphicsdriver.ImageID, shaderID graphicsdriver.ShaderID, dstRegions []graphicsdriver.DstRegion, indexOffset int, blend graphicsdriver.Blend, uniforms []uint32) error {
@@ -239,8 +233,8 @@ func (g *Graphics) DrawTriangles(dstID graphicsdriver.ImageID, srcIDs [graphics.
 
 	var idx int
 	for i, typ := range shader.ir.Uniforms {
-		n := typ.DwordCount()
-		g.uniformVars[i].name = g.uniformVariableName(i)
+		n := shader.uniformDwordCounts[i]
+		g.uniformVars[i].name = shader.uniformNames[i]
 		g.uniformVars[i].value = uniforms[idx : idx+n]
 		g.uniformVars[i].typ = typ
 		idx += n

@@ -1,7 +1,7 @@
-# SVG acceptance data
+# SVG test data
 
-Ten unmodified SVG table records and eleven focused SVG fixtures for the
-[planned renderer](../README.md). License texts and attribution are in
+Ten unmodified font SVG records and twelve focused fixtures for the
+[SVG renderer](../README.md). Attribution and license texts are in
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ## Sources and regeneration
@@ -9,74 +9,188 @@ Ten unmodified SVG table records and eleven focused SVG fixtures for the
 - [Noto Color Emoji 2.051](https://res.ebitengine.org/examples/NotoColorEmoji-Regular.ttf),
   name-table version `Version 2.051;GOOG;noto-emoji:20250818:e92753bfa55fd449e427d4d325f9c8c40408c74e`.
 - [Twitter Color Emoji SVGinOT 15.1.0](https://github.com/13rac1/twemoji-color-font/releases/download/v15.1.0/TwitterColorEmoji-SVGinOT-15.1.0.zip):
-  extract `TwitterColorEmoji-SVGinOT-15.1.0/TwitterColorEmoji-SVGinOT.ttf`.
+  use `TwitterColorEmoji-SVGinOT-15.1.0/TwitterColorEmoji-SVGinOT.ttf` from the archive.
 
-The tool generates `inventory.json` with UPEM, glyph ranges and complete-font
-construct counts for inspection; this file is not checked in. Counts are per
-unique SVG document; attributes use local names (`href` includes `xlink:href`).
-Noto contributes gradients, quadratic paths and shared `use` references; Twemoji
-adds cubic/arc paths, basic shapes, clipping and even-odd rules.
+Verify the TTF SHA-256 before regeneration or acceptance runs:
 
-Run from this directory using Go's standard library:
+| Font | SHA-256 | Units per em |
+| --- | --- | ---: |
+| Noto Color Emoji 2.051 | `7fb39738ab18f10612d6f4595e2e8e47a0afdf34738460442d99cd0c344a4d90` | 1024 |
+| Twitter Color Emoji SVGinOT 15.1.0 | `42d4b2a827c9ed557dff88c2f4723cb93985003a81dee76797324d66d04a57b8` | 2048 |
+
+From this directory:
 
 ```sh
 go run extract.go /path/NotoColorEmoji-Regular.ttf /path/TwitterColorEmoji-SVGinOT.ttf
 ```
 
-Use the font versions above. The tool overwrites `real/*.svg` and generates
-`inventory.json`. Compare the SVG output with the checked-in fixtures. Keep
-downloaded fonts for offline regeneration; the Noto URL can change. Licenses
-are maintained separately.
-The gzip fixture must decompress to the identical `shared-context.svg` bytes.
+The standard-library tool overwrites `real/*.svg` and generates an untracked
+`inventory.json` with UPEM, glyph ranges and construct counts per unique SVG
+document. Compare regenerated records with the checked-in files. Retain pinned
+fonts offline because download contents can change; keep fonts and generated
+reports outside the repository. License files are maintained separately.
 
-## Expectations
+`focused/shared-context.svg.gz` must decompress to the exact bytes of
+`focused/shared-context.svg`. The JPEG fixture is original Apache-2.0 test data:
+fill an 8×8 `image.RGBA` with `color.RGBA{R: 80, G: 160, B: 240, A: 255}`, encode
+with the standard-library JPEG encoder at quality 100, and base64-encode it.
 
-Focused fixtures use viewport/UPEM 48, glyph 1, one pixel per user unit and transparent
-black unless specified below. Colors are premultiplied RGBA bytes, with one byte
-of rounding tolerance. Apply offsets to shape and clip together; edge expectations
-express composition invariants rather than fixed rasterization goldens.
+## Fixture coverage
+
+Focused fixtures use viewport/UPEM 48 and glyph 1. Pixel expectations in the tests
+use premultiplied RGBA with one-byte rounding tolerance. CPU style/geometry tests
+check interpretation; GPU tests in `../svgrender` check rendering. See the
+[package validation guide](../README.md#validation) for ordinary test commands.
 
 ### Real font records
 
-| Record | Expected behavior |
+| Record | Coverage |
 | --- | --- |
-| Noto 2–3 | Select only the requested keycap tile. Glyph 2 uses dark gray; glyph 3 light gray. Both reference shared paths. At font point (650,-350), fills are #424242 and #E0E0E0 respectively. |
-| Noto 3330 | Render a shaded numeral 1 from quadratic paths and a user-space linear gradient; extend the final stop beyond offset 0.515. |
-| Noto 3629 | Render the layered burst with a yellow user-space radial gradient, preserving painter order and negative-y coordinates. |
-| Noto 3682 | Render the flame with two transformed radial gradients; preserve the translucent inner highlight and its zero-alpha final stop. |
-| Noto 3737 | Render a red octagon, darker lower/right edge, and a 0.9-opacity pale highlight. Do not clip the artwork at the em square. |
-| Twemoji 692 | Render the red pin head, gray needle, and dark ellipse with the nested translation/scale intact. |
-| Twemoji 839 | Render the sunglasses path with even-odd fill; preserve its explicit clip-rule for use as clip geometry. |
-| Twemoji 1039 | Apply the referenced square clip to its group and retain the separate white detail in painter order. |
-| Twemoji 1338 | Render the layered artwork with twelve user-space clips, each transformed with its referencing path. Clip coordinates must follow each local matrix. |
-| Twemoji 1355 | Render a window with pale blue panes, a half-opacity white triangular reflection, and opaque brown crossbars above it. |
-
+| Noto 2–3 | Glyph selection and differently colored keycaps sharing paths |
+| Noto 3330 | Quadratic numeral path and user-space linear gradient |
+| Noto 3629 | Layered burst, radial gradient and negative-y coordinates |
+| Noto 3682 | Transformed radial gradients and translucent flame highlight |
+| Noto 3737 | Layered octagon, opacity and ink beyond the em square |
+| Twemoji 692 | Nested transforms and layered basic shapes |
+| Twemoji 839 | Even-odd sunglasses path and explicit clip-rule |
+| Twemoji 1039 | Referenced group clip and painter order |
+| Twemoji 1338 | Twelve user-space clips following referencing-path transforms |
+| Twemoji 1355 | Window panes, translucent reflection and opaque crossbars |
 
 ### Focused fixtures
 
-| Fixture | Explicit expected behavior |
+| Fixture | Coverage |
 | --- | --- |
-| css-classes | Pixels (4,4), (12,4), (20,4) are (0,0,128,128); (30,4) is transparent. Keep these results after selecting glyph 1, including stylesheet dependencies. |
-| group-identity | Same result as one unclipped blue circle at opacity 0.5, including identical clip/shape edges. Center (24,24) is (0,0,128,128), never alpha 191. |
-| nested-groups | Red circle then blue circle inside two half-opacity groups, clipped to the first circle and x<30. (10,24) is (64,0,0,64), (24,24) is (0,0,64,64), (35,24) transparent. Preserve the shared edges through both groups. |
-| evenodd-clip | (8,8) is opaque red; (24,24) and (0,0) transparent. The inner contour is a hole despite matching winding. |
-| gradient-reference | Top rectangle interpolates red to blue through inherited stops. Bottom uses the later radial definition; near (24,32) it is bright and opaque, darkening and losing opacity toward its radius. Forward and backward definition order must agree. |
-| shared-context | Glyph 1 occupies [0,8)×[0,8); glyph 2 [16,24)×[0,8), both with initial black fill. Render only the selected use instance and its shared path; the original ancestor transform/fill does not apply. Gzip and plain text agree; missing glyph 3 produces no artwork. |
-| stroke-transform | First line has four-unit output stroke width with round caps, centered at y=16 from x=12 to x=36. (24,16) is green; (24,20) is transparent. Curves keep their original commands until output scale is known. |
-| palette | With foreground blue and no palette, (8,8) is blue and (24,8) red. With palette entry 0 RGB(0,255,0) at alpha 0.5, (24,8) is (0,128,0,128). Palette alpha must enter paint opacity once. |
-| embedded-png | Red left half, blue right half of [4,36)×[4,20); (8,12) red and (30,12) blue, both opaque. No network access. |
-| restricted | Only the red [0,8)×[0,8) tile appears. Prohibited element subtrees do not render or execute. |
-| viewport-overflow | The entire red rectangle [-4,12)×[-8,8) survives despite root overflow=hidden. At an output origin shifted to (16,16), (13,10) is red. Root viewport is not an implicit glyph clip. |
+| css-classes | Stylesheet dependencies, glyph selection and opacity |
+| group-identity | Identical shape/clip edges under group opacity |
+| nested-groups | Painter order, nested half-opacity groups and intersecting clips |
+| evenodd-clip | Matching-winding inner contour remains a hole |
+| gradient-reference | Inherited stops, radial paint and definition-order independence |
+| shared-context | Use-instance selection and inheritance, missing glyph, gzip equivalence |
+| stroke-transform | Transformed stroke width, round caps and retained curves |
+| palette | currentColor, palette fallback and palette alpha applied once |
+| embedded-jpeg | Opaque encoded RGB image mapped into an SVG viewport |
+| embedded-png | Red/blue texel mapping and image viewport bounds |
+| restricted | Prohibited subtrees neither render nor execute |
+| viewport-overflow | Negative ink survives; the root viewport is not a glyph clip |
 
+## Native production reference checks
 
-## CPU style/paint interpretation
+These tests compare public glyph images and normal `text.Draw` with independent
+librsvg output (`rsvg-convert`). Production stays at native-size vector AA; only
+the reference uses 8x rendering and CPU box averaging. Cases use 24- and 96-pixel
+em sizes, including fractional layout, and reject fallback to another format.
 
-The style and gradient tests now interpret the real records without graphics
-initialization and verify focused cascade, palette and gradient expectations.
-These checks do not establish the pixel expectations above. `style_test.go`
-also tests use-instance inheritance separately from source selector ancestry,
-including the SVG 1.1 style-cloning behavior. Gradient tests supply independent
-viewport and object bounds and check definitions, transforms, inherited stops,
-stop alpha and references without flattening geometry or sampling pixels.
-The resolver's supported subset, compatibility allowances, limits and error
-policy are documented in [the package README](../README.md#supported-behavior).
+- `TestSVGProductionReference` embeds the Noto numeral and Twemoji sunglasses
+  records in a synthetic 2048-UPEM font. Occupied premultiplied-channel error
+  limits are mean 8 and maximum 64.
+- `TestSVGRealFontReference` verifies a pinned original font's hash and renders
+  Noto's flame or Twemoji's window. Its limits are mean 8 and maximum 96.
+
+From the repository root, start with one small case:
+
+```sh
+go test -p 1 -count=1 -run '^TestSVGProductionReference/noto-3330-3330/24$' -v ./text/v2
+
+EBITENGINE_SVG_ACCEPTANCE_FONT=/path/font.ttf \
+  go test -p 1 -count=1 -run '^TestSVGRealFontReference$' -v ./text/v2
+```
+
+Tests skip without `rsvg-convert`. Set `EBITENGINE_SVG_RENDER_REPORT_DIR` to an
+existing directory to retain production/reference PNGs. Use the anchored test
+names: exporting the font variable for an unfiltered run also enables inventory.
+
+These are regression tolerances, not visual acceptance. Native AA still loses
+coverage correlation between separate paints, causing coincident-edge fringes
+and adjoining-fill seams; isolated groups do not fix this. Embedded-image tests
+cover minification, premultiplied filtering and exact half-pixel crop consistency,
+but strong shear and general affine sampling remain quality work. Near-unit
+reduction of large embedded images can be expensive on cache misses. Full-font
+visual and sustained performance acceptance remain incomplete. Rendering policy
+and resource limits belong in the [package README](../README.md#rendering).
+
+## Full-font inventory and bounded GPU checks
+
+`TestSVGFontInventory` defaults to preparing SVG candidates at 24 and 96 pixels,
+independently of production format priority. It writes `full-font.json` with
+font/document hashes, preparation outcomes and optional realization outcomes.
+It still uses the hidden graphics test lifecycle, even without GPU realization.
+
+All graphics commands here, including inventory, require `xvfb-run -a` on Linux.
+Run one process at a time with no concurrent sweeps or VMs. Use an external
+memory/time watchdog: the harness has no memory watchdog, and a Go heap limit
+does not constrain GPU/driver memory. Work limits are not physical-memory caps.
+Keep fonts, binaries, reports and supervisors outside the repository.
+
+From the repository root, with an existing report directory:
+
+```sh
+EBITENGINE_SVG_ACCEPTANCE_FONT=/path/font.ttf \
+EBITENGINE_SVG_ACCEPTANCE_REPORT_DIR=/path/report \
+  go test -p 1 -count=1 -run '^TestSVGFontInventory$' -v ./text/v2
+```
+
+| Optional variable (`EBITENGINE_SVG_ACCEPTANCE_` prefix) | Effect |
+| --- | --- |
+| `GPU_GLYPHS` | Request up to 1–8 realizations/readbacks; default 0 |
+| `BATCH_COUNT` | Prepare only 1–8 (glyph, size) cases |
+| `BATCH_START` | Zero-based start index; defaults to 0 and requires `BATCH_COUNT` |
+| `TEXT` | Separate public-text check of at most eight glyphs; requires `GPU_GLYPHS` and cannot accompany a batch |
+
+GPU images over 256 pixels per axis are skipped explicitly. `TEXT` checks SVG
+cache identity and compares `text.Draw` with explicit glyph composition; choose
+nonempty SVG glyphs without preferred bitmap/COLRv0 data. Neither readback nor
+that self-comparison is an independent pixel oracle or exhaustive ligature test.
+
+### Bounded batch protocol
+
+Case indices follow document, size, range, glyph order. A batch prepares only its
+selected cases and decodes metadata only for their documents. Omit both batch
+variables for a full preparation inventory. Compile once from the repository
+root and keep that binary fixed throughout a run:
+
+```sh
+GOMAXPROCS=2 go test -p 1 -c -o /tmp/svg-text.test ./text/v2
+```
+
+Run each batch in a fresh process **from `text/v2`**, with a distinct existing
+report directory. This requests all four selected cases for GPU readback:
+
+```sh
+GOMAXPROCS=2 \
+EBITENGINE_SVG_ACCEPTANCE_FONT=/path/font.ttf \
+EBITENGINE_SVG_ACCEPTANCE_REPORT_DIR=/path/batch-0 \
+EBITENGINE_SVG_ACCEPTANCE_BATCH_START=0 \
+EBITENGINE_SVG_ACCEPTANCE_BATCH_COUNT=4 \
+EBITENGINE_SVG_ACCEPTANCE_GPU_GLYPHS=4 \
+  /tmp/svg-text.test -test.run '^TestSVGFontInventory$' -test.timeout=60s
+```
+
+The report includes `Protocol`, `Start`, `Limit`, `Next`, `Total`, `Backend` and
+per-case `Index`. Resume only from a complete report with contiguous indices and
+an understood exit status, using `Next`; finish when `Next == Total`. Retry
+interrupted, missing, truncated or incomplete slices rather than skipping them.
+Retain font/binary hashes, backend, limits and environment with checkpoints;
+do not combine incompatible runs. Deferred reporting cannot survive termination.
+
+Preparation distinguishes malformed, unsupported, resource-limited, valid-empty
+and successful candidates. GPU results distinguish readback, valid-empty,
+preparation-failed, dimension-limit, sample-limit, failed and not-requested.
+Classified rejections are observations to retain even when the test exits with
+failure. `Complete` means the requested slice finished, not that it passed;
+`Realized` means readback completed, not that pixels or format selection are correct.
+
+## Benchmarks
+
+Run one workload per process, with at most 16 iterations:
+
+```sh
+EBITENGINE_SVG_ACCEPTANCE_BENCHMARK=1 go test -p 1 -run '^$' \
+  -bench '^BenchmarkSVGProduction/warm$' -benchtime=16x ./text/v2
+```
+
+`cold` includes synthetic font construction/loading; `warm` uses a prewarmed
+image cache; `layout` measures cached lazy layout; `colors` changes currentColor;
+`large` uses a 512-pixel em. Drawing workloads reject outline fallback and use
+readback to synchronize. Results measure short-run latency, not asynchronous
+throughput, pure SVG rasterization cost or sustained memory behavior.

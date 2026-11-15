@@ -476,6 +476,12 @@ func (g *Game) forwardInput(state debugui.InputCapturingState) {
 		if sx, sy := ebiten.ScrollDelta(); sx != 0 || sy != 0 {
 			s.ScrollBy(sx, sy)
 		}
+		if d := ebiten.PinchDelta(); d != 0 {
+			s.PinchBy(d)
+		}
+		if a := ebiten.RotationDelta(); a != 0 {
+			s.RotateBy(a)
+		}
 	}
 
 	// Mouse button releases are forwarded regardless of hover, like the key releases above: a drag
@@ -537,11 +543,11 @@ func (g *Game) gamepadState(id ebiten.GamepadID, state *vmhost.GamepadState) {
 	state.Name = ebiten.GamepadName(id)
 
 	state.Axes = state.Axes[:0]
-	for a := 0; a < ebiten.GamepadAxisCount(id); a++ {
+	for a := range ebiten.GamepadAxisCount(id) {
 		state.Axes = append(state.Axes, ebiten.GamepadAxisValue(id, a))
 	}
 	state.Buttons = state.Buttons[:0]
-	for b := 0; b < ebiten.GamepadButtonCount(id); b++ {
+	for b := range ebiten.GamepadButtonCount(id) {
 		state.Buttons = append(state.Buttons, ebiten.IsGamepadButtonPressed(id, ebiten.GamepadButton(b)))
 	}
 

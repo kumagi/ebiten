@@ -71,6 +71,9 @@ func (v *VirtualFS) Open(name string) (fs.File, error) {
 	}
 
 	if !n.given {
+		if n.absPath != "" {
+			return &virtualDirWithAbsPath{virtualDir: virtualDir{node: n}}, nil
+		}
 		return &virtualDir{node: n}, nil
 	}
 
@@ -79,7 +82,7 @@ func (v *VirtualFS) Open(name string) (fs.File, error) {
 	// See https://cs.opensource.google/go/go/+/refs/tags/go1.23.0:src/os/file.go;l=695-710
 	f, err := os.Open(absPath)
 	if err != nil {
-		return nil, err
+		return nil, virtualPathError(err, name)
 	}
 	return &virtualFile{
 		File:    f,
@@ -104,12 +107,20 @@ func (v *VirtualFS) ReadDir(name string) ([]fs.DirEntry, error) {
 
 	f, err := os.Open(n.join(rest))
 	if err != nil {
-		return nil, err
+		return nil, virtualPathError(err, name)
 	}
 	defer func() {
 		_ = f.Close()
 	}()
-	return f.ReadDir(-1)
+	vf := virtualFile{
+		File:    f,
+		absPath: n.join(rest),
+	}
+	entries, err := vf.ReadDir(-1)
+	slices.SortFunc(entries, func(a, b fs.DirEntry) int {
+		return strings.Compare(a.Name(), b.Name())
+	})
+	return entries, virtualPathError(err, name)
 }
 
 func (v *VirtualFS) ReadFile(name string) ([]byte, error) {
@@ -130,7 +141,16 @@ func (v *VirtualFS) ReadFile(name string) ([]byte, error) {
 		}
 	}
 
-	return os.ReadFile(n.join(rest))
+	data, err := os.ReadFile(n.join(rest))
+	return data, virtualPathError(err, name)
+}
+
+// virtualPathError reports names relative to the virtual file system, as required by fs.FS.
+func virtualPathError(err error, name string) error {
+	if e, ok := err.(*fs.PathError); ok {
+		return &fs.PathError{Op: e.Op, Path: name, Err: e.Err}
+	}
+	return err
 }
 
 // find returns the node for the given name, and the path elements left unresolved by the node.
@@ -337,6 +357,17 @@ func (v *virtualFile) AbsPath() string {
 	return v.absPath
 }
 
+func (v *virtualFile) ReadDir(count int) ([]fs.DirEntry, error) {
+	ents, err := v.File.ReadDir(count)
+	for i, ent := range ents {
+		ents[i] = &virtualDirEntry{
+			DirEntry: ent,
+			absPath:  filepath.Join(v.absPath, ent.Name()),
+		}
+	}
+	return ents, err
+}
+
 // virtualDirEntry is an entry of a VirtualFS that reports its own path in the real file system.
 type virtualDirEntry struct {
 	fs.DirEntry
@@ -351,6 +382,16 @@ type virtualDir struct {
 	node   *virtualFSNode
 	offset int
 	mu     sync.Mutex
+}
+
+// virtualDirWithAbsPath is a virtual directory backed by a real path.
+// A virtual root spanning different Windows volumes has no such path.
+type virtualDirWithAbsPath struct {
+	virtualDir
+}
+
+func (v *virtualDirWithAbsPath) AbsPath() string {
+	return v.node.absPath
 }
 
 func (v *virtualDir) Stat() (fs.FileInfo, error) {
@@ -411,6 +452,7 @@ func (v *virtualDir) ReadDir(count int) ([]fs.DirEntry, error) {
 		fi, err := os.Stat(c.absPath)
 		if err != nil {
 			if count <= 0 {
+				v.offset += i
 				return ents[:i], err
 			}
 			return nil, err

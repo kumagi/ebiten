@@ -13,6 +13,7 @@ import (
 	"math"
 	"math/bits"
 	"runtime"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -109,7 +110,7 @@ func createIcon(image *Image, xhot, yhot int, icon bool) (_HICON, error) {
 
 	source := image.Pixels
 	target := unsafe.Slice((*byte)(unsafe.Pointer(targetPtr)), len(source))
-	for i := 0; i < len(source)/4; i++ {
+	for i := range len(source) / 4 {
 		target[4*i] = source[4*i+2]
 		target[4*i+1] = source[4*i+1]
 		target[4*i+2] = source[4*i+0]
@@ -1014,6 +1015,20 @@ func windowProc(hWnd windows.HWND, uMsg uint32, wParam _WPARAM, lParam _LPARAM) 
 		window.inputCursorEnter(false)
 		return 0
 
+	case _DM_POINTERHITTEST:
+		// Hand a contact on a precision touchpad to Direct Manipulation to receive pans and pinches.
+		// Other pointers, including mice, are not affected.
+		if dm := window.platform.directManipulation; dm != nil {
+			id := uint32(_LOWORD(uint32(wParam)))
+			if t, err := _GetPointerType(id); err == nil && t == _PT_TOUCHPAD {
+				if err := dm.viewport.SetContact(id); err != nil {
+					window.disableDirectManipulation()
+				} else {
+					dm.contactTime = time.Now()
+				}
+			}
+		}
+
 	case _WM_MOUSEWHEEL:
 		notches := float64(int16(_HIWORD(uint32(wParam)))) / _WHEEL_DELTA
 		amount, unit := wheelScrollAmount(notches, wheelScrollSetting(_SPI_GETWHEELSCROLLLINES))
@@ -1550,6 +1565,14 @@ func (w *Window) platformCreateWindow(wndconfig *wndconfig, ctxconfig *ctxconfig
 		return err
 	}
 
+	if !microsoftgdk.IsXbox() {
+		// Direct Manipulation is optional. Without it, gestures on a touchpad are reported as mouse
+		// wheel messages and no pinch is reported.
+		if dm, err := newDirectManipulation(w.platform.handle); err == nil {
+			w.platform.directManipulation = dm
+		}
+	}
+
 	if ctxconfig.client != NoAPI {
 		if ctxconfig.source == NativeContextAPI {
 			if err := initWGL(); err != nil {
@@ -1624,6 +1647,8 @@ func (w *Window) platformDestroyWindow() error {
 			return err
 		}
 	}
+
+	w.disableDirectManipulation()
 
 	if w.platform.handle != 0 {
 		if !microsoftgdk.IsXbox() {
@@ -1707,8 +1732,7 @@ func (w *Window) platformSetWindowIcon(images []*Image) error {
 		}
 		smallIcon, err = createIcon(smallImage, 0, 0, false)
 		if err != nil {
-			_ = _DestroyIcon(bigIcon)
-			return err
+			return errors.Join(err, _DestroyIcon(bigIcon))
 		}
 	} else {
 		// A class icon can be 0, e.g. when the class sets no small icon. A 0 handle is valid
@@ -2289,12 +2313,6 @@ func platformRawMouseMotionSupported() bool {
 }
 
 func platformPollEvents() error {
-	if len(_glfw.errors) > 0 {
-		err := errors.Join(_glfw.errors...)
-		_glfw.errors = nil
-		return err
-	}
-
 	var msg _MSG
 	for _PeekMessageW(&msg, 0, 0, 0, _PM_REMOVE) {
 		if msg.message == _WM_QUIT {
@@ -2307,6 +2325,14 @@ func platformPollEvents() error {
 		} else {
 			_TranslateMessage(&msg)
 			_DispatchMessageW(&msg)
+		}
+	}
+
+	for _, window := range _glfw.windows {
+		if dm := window.platform.directManipulation; dm != nil {
+			if err := dm.update(window); err != nil {
+				window.disableDirectManipulation()
+			}
 		}
 	}
 
@@ -2372,6 +2398,9 @@ func platformPollEvents() error {
 }
 
 func platformWaitEvents() error {
+	if directManipulationPolling() {
+		return platformWaitEventsTimeout(directManipulationPollingInterval.Seconds())
+	}
 	if err := _WaitMessage(); err != nil {
 		return err
 	}
@@ -2382,6 +2411,9 @@ func platformWaitEvents() error {
 }
 
 func platformWaitEventsTimeout(timeout float64) error {
+	if directManipulationPolling() {
+		timeout = min(timeout, directManipulationPollingInterval.Seconds())
+	}
 	if _, err := _MsgWaitForMultipleObjects(0, nil, false, uint32(timeout*1e3), _QS_ALLINPUT); err != nil {
 		return err
 	}
@@ -2492,7 +2524,7 @@ func (w *Window) platformSetCursorMode(mode int) error {
 
 func platformGetScancodeName(scancode int) (string, error) {
 	if scancode < 0 || scancode > (_KF_EXTENDED|0xff) {
-		return "", fmt.Errorf("glfw: invalid scancode %d: %w", scancode, InvalidValue)
+		return "", fmt.Errorf("%w: invalid scancode %d", ErrInvalidValue, scancode)
 	}
 	key := _glfw.platformWindow.keycodes[scancode]
 	if key == KeyUnknown {
@@ -2602,7 +2634,7 @@ func platformGetClipboardString() (string, error) {
 
 func (w *Window) GetWin32Window() (windows.HWND, error) {
 	if !_glfw.initialized {
-		return 0, NotInitialized
+		return 0, ErrNotInitialized
 	}
 	return w.platform.handle, nil
 }

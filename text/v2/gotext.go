@@ -15,16 +15,13 @@
 package text
 
 import (
-	"encoding/binary"
 	"fmt"
 	"image"
-	"math"
 	"slices"
 
 	"github.com/go-text/typesetting/di"
 	"github.com/go-text/typesetting/font"
 	glanguage "github.com/go-text/typesetting/language"
-	"github.com/go-text/typesetting/shaping"
 	"golang.org/x/image/math/fixed"
 	"golang.org/x/text/language"
 
@@ -68,105 +65,30 @@ type GoTextFace struct {
 	// Deprecated: as of v2.9. Use Language instead.
 	Script language.Script
 
-	variations []font.Variation
-	features   []shaping.FontFeature
-
-	variationsString string
-	featuresString   string
+	variations variations
+	features   features
 }
 
 // SetVariation sets a variation value.
 // For font variations, see https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_fonts/Variable_fonts_guide for more details.
 func (g *GoTextFace) SetVariation(tag Tag, value float32) {
-	idx := len(g.variations)
-	for i, v := range g.variations {
-		if uint32(v.Tag) < uint32(tag) {
-			continue
-		}
-		if uint32(v.Tag) > uint32(tag) {
-			idx = i
-			break
-		}
-		if v.Value == value {
-			return
-		}
-		g.variations[i].Value = value
-		g.variationsString = encodeVariations(g.variations)
-		return
-	}
-
-	// Keep the alphabetical order in order to make the cache key deterministic.
-	g.variations = append(g.variations, font.Variation{})
-	copy(g.variations[idx+1:], g.variations[idx:])
-	g.variations[idx] = font.Variation{
-		Tag:   font.Tag(tag),
-		Value: value,
-	}
-	g.variationsString = encodeVariations(g.variations)
+	g.variations.set(font.Tag(tag), value)
 }
 
 // RemoveVariation removes a variation value.
 func (g *GoTextFace) RemoveVariation(tag Tag) {
-	for i, v := range g.variations {
-		if uint32(v.Tag) < uint32(tag) {
-			continue
-		}
-		if uint32(v.Tag) > uint32(tag) {
-			return
-		}
-
-		copy(g.variations[i:], g.variations[i+1:])
-		g.variations = g.variations[:len(g.variations)-1]
-		g.variationsString = encodeVariations(g.variations)
-		return
-	}
+	g.variations.remove(font.Tag(tag))
 }
 
 // SetFeature sets a feature value.
 // For font features, see https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_fonts/OpenType_fonts_guide for more details.
 func (g *GoTextFace) SetFeature(tag Tag, value uint32) {
-	idx := len(g.features)
-	for i, f := range g.features {
-		if uint32(f.Tag) < uint32(tag) {
-			continue
-		}
-		if uint32(f.Tag) > uint32(tag) {
-			idx = i
-			break
-		}
-		if f.Value == value {
-			return
-		}
-		g.features[i].Value = value
-		g.featuresString = encodeFeatures(g.features)
-		return
-	}
-
-	// Keep the alphabetical order in order to make the cache key deterministic.
-	g.features = append(g.features, shaping.FontFeature{})
-	copy(g.features[idx+1:], g.features[idx:])
-	g.features[idx] = shaping.FontFeature{
-		Tag:   font.Tag(tag),
-		Value: value,
-	}
-	g.featuresString = encodeFeatures(g.features)
+	g.features.set(font.Tag(tag), value)
 }
 
 // RemoveFeature removes a feature value.
 func (g *GoTextFace) RemoveFeature(tag Tag) {
-	for i, v := range g.features {
-		if uint32(v.Tag) < uint32(tag) {
-			continue
-		}
-		if uint32(v.Tag) > uint32(tag) {
-			return
-		}
-
-		copy(g.features[i:], g.features[i+1:])
-		g.features = g.features[:len(g.features)-1]
-		g.featuresString = encodeFeatures(g.features)
-		return
-	}
+	g.features.remove(font.Tag(tag))
 }
 
 // Tag is a tag for font variations and features.
@@ -202,35 +124,6 @@ func (g *GoTextFace) Metrics() Metrics {
 	return g.Source.metrics(g)
 }
 
-// encodeVariations returns a binary string encoding of variations
-// suitable for use as a cache key. It is the canonical form referenced
-// by glyphDataCacheKey and glyphRenderDataCacheKey.
-func encodeVariations(variations []font.Variation) string {
-	if len(variations) == 0 {
-		return ""
-	}
-	buf := make([]byte, 0, 8*len(variations))
-	for _, t := range variations {
-		buf = binary.LittleEndian.AppendUint32(buf, uint32(t.Tag))
-		buf = binary.LittleEndian.AppendUint32(buf, math.Float32bits(t.Value))
-	}
-	return string(buf)
-}
-
-// encodeFeatures returns a binary string encoding of features
-// suitable for use as a cache key.
-func encodeFeatures(features []shaping.FontFeature) string {
-	if len(features) == 0 {
-		return ""
-	}
-	buf := make([]byte, 0, 8*len(features))
-	for _, t := range features {
-		buf = binary.LittleEndian.AppendUint32(buf, uint32(t.Tag))
-		buf = binary.LittleEndian.AppendUint32(buf, t.Value)
-	}
-	return string(buf)
-}
-
 func (g *GoTextFace) outputCacheKey(text string) goTextOutputCacheKey {
 	return goTextOutputCacheKey{
 		text:       text,
@@ -238,8 +131,8 @@ func (g *GoTextFace) outputCacheKey(text string) goTextOutputCacheKey {
 		size:       g.Size,
 		language:   g.Language,
 		script:     g.Script,
-		variations: g.variationsString,
-		features:   g.featuresString,
+		variations: g.variations.key,
+		features:   g.features.key,
 	}
 }
 
@@ -292,6 +185,8 @@ func (g *GoTextFace) appendLazyGlyphsForLine(glyphs []LazyGlyph, line string, in
 	horizontal := g.direction().isHorizontal()
 	granularity := granularityFactor(g)
 	gs := g.Source.glyphs(line, g)
+	var colors svgColors
+	var colorsReady bool
 
 	glyphs = slices.Grow(glyphs, len(gs))
 
@@ -306,9 +201,13 @@ func (g *GoTextFace) appendLazyGlyphsForLine(glyphs []LazyGlyph, line string, in
 			Y: -glyph.shapingGlyph.YOffset,
 		})
 
-		if keepGlyph == nil || keepGlyph(fixed26_6ToFloat64(o.X), fixed26_6ToFloat64(o.Y)) {
+		if (glyph.render != nil && glyph.render.hasSVG) || keepGlyph == nil || keepGlyph(fixed26_6ToFloat64(o.X), fixed26_6ToFloat64(o.Y)) {
+			if glyph.render != nil && glyph.render.hasSVG && !colorsReady {
+				colors = g.svgColors()
+				colorsReady = true
+			}
 			// The image position is integer so that the nearest filter can be used.
-			bounds, args, hasImage := goTextGlyphImageInfo(g, glyph, o, granularity)
+			bounds, args, hasImage := goTextGlyphImageInfo(g, glyph, o, granularity, colors)
 
 			var advanceX, advanceY float64
 			if horizontal {
@@ -334,7 +233,7 @@ func (g *GoTextFace) appendLazyGlyphsForLine(glyphs []LazyGlyph, line string, in
 					imager = &goTextLineImager{
 						source:         g.Source,
 						size:           g.Size,
-						variations:     g.variationsString,
+						variations:     g.variations.key,
 						variationCount: glyphVariationCount(g),
 						args:           make([]goTextGlyphImageArgs, 0, len(gs)-i),
 					}
@@ -384,6 +283,8 @@ type goTextLineImager struct {
 type goTextGlyphImageArgs struct {
 	glyph          *goTextGlyph
 	subpixelOffset fixed.Point26_6
+	svg            *svgGlyphLayout
+	svgKey         svgGlyphKey
 }
 
 // glyphImage implements glyphImager.
@@ -391,6 +292,9 @@ func (im *goTextLineImager) glyphImage(index int) *ebiten.Image {
 	args := &im.args[index]
 	glyph := args.glyph
 	rd := glyph.render
+	if args.svg != nil {
+		return im.source.svgFont.image(args.svgKey, args.svg, float64(im.source.f.Upem()))
+	}
 	// A bitmap glyph is pixel-aligned and its subpixel offset is always
 	// zero (see goTextGlyphImageInfo), so one key form covers both the
 	// bitmap and the outline conventions.
@@ -406,11 +310,6 @@ func (im *goTextLineImager) glyphImage(index int) *ebiten.Image {
 		if bm := rd.bitmap(); bm != nil {
 			return ebiten.NewImageFromImage(bm), true
 		}
-		if svg := rd.svg(); svg != nil {
-			if img := svgToImage(svg, fixed26_6ToFloat64(rd.size), subpixelOffset, rd.bounds); img != nil {
-				return img, true
-			}
-		}
 		if img := colrV0LayersToImage(rd.colrV0Layers(), subpixelOffset, rd.bounds); img != nil {
 			return img, true
 		}
@@ -423,6 +322,9 @@ func (im *goTextLineImager) glyphImage(index int) *ebiten.Image {
 
 // glyphColored implements glyphImager.
 func (im *goTextLineImager) glyphColored(index int) bool {
+	if im.args[index].svg != nil {
+		return true
+	}
 	return im.args[index].glyph.render.colored()
 }
 
@@ -435,11 +337,11 @@ func (im *goTextLineImager) glyphColored(index int) bool {
 // granularity is taken as a parameter rather than derived from face
 // because the caller is expected to compute it once per layout pass
 // (see granularityFactor) and share it across every glyph.
-func goTextGlyphImageInfo(face *GoTextFace, glyph *goTextGlyph, origin fixed.Point26_6, granularity fixed.Int26_6) (bounds image.Rectangle, args goTextGlyphImageArgs, hasImage bool) {
+func goTextGlyphImageInfo(face *GoTextFace, glyph *goTextGlyph, origin fixed.Point26_6, granularity fixed.Int26_6, colors svgColors) (bounds image.Rectangle, args goTextGlyphImageArgs, hasImage bool) {
 	if glyph.render == nil {
 		return
 	}
-	if glyph.render.useBitmap {
+	if glyph.render.useBitmap && !glyph.render.sideways && !glyph.render.hasSVG {
 		// Bitmap glyph: dimensions come from rd.bounds (sourced from
 		// GlyphExtents via the sbix or CBDT/EBDT subtable, set during
 		// buildRenderData) so layout doesn't have to wait for the
@@ -470,6 +372,30 @@ func goTextGlyphImageInfo(face *GoTextFace, glyph *goTextGlyph, origin fixed.Poi
 		origin.Y = adjustGranularity(origin.Y, granularity)
 	}
 
+	if rd := glyph.render; rd.hasSVG {
+		key := svgGlyphKey{
+			document: rd.svgDocumentIndex,
+			gid:      uint16(rd.gid),
+			size:     rd.size,
+			xoffset:  origin.X & 63,
+			yoffset:  origin.Y & 63,
+			colors:   colors.key,
+		}
+		prepared := face.Source.svgFont.prepare(key, colors, float64(face.Source.f.Upem()))
+		if prepared.err == nil {
+			if prepared.bounds.Empty() {
+				return
+			}
+			bounds = prepared.bounds.Add(image.Pt(origin.X.Floor(), origin.Y.Floor()))
+			args = goTextGlyphImageArgs{
+				glyph:  glyph,
+				svg:    prepared,
+				svgKey: key,
+			}
+			hasImage = true
+			return
+		}
+	}
 	b := glyph.render.bounds
 	subpixelOffset := fixed.Point26_6{
 		X: (origin.X + b.Min.X) & ((1 << 6) - 1),

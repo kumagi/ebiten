@@ -339,16 +339,16 @@ type textInputEvents struct {
 
 	queuedStates []textInputState
 
-	// sessionCommitted reports whether a commit has already been delivered to
-	// the open session. A session ends at its first commit, so whatever is
-	// queued behind that commit is for the next one.
-	sessionCommitted bool
+	// sessionTerminated reports whether a commit or error has already been
+	// delivered to the open session. States queued after either terminal
+	// state belong to the next session.
+	sessionTerminated bool
 
-	// lastEndTick is the tick the last session ended at, or 0 before the first
+	// lastEndTick is the one-based tick the last session ended at, or 0 before the first
 	// one ends.
 	lastEndTick int64
 
-	// queuedTick is the tick the queued states were reported in.
+	// queuedTick is the one-based tick the queued states were reported in.
 	queuedTick int64
 
 	// endedByUser reports whether the last ending was the user ending text
@@ -395,12 +395,12 @@ func (s *textInputEvents) clearActiveSessionIf(active *session) {
 	}
 }
 
-// currentTick reports the current tick.
+// currentTick reports a one-based tick so that zero can mean no session has ended.
 func (s *textInputEvents) currentTick() int64 {
 	if s.tick != nil {
-		return s.tick()
+		return s.tick() + 1
 	}
-	return ebiten.Tick()
+	return ebiten.Tick() + 1
 }
 
 func (s *textInputEvents) start() (ch chan textInputState, endFunc func()) {
@@ -419,7 +419,7 @@ func (s *textInputEvents) start() (ch chan textInputState, endFunc func()) {
 		s.ch = make(chan textInputState, 10)
 		s.done = make(chan struct{})
 	}
-	s.sessionCommitted = false
+	s.sessionTerminated = false
 	s.endedByUser = false
 	s.flushStateQueue()
 	return s.ch, s.end
@@ -545,19 +545,19 @@ func (s *textInputEvents) dropQueuedCompositions() {
 }
 
 // flushStateQueue delivers queued states to the open session, stopping at the
-// commit that ends it. A session reports at most one commit, so anything
-// queued behind that commit stays for the next session rather than being
-// delivered to a channel that is about to close.
+// commit or error that ends it. Anything queued after that terminal state
+// stays for the next session rather than being delivered to a channel that
+// is about to close.
 func (s *textInputEvents) flushStateQueue() {
 	var sent int
 	for _, st := range s.queuedStates {
-		if s.ch == nil || s.sessionCommitted {
+		if s.ch == nil || s.sessionTerminated {
 			break
 		}
 		s.doSend(st)
 		sent++
-		if st.CommitKind.committed() {
-			s.sessionCommitted = true
+		if st.CommitKind.committed() || st.Error != nil {
+			s.sessionTerminated = true
 		}
 	}
 	s.queuedStates = slices.Delete(s.queuedStates, 0, sent)
