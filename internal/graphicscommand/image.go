@@ -95,6 +95,10 @@ func (i *Image) flushBufferedWritePixels() {
 }
 
 func (i *Image) Dispose() {
+	// Discarded writes are not submitted, so their pixel buffers can be reused immediately.
+	for _, arg := range i.bufferedWritePixelsArgs {
+		arg.pixels.Release()
+	}
 	i.bufferedWritePixelsArgs = nil
 	c := &disposeImageCommand{
 		target: i,
@@ -154,28 +158,26 @@ func (i *Image) DrawTriangles(srcs [graphics.ShaderSrcImageCount]*Image, vertice
 // ReadPixels reads the image's pixels.
 // ReadPixels returns an error when an error happens in the graphics driver.
 func (i *Image) ReadPixels(graphicsDriver graphicsdriver.Graphics, args []graphicsdriver.PixelsArgs) error {
-	i.flushBufferedWritePixels()
-	c := &readPixelsCommand{
-		img:  i,
-		args: args,
-	}
-	theCommandQueueManager.enqueueCommand(c)
-	if err := theCommandQueueManager.flush(graphicsDriver, graphicsdriver.FlushModeIntermediate); err != nil {
+	result := NewPixelReadback()
+	i.ReadPixelsAsync(args, result)
+	if err := FlushAndWaitPixelReadbacks(graphicsDriver, []*PixelReadback{result}); err != nil {
 		return err
 	}
-	return nil
+	done, err := result.Poll()
+	if !done {
+		panic("graphicscommand: pixel read-back is not complete after waiting")
+	}
+	return err
 }
 
-// ReadPixelsAsync queues a read of the image's pixels and returns its result channel.
-// ReadPixelsAsync must not be called after the image is disposed.
-func (i *Image) ReadPixelsAsync(args []graphicsdriver.PixelsArgs) <-chan error {
+// ReadPixelsAsync queues a read of the image's pixels that completes result, which must be
+// incomplete. ReadPixelsAsync must not be called after the image is disposed.
+func (i *Image) ReadPixelsAsync(args []graphicsdriver.PixelsArgs, result *PixelReadback) {
 	i.flushBufferedWritePixels()
-	req := newReadPixelsRequest(args)
 	theCommandQueueManager.enqueueCommand(&readPixelsAsyncCommand{
 		img: i,
-		req: req,
+		req: newReadPixelsRequest(args, result),
 	})
-	return req.result
 }
 
 func (i *Image) WritePixels(pixels *graphics.ManagedBytes, region image.Rectangle) {
@@ -183,7 +185,7 @@ func (i *Image) WritePixels(pixels *graphics.ManagedBytes, region image.Rectangl
 	// Successive WritePixels calls might accumulate the pixels and never release,
 	// especially when the image is unmanaged (#3036).
 	var cur int
-	for idx := 0; idx < len(i.bufferedWritePixelsArgs); idx++ {
+	for idx := range i.bufferedWritePixelsArgs {
 		arg := i.bufferedWritePixelsArgs[idx]
 		if arg.region.In(region) {
 			arg.pixels.Release()

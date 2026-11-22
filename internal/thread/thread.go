@@ -27,8 +27,8 @@ import (
 )
 
 type Thread interface {
-	Loop(ctx context.Context) error
-	LoopAndStop(ctx context.Context) error
+	Loop(done <-chan struct{})
+	LoopAndStop(done <-chan struct{})
 
 	call(f callable, sync bool) bool
 }
@@ -155,6 +155,36 @@ func CallAsync[A any](t Thread, f func(A), arg A) {
 	}
 }
 
+// TryCallAsync reports whether f with arg was accepted.
+// On an OSThread, it queues the call only if the loop can accept it immediately, without waiting for execution.
+// On a NoopThread, it executes the call immediately unless the thread has stopped.
+func TryCallAsync[A any](t Thread, f func(A), arg A) bool {
+	if t, ok := t.(*NoopThread); ok {
+		if t.stopped.Load() {
+			logDiscardedCall()
+			return false
+		}
+		f(arg)
+		return true
+	}
+	th, ok := t.(*OSThread)
+	if !ok {
+		return false
+	}
+	c, pool := getCall[asyncCall[A]]()
+	c.pool = pool
+	c.f = f
+	c.arg = arg
+	select {
+	case th.funcs <- queueItem{f: c}:
+		// The worker owns c after accepting it, including returning it to the pool.
+		return true
+	default:
+		releaseCall(c, pool)
+		return false
+	}
+}
+
 type queueItem struct {
 	f callable
 
@@ -187,46 +217,40 @@ func NewOSThread() *OSThread {
 	}
 }
 
-// Loop starts the thread loop until ctx is canceled.
-//
-// Loop returns ctx's error if exists.
+// Loop starts the thread loop until done receives a value or is closed.
 //
 // Loop can be called again after it returns. Use LoopAndStop for a loop that is the
 // thread's whole life.
 //
 // Loop must be called on the OS thread.
-func (t *OSThread) Loop(ctx context.Context) error {
+func (t *OSThread) Loop(done <-chan struct{}) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	return t.loop(ctx)
+	t.loopUntil(done)
 }
 
 // LoopAndStop runs Loop and then stops the thread.
 //
 // After LoopAndStop returns, Call and CallAsync do nothing.
 //
-// LoopAndStop returns ctx's error if exists.
-//
 // LoopAndStop must be called on the OS thread.
-func (t *OSThread) LoopAndStop(ctx context.Context) error {
+func (t *OSThread) LoopAndStop(done <-chan struct{}) {
 	defer t.stop()
-	return t.Loop(ctx)
+	t.Loop(done)
 }
 
-// NestedLoop runs functions requested by Call and CallAsync until ctx is canceled.
+// NestedLoop runs functions requested by Call and CallAsync until done receives a value or is closed.
 //
 // NestedLoop is useful when a function invoked by Loop blocks the thread and requests
 // from other goroutines must be processed in the meantime.
 //
-// NestedLoop returns ctx's error if exists.
-//
 // NestedLoop must be called on the OS thread running Loop, from within a function invoked by Loop.
-func (t *OSThread) NestedLoop(ctx context.Context) error {
-	return t.loop(ctx)
+func (t *OSThread) NestedLoop(done <-chan struct{}) {
+	t.loopUntil(done)
 }
 
-func (t *OSThread) loop(ctx context.Context) error {
+func (t *OSThread) loopUntil(done <-chan struct{}) {
 	for {
 		select {
 		case item := <-t.funcs:
@@ -236,8 +260,8 @@ func (t *OSThread) loop(ctx context.Context) error {
 				}
 				item.f.call()
 			}()
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-done:
+			return
 		}
 	}
 }
@@ -281,16 +305,14 @@ func NewNoopThread() *NoopThread {
 }
 
 // Loop does nothing.
-func (t *NoopThread) Loop(ctx context.Context) error {
-	return nil
+func (t *NoopThread) Loop(done <-chan struct{}) {
 }
 
 // LoopAndStop stops the thread without looping.
 //
 // After LoopAndStop returns, Call and CallAsync do nothing.
-func (t *NoopThread) LoopAndStop(ctx context.Context) error {
+func (t *NoopThread) LoopAndStop(done <-chan struct{}) {
 	t.stop()
-	return nil
 }
 
 // stop stops serving Call and CallAsync.

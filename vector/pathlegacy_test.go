@@ -111,3 +111,57 @@ func TestLegacyFlatteningNonFiniteControl(t *testing.T) {
 		}
 	}
 }
+
+func TestAppendVerticesAndIndicesForStrokeInvalidWidth(t *testing.T) {
+	var path vector.Path
+	path.MoveTo(4, 4)
+	path.LineTo(28, 28)
+	for _, width := range []float32{0, -2, float32(math.NaN()), float32(math.Inf(1)), float32(math.Inf(-1))} {
+		vertices := []ebiten.Vertex{{
+			DstX: 1,
+			DstY: 2,
+		}}
+		indices := []uint16{0}
+		checkStrokeWidthPanic(t, width, func() {
+			gotVertices, gotIndices := path.AppendVerticesAndIndicesForStroke(vertices, indices, &vector.StrokeOptions{
+				Width: width,
+			})
+			if !slices.Equal(gotVertices, vertices) || !slices.Equal(gotIndices, indices) {
+				t.Errorf("width %v changed existing geometry", width)
+			}
+		})
+	}
+}
+
+func TestAppendVerticesAndIndicesForFillingInvalidSubPath(t *testing.T) {
+	var triangle vector.Path
+	triangle.MoveTo(0, 0)
+	triangle.LineTo(2, 0)
+	triangle.LineTo(0, 2)
+	triangle.Close()
+
+	for _, scale := range []float64{math.MaxFloat32, math.MaxFloat64} {
+		var transform ebiten.GeoM
+		transform.Scale(scale, scale)
+		var invalid vector.Path
+		invalid.AddPath(&triangle, &vector.AddPathOptions{GeoM: transform})
+		if vertices, indices := invalid.AppendVerticesAndIndicesForFilling(nil, nil); len(vertices) != 0 || len(indices) != 0 {
+			t.Errorf("scale=%g: invalid sub-path produced %d vertices and %d indices", scale, len(vertices), len(indices))
+		}
+
+		var got, want vector.Path
+		got.AddPath(&triangle, nil)
+		got.AddPath(&invalid, nil)
+		got.AddPath(&triangle, nil)
+		want.AddPath(&triangle, nil)
+		want.AddPath(&triangle, nil)
+		wantVertices, wantIndices := want.AppendVerticesAndIndicesForFilling(nil, nil)
+		// Repeat the call to check the cached flat paths, too.
+		for range 2 {
+			vertices, indices := got.AppendVerticesAndIndicesForFilling(nil, nil)
+			if !slices.Equal(vertices, wantVertices) || !slices.Equal(indices, wantIndices) {
+				t.Errorf("scale=%g: invalid sub-path changed the surrounding geometry", scale)
+			}
+		}
+	}
+}

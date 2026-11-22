@@ -23,7 +23,6 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/colorm"
 	t "github.com/hajimehoshi/ebiten/v2/internal/testing"
-	"github.com/hajimehoshi/ebiten/v2/internal/ui"
 )
 
 func abs(x int) int {
@@ -46,7 +45,6 @@ func sameColors(c1, c2 color.RGBA, delta int) bool {
 }
 
 func TestMain(m *testing.M) {
-	ui.SetPanicOnErrorOnReadingPixelsForTesting(true)
 	t.MainWithRunLoop(m)
 }
 
@@ -327,4 +325,49 @@ func TestDrawTrianglesWithInvalidColorScaleMode(t *testing.T) {
 	op := &colorm.DrawTrianglesOptions{}
 	op.ColorScaleMode = ebiten.ColorScaleMode(99)
 	colorm.DrawTriangles(dst, vs, is, src, colorm.ColorM{}, op)
+}
+
+func TestFilterPixelatedRotation(t *testing.T) {
+	src := ebiten.NewImage(2, 2)
+	src.WritePixels([]byte{
+		0, 0, 0, 255, 255, 0, 0, 255,
+		0, 255, 0, 255, 255, 255, 0, 255,
+	})
+	for _, tc := range []struct {
+		name       string
+		a, b, c, d float64
+	}{
+		{name: "identity", a: 1, b: 0, c: 0, d: 1},
+		{name: "90°", a: 0, b: -1, c: 1, d: 0},
+		{name: "180°", a: -1, b: 0, c: 0, d: -1},
+		{name: "270°", a: 0, b: 1, c: -1, d: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var rotation ebiten.GeoM
+			rotation.SetElement(0, 0, tc.a)
+			rotation.SetElement(0, 1, tc.b)
+			rotation.SetElement(1, 0, tc.c)
+			rotation.SetElement(1, 1, tc.d)
+			var geo ebiten.GeoM
+			geo.Translate(-1, -1)
+			geo.Concat(rotation)
+			geo.Scale(1.5, 1.5)
+			geo.Translate(1.5, 1.5)
+			for _, useColorM := range []bool{false, true} {
+				dst := ebiten.NewImage(3, 3)
+				if useColorM {
+					drawOptions := &colorm.DrawImageOptions{GeoM: geo, Filter: ebiten.FilterPixelated}
+					colorm.DrawImage(dst, src, colorm.ColorM{}, drawOptions)
+				} else {
+					dst.DrawImage(src, &ebiten.DrawImageOptions{GeoM: geo, Filter: ebiten.FilterPixelated})
+				}
+				// The center pixel covers equal areas of all four source pixels, at every rotation.
+				got := dst.At(1, 1).(color.RGBA)
+				want := color.RGBA{128, 128, 0, 255}
+				if !sameColors(got, want, 1) {
+					t.Errorf("ColorM=%v: center = %v, want %v", useColorM, got, want)
+				}
+			}
+		})
+	}
 }

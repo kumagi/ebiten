@@ -22,8 +22,6 @@ import (
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/internal/atlas"
-	"github.com/hajimehoshi/ebiten/v2/internal/buffered"
 )
 
 var gameUpdateCh = make(chan func())
@@ -236,7 +234,7 @@ var testSetAndWritePixelsBeforeMainResult = func() testResult {
 	img := ebiten.NewImage(16, 16)
 	img.Set(0, 0, clr)
 	pix := make([]byte, 4*16*16)
-	for i := 0; i < len(pix)/4; i++ {
+	for i := range len(pix) / 4 {
 		pix[4*i] = 5
 		pix[4*i+1] = 6
 		pix[4*i+2] = 7
@@ -270,7 +268,7 @@ func TestSetAndWritePixelsBeforeMain(t *testing.T) {
 var testWritePixelsAndModifyBeforeMainResult = func() testResult {
 	img := ebiten.NewImage(16, 16)
 	pix := make([]byte, 4*16*16)
-	for i := 0; i < len(pix)/4; i++ {
+	for i := range len(pix) / 4 {
 		pix[4*i] = 1
 		pix[4*i+1] = 2
 		pix[4*i+2] = 3
@@ -278,7 +276,7 @@ var testWritePixelsAndModifyBeforeMainResult = func() testResult {
 	}
 	img.WritePixels(pix)
 	// After calling WritePixels, modifying pix must not affect the result.
-	for i := 0; i < len(pix)/4; i++ {
+	for i := range len(pix) / 4 {
 		pix[4*i] = 5
 		pix[4*i+1] = 6
 		pix[4*i+2] = 7
@@ -307,10 +305,25 @@ func TestWritePixelsAndModifyBeforeMain(t *testing.T) {
 	}
 }
 
+var drawImageSelfBeforeMainPanicked = func() (panicked bool) {
+	defer func() {
+		panicked = recover() != nil
+	}()
+	img := ebiten.NewImage(16, 16)
+	img.DrawImage(img, nil)
+	return false
+}()
+
+func TestDrawImageSelfBeforeMain(t *testing.T) {
+	if !drawImageSelfBeforeMainPanicked {
+		t.Error("DrawImage with the receiver as the source before the main loop must panic at the call")
+	}
+}
+
 var imageGCedCh = make(chan struct{})
 
 func init() {
-	img := buffered.NewImage(1, 1, atlas.ImageTypeRegular)
+	img := ebiten.NewImage(1, 1)
 	runtime.AddCleanup(img, func(ch chan struct{}) {
 		close(ch)
 	}, imageGCedCh)

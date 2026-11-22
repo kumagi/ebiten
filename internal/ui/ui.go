@@ -160,80 +160,49 @@ func newUserInterface() (*UserInterface, error) {
 	return u, nil
 }
 
-func (u *UserInterface) readPixels(img *Image, pixels []byte, region image.Rectangle) error {
-	if !u.running.Load() {
-		panic("ui: ReadPixels cannot be called before the game starts")
-	}
-
-	ok, err := img.readPixels(pixels, region)
-	if err != nil {
-		return err
-	}
-
-	// ReadPixels failed since this was called in between two frames.
-	// Try this again at the next frame.
-	if !ok {
-		// If this function is called from the same sequence as a game's Update and Draw,
-		// this causes a dead lock.
-		// This never happens so far, but if handling inputs after EndFrame is implemented,
-		// this might be possible (#1704).
-
-		var err error
-		u.context.runInFrame(func() {
-			ok, imgErr := img.readPixels(pixels, region)
-			if imgErr != nil {
-				err = imgErr
-				return
-			}
-			if !ok {
-				// This never reaches since this function must be called in a frame.
-				panic("ui: ReadPixels unexpectedly failed")
-			}
-		})
-		return err
-	}
-
-	return nil
-}
-
-// readPixelsAsync starts reading pixels and returns the channel to receive the result.
+// readPixelsAsync starts reading pixels and returns its result without waiting for a frame.
 //
 // A read-back never fails to be enqueued, so this reports a failure to read the pixels only via the
-// returned channel.
-func (u *UserInterface) readPixelsAsync(img *Image, pixels []byte, region image.Rectangle) <-chan error {
+// returned result.
+func (u *UserInterface) readPixelsAsync(img *Image, pixels []byte, region image.Rectangle) *graphicscommand.PixelReadback {
 	if !u.running.Load() {
 		panic("ui: ReadPixelsAsync cannot be called before the game starts")
 	}
-
-	result := img.readPixelsAsync(pixels, region)
-	if result != nil {
-		return result
-	}
-
-	// The read-back was not enqueued since this was called in between two frames.
-	// Try this again at the next frame.
-	// Like readPixels, this can deadlock when called from the same Update/Draw sequence.
-	u.context.runInFrame(func() {
-		result = img.readPixelsAsync(pixels, region)
-		if result == nil {
-			// This never reaches since this function must be called in a frame.
-			panic("ui: ReadPixelsAsync unexpectedly failed")
-		}
-	})
-	return result
+	return img.readPixelsAsync(pixels, region)
 }
 
-// abortedReadPixels returns a channel that immediately receives the error that stopped the graphics
-// driver.
-//
-// A read-back must always receive a result, so a read-back that cannot even be enqueued reports the
-// error that prevented it.
-func (u *UserInterface) abortedReadPixels() <-chan error {
-	err := u.error()
-	ch := make(chan error, 1)
-	ch <- err
-	close(ch)
-	return ch
+// abortedReadPixels returns the error that stopped the graphics driver.
+func (u *UserInterface) abortedReadPixels() *graphicscommand.PixelReadback {
+	return graphicscommand.NewCompletedPixelReadback(u.error())
+}
+
+// FlushAndPollPixelReadbacks submits pending commands and checks read-back completion.
+func (u *UserInterface) FlushAndPollPixelReadbacks() {
+	if err := atlas.FlushAndPollPixelReadbacks(u.graphicsDriver); err != nil {
+		u.setError(err)
+	}
+}
+
+// FlushAndWaitPixelReadbacks completes the given read-backs and returns their first error, if any.
+func (u *UserInterface) FlushAndWaitPixelReadbacks(results []*graphicscommand.PixelReadback) error {
+	if err := atlas.FlushAndWaitPixelReadbacks(u.graphicsDriver, results); err != nil {
+		u.setError(err)
+	}
+	for _, result := range results {
+		done, err := result.Poll()
+		if !done {
+			panic("ui: pixel read-back is incomplete after waiting")
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// TryPollPixelReadbacks requests a completion check if the render loop is accepting work.
+func (u *UserInterface) TryPollPixelReadbacks() {
+	graphicscommand.TryPollPixelReadbacks()
 }
 
 func (u *UserInterface) dumpScreenshot(mipmap *mipmap.Mipmap, name string, blackbg bool) (string, error) {

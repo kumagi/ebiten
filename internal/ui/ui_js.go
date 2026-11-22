@@ -114,6 +114,17 @@ type userInterfaceImpl struct {
 	touchesInClient     []touchInClient
 	touchIDs            touchIDAllocator
 
+	// controlKeyInMouseEvent is ctrlKey of the last mouse event. Mouse events reach the canvas under the
+	// pointer even when it does not have the focus, unlike keyboard events.
+	controlKeyInMouseEvent bool
+
+	// inGesture reports whether a gesture that Safari reports with gesture events is in progress.
+	// gestureScale and gestureRotation are the scale and the angle in degrees the gesture has reached,
+	// as the events report them as totals from the start of the gesture.
+	inGesture       bool
+	gestureScale    float64
+	gestureRotation float64
+
 	savedCursorX              float64
 	savedCursorY              float64
 	savedOutsideWidth         float64
@@ -128,6 +139,9 @@ type userInterfaceImpl struct {
 	keyboardLayoutMapRequested bool
 
 	textInputFocusedFunc func() bool
+
+	// gameEnded reports whether the game has ended. gameEnded is guarded by mu.
+	gameEnded bool
 
 	mu         sync.Mutex
 	dropFileMu sync.Mutex
@@ -332,23 +346,23 @@ func (u *UserInterface) canCaptureCursor() bool {
 	return time.Since(u.lastCaptureExitTime) >= 1500*time.Millisecond
 }
 
-func (u *UserInterface) update() error {
+func (u *UserInterface) update() (suspended bool, err error) {
 	if u.captureCursorLater && u.canCaptureCursor() {
 		u.setCursorMode(CursorModeCaptured)
 	}
 
-	suspended := u.suspended()
+	suspended = u.suspended()
 	clock.SetDurationSuspended(suspended)
 	if suspended {
-		return hook.SuspendAudio()
+		return true, hook.SuspendAudio()
 	}
 	if err := hook.ResumeAudio(); err != nil {
-		return err
+		return false, err
 	}
-	return u.updateImpl(false)
+	return false, u.updateImpl(false)
 }
 
-func (u *UserInterface) updateImpl(force bool) error {
+func (u *UserInterface) updateImpl(force bool) (err error) {
 	// Guard updateImpl as this function cannot be invoked until this finishes (#2339).
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -357,6 +371,17 @@ func (u *UserInterface) updateImpl(force bool) error {
 	if u.context == nil {
 		return nil
 	}
+
+	// A forced frame can be waiting for mu while the game ends, e.g. by Termination (#3939).
+	if u.gameEnded || u.error() != nil {
+		return nil
+	}
+	// Any error from a frame ends the game. Mark it before mu is released.
+	defer func() {
+		if err != nil {
+			u.gameEnded = true
+		}
+	}()
 
 	if err := gamepad.Update(0, nil); err != nil {
 		return err
@@ -395,7 +420,17 @@ func (u *UserInterface) needsUpdate() bool {
 	return false
 }
 
+// setGameEnded marks the game as ended, after which updateImpl does nothing.
+func (u *UserInterface) setGameEnded() {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.gameEnded = true
+}
+
 func (u *UserInterface) loopGame() error {
+	// Browser callbacks can still request forced frames after the loop ends.
+	defer u.setGameEnded()
+
 	// Initialize the screen size first (#3034).
 	// If ebiten.SetRunnableOnUnfocused(false) and the canvas is not focused,
 	// suspended() returns true and the update routine cannot start.
@@ -415,11 +450,14 @@ func (u *UserInterface) loopGame() error {
 			return err
 		}
 		if u.needsUpdate() {
-			defer func() {
-				u.onceUpdateCalled = true
-			}()
-			if err := u.update(); err != nil {
+			suspended, err := u.update()
+			if err != nil {
 				return err
+			}
+			if suspended {
+				u.ScheduleFrame()
+			} else {
+				u.onceUpdateCalled = true
 			}
 		}
 		switch u.FPSMode() {
@@ -645,11 +683,13 @@ func (u *UserInterface) setWindowEventHandlers(v js.Value) {
 }
 
 func (u *UserInterface) onResize() {
-	u.updateScreenSize()
-
 	// updateImpl can block. Use goroutine.
 	// See https://pkg.go.dev/syscall/js#FuncOf.
 	go func() {
+		u.mu.Lock()
+		u.updateScreenSize()
+		u.mu.Unlock()
+
 		if err := u.updateImpl(true); err != nil {
 			u.setError(err)
 			return
@@ -798,6 +838,20 @@ func (u *UserInterface) setCanvasEventHandlers(v js.Value) {
 		return nil
 	}))
 
+	// Gestures on a touchpad in Safari
+	for _, name := range []string{"gesturestart", "gesturechange", "gestureend"} {
+		v.Call("addEventListener", name, js.FuncOf(func(this js.Value, args []js.Value) any {
+			e := args[0]
+			// Prevent the page from being zoomed.
+			e.Call("preventDefault")
+			if err := u.updateInputFromEvent(e); err != nil {
+				u.setError(err)
+				return nil
+			}
+			return nil
+		}))
+	}
+
 	// Context menu
 	v.Call("addEventListener", "contextmenu", js.FuncOf(func(this js.Value, args []js.Value) any {
 		e := args[0]
@@ -835,6 +889,7 @@ func (u *UserInterface) setCanvasEventHandlers(v js.Value) {
 	v.Call("addEventListener", "blur", js.FuncOf(func(this js.Value, args []js.Value) any {
 		// The browser might not dispatch touchend or touchcancel for the touches that are down.
 		u.releaseAllInputs()
+		u.inGesture = false
 		return nil
 	}))
 }

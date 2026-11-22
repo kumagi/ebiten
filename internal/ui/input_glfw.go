@@ -172,6 +172,22 @@ func (i *glfwInput) handleScroll(wheelX, wheelY, scrollDeltaX, scrollDeltaY floa
 	i.scrollPagesY += pagesY
 }
 
+// handlePinch records the amount of a pinch gesture reported by GLFW.
+func (i *glfwInput) handlePinch(delta float64) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	i.state.addPinch(delta)
+}
+
+// handleRotate records the angle of a rotation gesture reported by GLFW.
+func (i *glfwInput) handleRotate(delta float64) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	i.state.RotationDelta += delta
+}
+
 // setContentSize records the window's content size in device-independent pixels.
 func (i *glfwInput) setContentSize(width, height float64) {
 	i.mu.Lock()
@@ -200,9 +216,7 @@ func (i *glfwInput) syncModKeys(mods glfw.ModifierKey) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
-	t := i.state.nextInputTime()
-
-	i.state.syncModKeysByMods(mods, t)
+	i.state.syncModKeysByMods(mods, 0)
 }
 
 // setLockKeys records the state of the lock keys.
@@ -340,6 +354,18 @@ func (u *glfwBackend) registerInputCallbacks() error {
 		return err
 	}
 
+	if _, err := u.window.SetPinchCallback(func(w *glfw.Window, delta float64) {
+		u.input.handlePinch(delta)
+	}); err != nil {
+		return err
+	}
+
+	if _, err := u.window.SetRotateCallback(func(w *glfw.Window, delta float64) {
+		u.input.handleRotate(delta)
+	}); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -415,6 +441,8 @@ func (u *glfwBackend) KeyName(key Key) string {
 }
 
 // syncModKeysByMods reconciles per-key modifier state with a mods bitmask.
+// If t is zero, an input time is allocated only when a key state needs updating.
+//
 // Needed on macOS to recover from text-input intercepts (e.g. Cmd+A) and
 // system hotkey absorption (e.g. Cmd+Shift+4). macOS-only: on Windows,
 // AltGr would make Ctrl appear stuck (#3453).
@@ -437,15 +465,16 @@ func (i *InputState) syncModKeysByMods(mods glfw.ModifierKey, t InputTime) {
 		{glfw.ModSuper, KeyMetaLeft, KeyMetaRight},
 	}
 	for _, m := range mappings {
+		leftPressed := i.KeyPressedTimes[m.left] > i.KeyReleasedTimes[m.left]
+		rightPressed := i.KeyPressedTimes[m.right] > i.KeyReleasedTimes[m.right]
+		// Leave press times intact when the modifier state is already in sync.
+		if (leftPressed || rightPressed) == (mods&m.mod != 0) {
+			continue
+		}
+		if t == 0 {
+			t = i.nextInputTime()
+		}
 		if mods&m.mod != 0 {
-			// The mod flag is set, so at least one of left/right should be pressed.
-			// If one already is, the state is in sync: leave its press time intact,
-			// otherwise the key would keep registering as just-pressed every tick.
-			leftPressed := i.KeyPressedTimes[m.left] > i.KeyReleasedTimes[m.left]
-			rightPressed := i.KeyPressedTimes[m.right] > i.KeyReleasedTimes[m.right]
-			if leftPressed || rightPressed {
-				continue
-			}
 			// Neither is pressed: press whichever was most recently pressed,
 			// defaulting to the left variant if neither was ever pressed.
 			if i.KeyPressedTimes[m.left] >= i.KeyPressedTimes[m.right] {
@@ -456,10 +485,10 @@ func (i *InputState) syncModKeysByMods(mods glfw.ModifierKey, t InputTime) {
 			continue
 		}
 		// The mod flag is clear: release any variant currently in the pressed state.
-		if i.KeyPressedTimes[m.left] > i.KeyReleasedTimes[m.left] {
+		if leftPressed {
 			i.setKeyReleased(m.left, t)
 		}
-		if i.KeyPressedTimes[m.right] > i.KeyReleasedTimes[m.right] {
+		if rightPressed {
 			i.setKeyReleased(m.right, t)
 		}
 	}

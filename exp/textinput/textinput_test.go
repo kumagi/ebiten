@@ -443,6 +443,20 @@ func commitState(text string) textinput.TextInputState {
 	return textinput.TextInputState{Text: text, CommitKind: textinput.CommitRegular}
 }
 
+func TestQueuedCommitAfterErrorReachesNextSession(t *testing.T) {
+	var ev textinput.TextInputEvents
+	ev.SetTick(func() int64 { return 1 })
+	ev.Send(textinput.TextInputState{Error: errors.New("IME error")})
+	ev.Send(commitState("a"))
+
+	if got, ok := ev.StartSessionCommit(); ok {
+		t.Errorf("failed session got commit %q", got)
+	}
+	if got, ok := ev.StartSessionCommit(); !ok || got != "a" {
+		t.Errorf("next session commit = %q, %v, want %q, true", got, ok, "a")
+	}
+}
+
 // TestQueuedCommitsReachSuccessiveSessions verifies that several commits
 // arriving before the next tick are all delivered, in order. A session ends at
 // its first commit, so flushing every queued commit into one session's channel
@@ -760,22 +774,37 @@ func TestQueuedStatesOfStartTickReachSession(t *testing.T) {
 func TestQueuedStatesWithinCarryReachNextSession(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
+		endTick   int64
 		startTick int64
 		want      bool
 	}{
 		{
 			name:      "restarted within the carry window",
+			endTick:   100,
 			startTick: 100 + textinput.QueueCarryTicks,
 			want:      true,
 		},
 		{
 			name:      "restarted past the carry window",
+			endTick:   100,
 			startTick: 100 + textinput.QueueCarryTicks + 1,
+			want:      false,
+		},
+		{
+			name:      "tick zero within the carry window",
+			endTick:   0,
+			startTick: textinput.QueueCarryTicks,
+			want:      true,
+		},
+		{
+			name:      "tick zero past the carry window",
+			endTick:   0,
+			startTick: textinput.QueueCarryTicks + 1,
 			want:      false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var tick int64 = 100
+			tick := tc.endTick
 			ev := newEventsAtTick(&tick)
 
 			// A session takes a commit and ends at it.
@@ -784,7 +813,7 @@ func TestQueuedStatesWithinCarryReachNextSession(t *testing.T) {
 			ev.End()
 
 			// The next character arrives before the application reopens.
-			tick = 101
+			tick = tc.endTick + 1
 			ev.Send(commitState("b"))
 
 			tick = tc.startTick

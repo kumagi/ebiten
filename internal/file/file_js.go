@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"slices"
+	"strings"
 	"sync"
 	"syscall/js"
 	"time"
@@ -137,7 +139,11 @@ func (f *FileEntryFS) ReadDir(name string) ([]fs.DirEntry, error) {
 			Err:  fs.ErrInvalid,
 		}
 	}
-	return d.ReadDir(-1)
+	entries, err := d.ReadDir(-1)
+	slices.SortFunc(entries, func(a, b fs.DirEntry) int {
+		return strings.Compare(a.Name(), b.Name())
+	})
+	return entries, err
 }
 
 func (f *FileEntryFS) ReadFile(name string) ([]byte, error) {
@@ -372,7 +378,7 @@ func (d *dir) ReadDir(count int) ([]fs.DirEntry, error) {
 					ch <- nil
 					return nil
 				}
-				for i := 0; i < entries.Length(); i++ {
+				for i := range entries.Length() {
 					ent := entries.Index(i)
 					name := ent.Get("name").String()
 					// A name can be empty when this directory is a root directory.
@@ -441,7 +447,8 @@ func (d *dir) ReadDir(count int) ([]fs.DirEntry, error) {
 		if entry.Get("isFile").Bool() {
 			v, err := getFile(entry)
 			if err != nil {
-				return nil, err
+				d.offset += i
+				return ents[:i], err
 			}
 			fi.file = v
 		}

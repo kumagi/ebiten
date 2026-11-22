@@ -130,6 +130,44 @@ func TestEmpty(t *testing.T) {
 	}
 }
 
+func TestLocalModule(t *testing.T) {
+	if !hasGoCommand() {
+		t.Skip("go command is missing")
+	}
+
+	collector := filepath.Join(t.TempDir(), "shadercollector.exe")
+	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", collector, "github.com/hajimehoshi/ebiten/v2/internal/shadercollector")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Error: %v\n%s", err, out)
+	}
+
+	cmd = exec.Command(collector, "./...")
+	cmd.Dir = filepath.Join("testdata", "localmodule")
+	out, err := cmd.Output()
+	if err != nil {
+		if err, ok := err.(*exec.ExitError); ok {
+			t.Fatalf("Error: %v\n%s", err, err.Stderr)
+		}
+		t.Fatal(err)
+	}
+	var shaders []struct {
+		Package string
+		Source  string
+	}
+	if err := json.Unmarshal(out, &shaders); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(shaders), 1; got != want {
+		t.Fatalf("len(shaders): got: %d, want: %d", got, want)
+	}
+	if got, want := shaders[0].Package, "localshader"; got != want {
+		t.Errorf("Package: got: %q, want: %q", got, want)
+	}
+	if got, want := shaders[0].Source, "package main"; got != want {
+		t.Errorf("Source: got: %q, want: %q", got, want)
+	}
+}
+
 func TestManifest(t *testing.T) {
 	if !hasGoCommand() {
 		t.Skip("go command is missing")
@@ -288,6 +326,141 @@ func TestGLSLTarget(t *testing.T) {
 		}
 		if s.GLSLES.Fragment == "" {
 			t.Errorf("s.GLSLES.Fragment is empty: %v", s)
+		}
+	}
+}
+
+func TestOverlappingShaderFiles(t *testing.T) {
+	if !hasGoCommand() {
+		t.Skip("go command is missing")
+	}
+
+	file, err := filepath.Abs(filepath.Join("testdata", "manifestoverlap", "shader.kage"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "ManifestOverlapsPackage",
+			args: []string{
+				"-manifest", filepath.Join("testdata", "manifestoverlap", "manifest.json"),
+				"github.com/hajimehoshi/ebiten/v2/internal/shadercollector/testdata/manifestoverlap",
+			},
+		},
+		{
+			name: "PackagesOverlap",
+			args: []string{
+				"github.com/hajimehoshi/ebiten/v2/internal/shadercollector/testdata/manifestoverlap",
+				"github.com/hajimehoshi/ebiten/v2/internal/shadercollector/testdata/manifestoverlap/other",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append([]string{"run", "github.com/hajimehoshi/ebiten/v2/internal/shadercollector"}, tt.args...)
+			cmd := exec.Command("go", args...)
+			out, err := cmd.Output()
+			if err != nil {
+				if err, ok := err.(*exec.ExitError); ok {
+					t.Fatalf("Error: %v\n%s", err, err.Stderr)
+				}
+				t.Fatal(err)
+			}
+			var shaders []struct {
+				Package  string
+				KageFile string
+			}
+			if err := json.Unmarshal(out, &shaders); err != nil {
+				t.Fatal(err)
+			}
+			if got, want := len(shaders), 1; got != want {
+				t.Errorf("len(shaders): got: %d, want: %d", got, want)
+			}
+			for _, shader := range shaders {
+				if got, want := shader.KageFile, file; got != want {
+					t.Errorf("KageFile: got: %q, want: %q", got, want)
+				}
+				if shader.Package == "" {
+					t.Error("package provenance was lost")
+				}
+			}
+		})
+	}
+}
+
+func TestPackageErrors(t *testing.T) {
+	if !hasGoCommand() {
+		t.Skip("go command is missing")
+	}
+	collector := filepath.Join(t.TempDir(), "shadercollector.exe")
+	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", collector, "github.com/hajimehoshi/ebiten/v2/internal/shadercollector")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Error: %v\n%s", err, out)
+	}
+	for _, source := range []string{
+		"package broken\nvar x = missingSymbol\n",
+		"package broken\nimport _ \"example.com/missing\"\n",
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/broken\ngo 1.26\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "broken.go"), []byte(source), 0644); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(collector, "./...")
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off")
+		out, err := cmd.Output()
+		if err == nil {
+			t.Errorf("invalid package succeeded with output %q", out)
+			continue
+		}
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatal(err)
+		}
+		if len(exitErr.Stderr) == 0 {
+			t.Error("missing package error diagnostic")
+		}
+		if len(out) != 0 {
+			t.Errorf("output on package error: %q", out)
+		}
+	}
+}
+
+func TestTargetWithoutShaders(t *testing.T) {
+	if !hasGoCommand() {
+		t.Skip("go command is missing")
+	}
+	binary := filepath.Join(t.TempDir(), "shadercollector.exe")
+	if out, err := exec.Command("go", "build", "-buildvcs=false", "-o", binary, "github.com/hajimehoshi/ebiten/v2/internal/shadercollector").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	for _, target := range []string{"hls", "glsl,hls", "glsl,"} {
+		t.Run(target, func(t *testing.T) {
+			cmd := exec.Command(binary, "-target="+target)
+			out, err := cmd.Output()
+			exitErr, ok := err.(*exec.ExitError)
+			if !ok {
+				t.Fatalf("got output %q and error %v, want unsupported-target failure", out, err)
+			}
+			if len(out) != 0 || len(exitErr.Stderr) == 0 {
+				t.Errorf("stdout: %q, stderr: %q", out, exitErr.Stderr)
+			}
+		})
+	}
+	for _, target := range []string{"", " ", "glsl,hlsl,msl,pssl"} {
+		out, err := exec.Command(binary, "-target="+target).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.TrimSpace(string(out)); got != "[]" {
+			t.Errorf("target %q: got %q, want []", target, got)
 		}
 	}
 }

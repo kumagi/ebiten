@@ -32,7 +32,6 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/examples/resources/images"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphics"
 	t "github.com/hajimehoshi/ebiten/v2/internal/testing"
-	"github.com/hajimehoshi/ebiten/v2/internal/ui"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
@@ -52,7 +51,7 @@ func skipTooSlowTests(t *testing.T) bool {
 }
 
 func TestMain(m *testing.M) {
-	ui.SetPanicOnErrorOnReadingPixelsForTesting(true)
+	ebiten.SetPanicOnErrorOnReadingPixelsForTesting(true)
 	t.MainWithRunLoop(m)
 }
 
@@ -199,8 +198,8 @@ func TestImageScale(t *testing.T) {
 
 		img1.DrawImage(img0, op)
 
-		for j := 0; j < h*scale; j++ {
-			for i := 0; i < w*scale; i++ {
+		for j := range h * scale {
+			for i := range w * scale {
 				c0 := img0.At(i/scale, j/scale).(color.RGBA)
 				c1 := img1.At(i, j).(color.RGBA)
 				if c0 != c1 {
@@ -277,8 +276,8 @@ func TestImageWritePixels(t *testing.T) {
 	img0 := ebiten.NewImage(size.X, size.Y)
 
 	img0.WritePixels(img.Pix)
-	for j := 0; j < img0.Bounds().Dy(); j++ {
-		for i := 0; i < img0.Bounds().Dx(); i++ {
+	for j := range img0.Bounds().Dy() {
+		for i := range img0.Bounds().Dx() {
 			got := img0.At(i, j)
 			want := img.At(i, j)
 			if got != want {
@@ -296,14 +295,37 @@ func TestImageWritePixels(t *testing.T) {
 	for i := range p {
 		p[i] = 0
 	}
-	for j := 0; j < img0.Bounds().Dy(); j++ {
-		for i := 0; i < img0.Bounds().Dx(); i++ {
+	for j := range img0.Bounds().Dy() {
+		for i := range img0.Bounds().Dx() {
 			got := img0.At(i, j)
 			want := color.RGBA{R: 0x80, G: 0x80, B: 0x80, A: 0x80}
 			if got != want {
 				t.Errorf("img0 At(%d, %d): got %v; want %v", i, j, got, want)
 			}
 		}
+	}
+}
+
+func TestImageWritePixelsBetweenDraws(t *testing.T) {
+	// Keep the source off the atlas so uploads and draws use the same texture.
+	src := ebiten.NewImageWithOptions(image.Rect(0, 0, 2, 1), &ebiten.NewImageOptions{Unmanaged: true})
+	dst := ebiten.NewImageWithOptions(image.Rect(0, 0, 4, 1), &ebiten.NewImageOptions{Unmanaged: true})
+	want := []byte{
+		0xff, 0, 0, 0xff, 0xff, 0, 0, 0xff,
+		0, 0xff, 0, 0xff, 0, 0xff, 0, 0xff,
+	}
+	for i := range 2 {
+		src.WritePixels(want[8*i : 8*(i+1)])
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Translate(float64(2*i), 0)
+		dst.DrawImage(src, op)
+	}
+
+	// Read only after both draws so readback does not serialize the uploads.
+	got := make([]byte, len(want))
+	dst.ReadPixels(got)
+	if !bytes.Equal(got, want) {
+		t.Errorf("ReadPixels: got %v, want %v", got, want)
 	}
 }
 
@@ -372,6 +394,49 @@ func TestImageReadPixelsAsync(t *testing.T) {
 	})
 }
 
+func TestPixelReadbackWait(t *testing.T) {
+	for _, scenario := range []string{"SingleWaiter", "ConcurrentWaiters"} {
+		t.Run(scenario, func(t *testing.T) {
+			img := ebiten.NewImage(8, 8)
+			sub := img.SubImage(image.Rect(2, 3, 4, 5)).(*ebiten.Image)
+			sub.Fill(color.RGBA{R: 123, A: 255})
+			pixels := make([]byte, 16)
+			result := sub.ReadPixelsAsync(pixels)
+			if done, err := result.Poll(); done || err != nil {
+				t.Errorf("unsubmitted read: got (%v, %v), want (false, nil)", done, err)
+			}
+			sub.Fill(color.White)
+			img.Deallocate()
+			check := func() {
+				if err := result.Wait(); err != nil {
+					t.Error(err)
+					return
+				}
+				for j, got := range pixels {
+					if want := []byte{123, 0, 0, 255}[j%4]; got != want {
+						t.Errorf("pixels[%d]: got %d, want %d", j, got, want)
+					}
+				}
+				if done, err := result.Poll(); !done || err != nil {
+					t.Errorf("completed read: got (%v, %v), want (true, nil)", done, err)
+				}
+				if err := result.Wait(); err != nil {
+					t.Errorf("repeated wait: %v", err)
+				}
+			}
+			if scenario == "SingleWaiter" {
+				check()
+				return
+			}
+			var wg sync.WaitGroup
+			for range 8 {
+				wg.Go(check)
+			}
+			wg.Wait()
+		})
+	}
+}
+
 func TestImageDeallocate(t *testing.T) {
 	img := ebiten.NewImage(16, 16)
 	img.Fill(color.White)
@@ -399,8 +464,8 @@ func TestImageBlendLighter(t *testing.T) {
 	op := &ebiten.DrawImageOptions{}
 	op.Blend = ebiten.BlendLighter
 	img1.DrawImage(img0, op)
-	for j := 0; j < img1.Bounds().Dy(); j++ {
-		for i := 0; i < img1.Bounds().Dx(); i++ {
+	for j := range img1.Bounds().Dy() {
+		for i := range img1.Bounds().Dx() {
 			got := img1.At(i, j).(color.RGBA)
 			want := img0.At(i, j).(color.RGBA)
 			want.R = uint8(min(0xff, int(want.R)+1))
@@ -968,7 +1033,7 @@ loop:
 		src := ebiten.NewImage(w+2, h+2)
 
 		pix := make([]byte, 4*(w+2)*(h+2))
-		for i := 0; i < (w+2)*(h+2); i++ {
+		for i := range (w + 2) * (h + 2) {
 			pix[4*i] = 0xff
 			pix[4*i+3] = 0xff
 		}
@@ -2637,6 +2702,149 @@ func BenchmarkImageDrawOver(b *testing.B) {
 	}
 }
 
+func TestImageUnsyncedPixels(t *testing.T) {
+	dst := ebiten.NewImage(16, 16)
+	dst.Set(0, 0, color.White)
+	dst.ReadPixels(make([]byte, 4*16*16))
+	dst.SubImage(image.Rect(1, 1, 3, 3)).(*ebiten.Image).WritePixels(make([]byte, 4*2*2))
+
+	src := ebiten.NewImage(16, 16)
+	dst.DrawImage(src, nil)
+
+	if got, want := dst.At(0, 0), (color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}); got != want {
+		t.Errorf("At(0, 0) after a partial WritePixels and a draw: got: %v, want: %v", got, want)
+	}
+}
+
+func TestImageReadPixelsOnLargeImage(t *testing.T) {
+	const width = 1024
+	height := ebiten.MaxPixelsCacheSize/(4*width) + 1
+	img := ebiten.NewImage(width, height)
+
+	pix := make([]byte, 4*2*2)
+	for i := range pix {
+		pix[i] = 0x40
+	}
+	img.SubImage(image.Rect(2, 2, 4, 4)).(*ebiten.Image).WritePixels(pix)
+	img.Set(3, 3, color.White)
+
+	want := make([]byte, 4*4*4)
+	for _, p := range []image.Point{{2, 2}, {3, 2}, {2, 3}} {
+		idx := 4 * ((p.Y-1)*4 + (p.X - 1))
+		for i := range 4 {
+			want[idx+i] = 0x40
+		}
+	}
+	idx := 4 * ((3-1)*4 + (3 - 1))
+	for i := range 4 {
+		want[idx+i] = 0xff
+	}
+
+	sub := img.SubImage(image.Rect(1, 1, 5, 5)).(*ebiten.Image)
+	for i := range 2 {
+		got := make([]byte, 4*4*4)
+		sub.ReadPixels(got)
+		if !bytes.Equal(got, want) {
+			t.Errorf("read #%d: got: %v, want: %v", i, got, want)
+		}
+	}
+
+	if got, want := img.CachedPixelsSizeForTesting(), 4*ebiten.DividedTileSize*ebiten.DividedTileSize; got != want {
+		t.Errorf("cached pixels size, which must be only the tile containing the read region: got: %d, want: %d", got, want)
+	}
+}
+
+func TestImageReadPixelsEmptyDoesNotLoadCache(t *testing.T) {
+	img := ebiten.NewImage(64, 64)
+	img.Fill(color.RGBA{R: 0x40, A: 0xff})
+
+	img.SubImage(image.Rectangle{}).(*ebiten.Image).ReadPixels(nil)
+	if got := img.CachedPixelsSizeForTesting(); got != 0 {
+		t.Errorf("empty ReadPixels cached %d bytes, want 0", got)
+	}
+
+	pixels := make([]byte, 4)
+	img.SubImage(image.Rect(0, 0, 1, 1)).(*ebiten.Image).ReadPixels(pixels)
+	if want := []byte{0x40, 0, 0, 0xff}; !bytes.Equal(pixels, want) {
+		t.Errorf("non-empty ReadPixels: got %v, want %v", pixels, want)
+	}
+}
+
+func TestImageReadPixelsOnLargeImageAcrossTiles(t *testing.T) {
+	const width = 1024
+	height := ebiten.MaxPixelsCacheSize/(4*width) + 1
+	img := ebiten.NewImage(width, height)
+
+	pix := make([]byte, 4*4*4)
+	for i := range pix {
+		pix[i] = 0x40
+	}
+	img.SubImage(image.Rect(254, 254, 258, 258)).(*ebiten.Image).WritePixels(pix)
+	img.Set(256, 256, color.White)
+
+	if got, want := img.At(0, 0), (color.RGBA{}); got != want {
+		t.Errorf("At(0, 0): got: %v, want: %v", got, want)
+	}
+	if got, want := img.CachedPixelsSizeForTesting(), 4*ebiten.DividedTileSize*ebiten.DividedTileSize; got != want {
+		t.Errorf("cached pixels size after reading one pixel: got: %d, want: %d", got, want)
+	}
+
+	want := make([]byte, 4*8*8)
+	for y := 254; y < 258; y++ {
+		for x := 254; x < 258; x++ {
+			v := byte(0x40)
+			if x == 256 && y == 256 {
+				v = 0xff
+			}
+			idx := 4 * ((y-252)*8 + (x - 252))
+			for i := range 4 {
+				want[idx+i] = v
+			}
+		}
+	}
+
+	sub := img.SubImage(image.Rect(252, 252, 260, 260)).(*ebiten.Image)
+	for i := range 2 {
+		got := make([]byte, 4*8*8)
+		sub.ReadPixels(got)
+		if !bytes.Equal(got, want) {
+			t.Errorf("read #%d: got: %v, want: %v", i, got, want)
+		}
+	}
+
+	if got, want := img.CachedPixelsSizeForTesting(), 4*4*ebiten.DividedTileSize*ebiten.DividedTileSize; got != want {
+		t.Errorf("cached pixels size, which must be the four tiles around (256, 256): got: %d, want: %d", got, want)
+	}
+}
+
+func TestImageReadPixelsModifiedDuringRead(t *testing.T) {
+	const w, h = 4, 4
+	red := color.RGBA{R: 0xff, A: 0xff}
+	blue := color.RGBA{B: 0xff, A: 0xff}
+	img := ebiten.NewImage(w, h)
+	img.Set(0, 0, red)
+
+	pix := make([]byte, 4*w*h)
+	img.ReadPixelsInterruptedForTesting(pix, func() {
+		img.Fill(blue)
+	})
+	for i := range w * h {
+		var want color.RGBA
+		if i == 0 {
+			want = red
+		}
+		if got := (color.RGBA{R: pix[4*i], G: pix[4*i+1], B: pix[4*i+2], A: pix[4*i+3]}); got != want {
+			t.Errorf("pixel %d: got: %v, want: %v", i, got, want)
+		}
+	}
+
+	for _, p := range []image.Point{{0, 0}, {1, 1}} {
+		if got := img.At(p.X, p.Y); got != blue {
+			t.Errorf("At(%d, %d) after the read: got: %v, want: %v", p.X, p.Y, got, blue)
+		}
+	}
+}
+
 // Issue #1171
 func TestImageFloatTranslate(t *testing.T) {
 	const w, h = 32, 32
@@ -2836,25 +3044,113 @@ func TestImageDrawImageCannotAllocateImageForMipmap(t *testing.T) {
 	dst.At(0, 0)
 }
 
-func TestImageNewImageWithZeroSize(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("DrawImage must panic but not")
-		}
-	}()
-
-	_ = ebiten.NewImage(0, 1)
+func TestImageNewImageWithInvalidSize(t *testing.T) {
+	cases := []struct {
+		width  int
+		height int
+	}{
+		{
+			width:  0,
+			height: 1,
+		},
+		{
+			width:  1,
+			height: 0,
+		},
+		{
+			width:  -1,
+			height: 1,
+		},
+		{
+			width:  1,
+			height: -1,
+		},
+		{
+			width:  -1,
+			height: -1,
+		},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%dx%d", c.width, c.height), func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Error("NewImage must panic")
+				}
+			}()
+			i := ebiten.NewImage(c.width, c.height)
+			i.Deallocate()
+		})
+	}
 }
 
-func TestImageNewImageFromImageWithZeroSize(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("DrawImage must panic but not")
+func TestImageNewImageWithOptionsWithInvalidSize(t *testing.T) {
+	for _, size := range [][2]int{{0, 1}, {1, 0}, {-1, 1}, {1, -1}, {-1, -1}} {
+		for _, unmanaged := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%dx%d/unmanaged=%t", size[0], size[1], unmanaged), func(t *testing.T) {
+				defer func() {
+					r := recover()
+					if r == nil {
+						t.Error("NewImageWithOptions must panic")
+					} else if _, ok := r.(runtime.Error); ok {
+						t.Errorf("got runtime panic instead of image size validation: %v", r)
+					}
+				}()
+				bounds := image.Rectangle{Min: image.Pt(2, 3), Max: image.Pt(2+size[0], 3+size[1])}
+				img := ebiten.NewImageWithOptions(bounds, &ebiten.NewImageOptions{Unmanaged: unmanaged})
+				img.Deallocate()
+			})
 		}
-	}()
+	}
+}
 
-	img := image.NewRGBA(image.Rect(0, 0, 0, 1))
-	_ = ebiten.NewImageFromImage(img)
+func TestImageNewImageFromImageWithInvalidSize(t *testing.T) {
+	cases := []struct {
+		width  int
+		height int
+	}{
+		{
+			width:  0,
+			height: 1,
+		},
+		{
+			width:  1,
+			height: 0,
+		},
+		{
+			width:  -1,
+			height: 1,
+		},
+		{
+			width:  1,
+			height: -1,
+		},
+		{
+			width:  -1,
+			height: -1,
+		},
+	}
+	for _, c := range cases {
+		for _, preserveBounds := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%dx%d/preserve=%t", c.width, c.height, preserveBounds), func(t *testing.T) {
+				defer func() {
+					r := recover()
+					if r == nil {
+						t.Error("NewImageFromImageWithOptions must panic")
+					} else if _, ok := r.(runtime.Error); ok {
+						t.Errorf("got runtime panic instead of image size validation: %v", r)
+					}
+				}()
+				src := &image.RGBA{
+					Rect: image.Rectangle{Max: image.Pt(c.width, c.height)},
+					Pix:  make([]byte, 4),
+				}
+				img := ebiten.NewImageFromImageWithOptions(src, &ebiten.NewImageFromImageOptions{
+					PreserveBounds: preserveBounds,
+				})
+				img.Deallocate()
+			})
+		}
+	}
 }
 
 func TestImageClip(t *testing.T) {
@@ -5315,6 +5611,33 @@ func TestSubImageDrawImageInOppositeDirections(t *testing.T) {
 			dst.DrawImage(src, nil)
 		}
 	})
+	wg.Wait()
+}
+
+func TestSubImageRaceConditionWithPixelCache(t *testing.T) {
+	const w, h = 16, 16
+	img0 := ebiten.NewImage(w, h)
+	img1 := ebiten.NewImage(w, h)
+
+	var wg sync.WaitGroup
+	for j := range h {
+		for i := range w {
+			dst, src := img0, img1
+			if (i+j)%2 == 1 {
+				dst, src = img1, img0
+			}
+			r := image.Rect(i, j, i+1, j+1)
+			dstSub := dst.SubImage(r).(*ebiten.Image)
+			srcSub := src.SubImage(r).(*ebiten.Image)
+			wg.Go(func() {
+				for range 20 {
+					srcSub.Set(i, j, color.White)
+					_ = dstSub.At(i, j)
+					dstSub.DrawImage(srcSub, nil)
+				}
+			})
+		}
+	}
 	wg.Wait()
 }
 

@@ -249,6 +249,32 @@ func TestSetPositionBeforeDeviceCreation(t *testing.T) {
 	}
 }
 
+func TestPositionBeforeContextReady(t *testing.T) {
+	// A device can exist before it is ready, e.g. while Web Audio waits for a user gesture.
+	p, err := audio.NewPlayerF32WithUnreadyContextForTesting(bytes.NewReader(make([]byte, 44100*8)), 44100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const position = 500 * time.Millisecond
+	if err := p.SetPosition(position); err != nil {
+		t.Fatal(err)
+	}
+	if err := audio.EnsurePlayerForTesting(p); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		audio.UpdatePositionForTesting(p)
+		if got := p.Position(); got != position {
+			t.Errorf("Position before readiness: got %v, want %v", got, position)
+		}
+	}
+	audio.SetContextReadyForTesting(p)
+	audio.UpdatePositionForTesting(p)
+	if got := p.Position(); got != position {
+		t.Errorf("Position after readiness: got %v, want %v", got, position)
+	}
+}
+
 func TestSetPositionLongDuration(t *testing.T) {
 	setup()
 	defer teardown()
@@ -635,6 +661,8 @@ func TestSetBufferSize(t *testing.T) {
 	}{
 		{in: -time.Second, want: 0},
 		{in: 0, want: 0},
+		{in: time.Nanosecond, want: 8},
+		{in: time.Second / 44100, want: 8},
 		{in: 50 * time.Millisecond, want: 17640},
 		{in: 15 * time.Hour, want: largeBufferSize},
 	}
@@ -645,6 +673,51 @@ func TestSetBufferSize(t *testing.T) {
 			t.Errorf("buffer size for %v: got: %d, want: %d", test.in, got, test.want)
 		}
 	}
+}
+
+type oneFrameReader struct{}
+
+func (r *oneFrameReader) Read(p []byte) (int, error) {
+	n := min(len(p), 8)
+	clear(p[:n])
+	return n, nil
+}
+
+func TestPositionDoesNotDecreaseAfterShortReads(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		setup()
+		defer teardown()
+
+		src := &oneFrameReader{}
+		p, err := context.NewPlayerF32(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.Play()
+		for !context.IsReady() {
+			if err := audio.UpdateForTesting(); err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if err := audio.UpdateForTesting(); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		audio.UpdatePositionForTesting(p)
+		time.Sleep(500 * time.Microsecond)
+		audio.UpdatePositionForTesting(p)
+		before := p.Position()
+		time.Sleep(500 * time.Microsecond)
+		synctest.Wait()
+		audio.UpdatePositionForTesting(p)
+		if !p.IsPlaying() {
+			t.Fatal("the player stopped")
+		}
+		if after := p.Position(); after < before {
+			t.Errorf("Position decreased from %v to %v", before, after)
+		}
+	})
 }
 
 func TestPositionNotGrowingAfterFinished(t *testing.T) {
@@ -1012,5 +1085,37 @@ func TestTimeStreamSeekCurrentOverInfiniteLoop(t *testing.T) {
 	}
 	if want := int64(length + 16); pos != want {
 		t.Errorf("Seek(0, io.SeekCurrent): got %d, want %d", pos, want)
+	}
+}
+
+func TestRewindSeekableBeforeDeviceCreation(t *testing.T) {
+	setup()
+	defer teardown()
+
+	src := bytes.NewReader(make([]byte, 64))
+	if _, err := src.Seek(32, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	p, err := context.NewPlayerF32(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := p.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	if err := p.Rewind(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := src.Seek(0, io.SeekCurrent); got != 0 || err != nil {
+		t.Errorf("source position after Rewind: got (%d, %v), want (0, nil)", got, err)
+	}
+	if got := p.Position(); got != 0 {
+		t.Errorf("Position: got %v, want 0", got)
+	}
+	if audio.DriverCreatedForTesting() {
+		t.Error("Rewind must not create the audio device")
 	}
 }

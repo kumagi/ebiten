@@ -127,7 +127,11 @@ func updateCursorImage(window *Window) {
 func updateCursorMode(window *Window) error {
 	if window.cursorMode == CursorDisabled {
 		_glfw.platformWindow.disabledCursorWindow = window
-		_glfw.platformWindow.restoreCursorPosX, _glfw.platformWindow.restoreCursorPosY, _ = window.platformGetCursorPos()
+		x, y, err := window.platformGetCursorPos()
+		if err != nil {
+			return err
+		}
+		_glfw.platformWindow.restoreCursorPosX, _glfw.platformWindow.restoreCursorPosY = x, y
 		if err := window.centerCursorInContentArea(); err != nil {
 			return err
 		}
@@ -222,7 +226,9 @@ func registerGLFWClasses() error {
 					}
 
 					if _glfw.platformWindow.disabledCursorWindow == window {
-						_ = window.centerCursorInContentArea()
+						if err := window.centerCursorInContentArea(); err != nil {
+							_glfw.errors = append(_glfw.errors, err)
+						}
 					}
 
 					maximized := objc.Send[bool](window.platform.object, sel_isZoomed)
@@ -250,7 +256,9 @@ func registerGLFWClasses() error {
 					}
 
 					if _glfw.platformWindow.disabledCursorWindow == window {
-						_ = window.centerCursorInContentArea()
+						if err := window.centerCursorInContentArea(); err != nil {
+							_glfw.errors = append(_glfw.errors, err)
+						}
 					}
 
 					frame := objc.Send[cocoa.NSRect](window.platform.object, sel_frame)
@@ -268,7 +276,9 @@ func registerGLFWClasses() error {
 						return
 					}
 					if window.monitor != nil {
-						_ = window.releaseMonitor()
+						if err := window.releaseMonitor(); err != nil {
+							_glfw.errors = append(_glfw.errors, err)
+						}
 					}
 					window.inputWindowIconify(true)
 				},
@@ -281,7 +291,9 @@ func registerGLFWClasses() error {
 						return
 					}
 					if window.monitor != nil {
-						_ = window.acquireMonitor()
+						if err := window.acquireMonitor(); err != nil {
+							_glfw.errors = append(_glfw.errors, err)
+						}
 					}
 					window.inputWindowIconify(false)
 				},
@@ -294,10 +306,14 @@ func registerGLFWClasses() error {
 						return
 					}
 					if _glfw.platformWindow.disabledCursorWindow == window {
-						_ = window.centerCursorInContentArea()
+						if err := window.centerCursorInContentArea(); err != nil {
+							_glfw.errors = append(_glfw.errors, err)
+						}
 					}
 					window.inputWindowFocus(true)
-					_ = updateCursorMode(window)
+					if err := updateCursorMode(window); err != nil {
+						_glfw.errors = append(_glfw.errors, err)
+					}
 				},
 			},
 			{
@@ -593,6 +609,36 @@ func registerGLFWClasses() error {
 					}
 				},
 			},
+			// Pinch gesture on a touchpad.
+			{
+				Cmd: objc.RegisterName("magnifyWithEvent:"),
+				Fn: func(self objc.ID, _ objc.SEL, event objc.ID) {
+					window := getGoWindow(self)
+					if window == nil {
+						return
+					}
+					// magnification is the change of the scale since the previous event of the
+					// gesture: AppKit's contract is to multiply the scale by 1 + magnification.
+					if delta := objc.Send[float64](event, sel_magnification); delta != 0 {
+						window.inputPinch(delta)
+					}
+				},
+			},
+			// Rotation gesture on a touchpad.
+			{
+				Cmd: objc.RegisterName("rotateWithEvent:"),
+				Fn: func(self objc.ID, _ objc.SEL, event objc.ID) {
+					window := getGoWindow(self)
+					if window == nil {
+						return
+					}
+					// rotation is the angle since the previous event of the gesture, in degrees, and is a
+					// float, not a CGFloat. A positive value is counterclockwise.
+					if deg := objc.Send[float32](event, sel_rotation); deg != 0 {
+						window.inputRotate(-float64(deg) * math.Pi / 180)
+					}
+				},
+			},
 			// View lifecycle.
 			{
 				Cmd: objc.RegisterName("viewDidChangeBackingProperties"),
@@ -749,7 +795,7 @@ func registerGLFWClasses() error {
 					if window != nil && window.platform.markedText != 0 {
 						length := objc.Send[uintptr](window.platform.markedText, sel_length)
 						if length > 0 {
-							return nsRange{Location: 0, Length: length - 1}
+							return nsRange{Location: 0, Length: length}
 						}
 					}
 					return nsRange{Location: uintptr(math.MaxInt), Length: 0} // NSNotFound
@@ -1021,7 +1067,7 @@ func createNativeWindow(window *Window, wndconfig *wndconfig, fbconfig_ *fbconfi
 	// window if delegate creation fails).
 	delegateID := objc.ID(class_GLFWWindowDelegate).Send(sel_alloc).Send(sel_init)
 	if delegateID == 0 {
-		return fmt.Errorf("glfw: failed to create window delegate: %w", PlatformError)
+		return fmt.Errorf("%w: failed to create window delegate", ErrPlatform)
 	}
 	setGoWindow(delegateID, window)
 	window.platform.delegate = delegateID
@@ -1060,7 +1106,7 @@ func createNativeWindow(window *Window, wndconfig *wndconfig, fbconfig_ *fbconfi
 	nsWindow := objc.ID(class_GLFWWindow).Send(sel_alloc).Send(sel_initWithContentRect_styleMask_backing_defer,
 		contentRect, styleMask, uintptr(NSBackingStoreBuffered), false)
 	if nsWindow == 0 {
-		return fmt.Errorf("glfw: failed to create Cocoa window: %w", PlatformError)
+		return fmt.Errorf("%w: failed to create Cocoa window", ErrPlatform)
 	}
 
 	window.platform.object = nsWindow
@@ -1882,7 +1928,7 @@ func (c *Cursor) platformCreateCursor(img *image.NRGBA, xhot, yhot int) error {
 		uintptr(32),                  // bitsPerPixel
 	)
 	if rep == 0 {
-		return fmt.Errorf("glfw: failed to create NSBitmapImageRep: %w", PlatformError)
+		return fmt.Errorf("%w: failed to create NSBitmapImageRep", ErrPlatform)
 	}
 
 	// Copy pixel data into the bitmap row by row to honor the image's stride
@@ -1909,7 +1955,7 @@ func (c *Cursor) platformCreateCursor(img *image.NRGBA, xhot, yhot int) error {
 	rep.Send(sel_release)
 
 	if cursor == 0 {
-		return fmt.Errorf("glfw: failed to create custom cursor: %w", PlatformError)
+		return fmt.Errorf("%w: failed to create custom cursor", ErrPlatform)
 	}
 
 	c.platform.object = cursor
@@ -1987,7 +2033,7 @@ func (c *Cursor) platformCreateStandardCursor(shape StandardCursor) error {
 	}
 
 	if cursor == 0 {
-		return fmt.Errorf("glfw: failed to create standard cursor: %w", PlatformError)
+		return fmt.Errorf("%w: failed to create standard cursor", ErrPlatform)
 	}
 
 	cursor.Send(sel_retain)
@@ -2041,12 +2087,12 @@ func platformGetClipboardString() (string, error) {
 
 	types := pasteboard.Send(sel_types)
 	if objc.Send[bool](types, sel_containsObject, nsPasteboardTypeString.ID) == false {
-		return "", fmt.Errorf("glfw: failed to retrieve string from pasteboard: %w", FormatUnavailable)
+		return "", fmt.Errorf("%w: failed to retrieve string from pasteboard", ErrFormatUnavailable)
 	}
 
 	strID := pasteboard.Send(sel_stringForType, nsPasteboardTypeString.ID)
 	if strID == 0 {
-		return "", fmt.Errorf("glfw: failed to retrieve object from pasteboard: %w", PlatformError)
+		return "", fmt.Errorf("%w: failed to retrieve object from pasteboard", ErrPlatform)
 	}
 
 	str := cocoa.NSString{ID: strID}
@@ -2057,7 +2103,7 @@ func platformGetClipboardString() (string, error) {
 
 func platformGetScancodeName(scancode int) (string, error) {
 	if scancode < 0 || scancode > 0xff {
-		return "", fmt.Errorf("glfw: invalid scancode %d: %w", scancode, InvalidValue)
+		return "", fmt.Errorf("%w: invalid scancode %d", ErrInvalidValue, scancode)
 	}
 	key := _glfw.platformWindow.keycodes[scancode]
 	if key == KeyUnknown {

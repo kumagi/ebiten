@@ -33,6 +33,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal/ca"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal/mtl"
+	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/readbackcache"
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir"
 )
 
@@ -67,6 +68,11 @@ type Graphics struct {
 
 	buffers       map[int64][]mtl.Buffer
 	unusedBuffers map[mtl.Buffer]struct{}
+
+	// readbackBuffers are idle shared buffers for pixel read-backs available for reuse.
+	// Only completed read-backs enter this cache; pending read-backs own their buffers.
+	// The cache is accessed on the render thread.
+	readbackBuffers readbackcache.Cache[int, mtl.Buffer]
 
 	lastDst *Image
 
@@ -284,14 +290,7 @@ func (g *Graphics) availableBuffer(length uintptr) (mtl.Buffer, error) {
 		return mtl.Buffer{}, err
 	}
 
-	var newBuf mtl.Buffer
-	for b := range g.unusedBuffers {
-		if b.Length() >= length {
-			newBuf = b
-			delete(g.unusedBuffers, b)
-			break
-		}
-	}
+	newBuf := takeUnusedBuffer(g.unusedBuffers, length)
 
 	if newBuf == (mtl.Buffer{}) {
 		b, err := g.view.getMTLDevice().NewBufferWithLength(pow2(length), resourceStorageMode)
@@ -307,6 +306,25 @@ func (g *Graphics) availableBuffer(length uintptr) (mtl.Buffer, error) {
 	}
 	g.buffers[g.frame] = append(g.buffers[g.frame], newBuf)
 	return newBuf, nil
+}
+
+func takeUnusedBuffer(buffers map[mtl.Buffer]struct{}, length uintptr) mtl.Buffer {
+	var selected mtl.Buffer
+	var selectedLength uintptr
+	for buffer := range buffers {
+		bufferLength := buffer.Length()
+		if bufferLength < length {
+			continue
+		}
+		if selected == (mtl.Buffer{}) || bufferLength < selectedLength {
+			selected = buffer
+			selectedLength = bufferLength
+		}
+	}
+	if selected != (mtl.Buffer{}) {
+		delete(buffers, selected)
+	}
+	return selected
 }
 
 func (g *Graphics) SetVertices(vertices []float32, indices []uint32) error {
@@ -855,51 +873,6 @@ func (i *Image) Dispose() {
 	i.graphics.removeImage(i)
 }
 
-func (i *Image) syncTexture() error {
-	i.graphics.flushCommandBufferIfNeeded(false)
-
-	// Calling SynchronizeTexture is ignored on iOS (see the mtl package), but it looks like committing BlitCommandEncoder
-	// is necessary (#1337).
-	if i.graphics.cb != (mtl.CommandBuffer{}) {
-		panic("metal: command buffer must be empty at syncTexture")
-	}
-
-	cb, err := i.graphics.cq.CommandBuffer()
-	if err != nil {
-		return fmt.Errorf("metal: cq.CommandBuffer failed: %w", err)
-	}
-	bce, err := cb.BlitCommandEncoder()
-	if err != nil {
-		return fmt.Errorf("metal: cb.BlitCommandEncoder failed: %w", err)
-	}
-	bce.SynchronizeTexture(i.texture, 0, 0)
-	bce.EndEncoding()
-
-	cb.Commit()
-	// TODO: Are fences available here?
-	cb.WaitUntilCompleted()
-	return nil
-}
-
-func (i *Image) ReadPixels(args []graphicsdriver.PixelsArgs) error {
-	if err := i.syncTexture(); err != nil {
-		return err
-	}
-
-	for _, arg := range args {
-		if got, want := len(arg.Pixels), 4*arg.Region.Dx()*arg.Region.Dy(); got != want {
-			return fmt.Errorf("metal: len(buf) must be %d but %d at ReadPixels", want, got)
-		}
-		if err := i.texture.GetBytes(arg.Pixels, 4*arg.Region.Dx(), mtl.Region{
-			Origin: mtl.Origin{X: arg.Region.Min.X, Y: arg.Region.Min.Y},
-			Size:   mtl.Size{Width: arg.Region.Dx(), Height: arg.Region.Dy(), Depth: 1},
-		}, 0); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (i *Image) WritePixels(args []graphicsdriver.PixelsArgs) error {
 	g := i.graphics
 
@@ -1044,12 +1017,12 @@ func appendUniformVariables(values []uint32, uniformTypes []shaderir.Type, unifo
 			case shaderir.Float, shaderir.Int, shaderir.Vec2, shaderir.IVec2, shaderir.Vec4, shaderir.IVec4, shaderir.Mat2, shaderir.Mat4:
 				values = append(values, uniforms[idx:idx+n]...)
 			case shaderir.Vec3, shaderir.IVec3:
-				for j := 0; j < typ.Length; j++ {
+				for j := range typ.Length {
 					values = append(values, uniforms[idx+3*j:idx+3*(j+1)]...)
 					values = append(values, 0)
 				}
 			case shaderir.Mat3:
-				for j := 0; j < typ.Length; j++ {
+				for j := range typ.Length {
 					values = append(values, uniforms[idx+9*j:idx+9*j+3]...)
 					values = append(values, 0)
 					values = append(values, uniforms[idx+9*j+3:idx+9*j+6]...)

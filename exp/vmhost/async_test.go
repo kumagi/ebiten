@@ -19,8 +19,10 @@
 package vmhost_test
 
 import (
+	"image/color"
 	"runtime"
 	"testing"
+	"testing/synctest"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -70,6 +72,35 @@ func TestAsyncTickQueue(t *testing.T) {
 	i := 4 * (y*pw + x)
 	if r, g, b := pixels[i], pixels[i+1], pixels[i+2]; r != 0xff || g != 0x00 || b != 0x00 {
 		t.Errorf("red tile after async driving = (%d, %d, %d); want (255, 0, 0)", r, g, b)
+	}
+}
+
+func TestCompositeFrameOverCachedPixels(t *testing.T) {
+	guest := startGuest(t, "./testdata/atlas", activateByEnv, "unix")
+
+	const w, h = 128, 128
+	scale := ebiten.Monitor().DeviceScaleFactor()
+	pw, ph := int(w*scale), int(h*scale)
+	outsideScreen := ebiten.NewImage(pw, ph)
+	if err := guest.SetOutsideScreen(outsideScreen); err != nil {
+		t.Fatal(err)
+	}
+
+	x := int(float64(10+8) * scale)
+	y := int(float64(10+8) * scale)
+	if got, want := outsideScreen.At(x, y), (color.RGBA{}); got != want {
+		t.Errorf("At(%d, %d) before compositing: got: %v, want: %v", x, y, got, want)
+	}
+	outsideScreen.Set(x+1, y, color.White)
+
+	tickAndFrame(t, guest)
+
+	red := color.RGBA{R: 0xff, A: 0xff}
+	if got := outsideScreen.At(x, y); got != red {
+		t.Errorf("At(%d, %d), which was cached before compositing: got: %v, want: %v", x, y, got, red)
+	}
+	if got := outsideScreen.At(x+1, y); got != red {
+		t.Errorf("At(%d, %d), which was set before compositing: got: %v, want: %v", x+1, y, got, red)
 	}
 }
 
@@ -227,4 +258,82 @@ func TestAdvanceTicks(t *testing.T) {
 	if !guest.CompositeFrame() {
 		t.Fatalf("CompositeFrame failed: %v", guest.Err())
 	}
+}
+
+func TestAdvanceTicksOnEndedSession(t *testing.T) {
+	guest := newFakeGuestSession(t, func(fg *fakeGuest) {})
+	guest.AdvanceTicks(1)
+	guest.AdvanceTicks(1)
+	if guest.WaitTicks() {
+		t.Errorf("WaitTicks after AdvanceTicks on a session ended by the missing outside screen = true; want false (Err: %v)", guest.Err())
+	}
+	if n := guest.PendingTicks(); n != 2 {
+		t.Errorf("PendingTicks = %d; want 2", n)
+	}
+}
+
+// TestCompositeFrameUnderConcurrentSetOutsideScreen exercises the documented concurrent
+// screen replacement path, including under the race detector.
+func TestCompositeFrameUnderConcurrentSetOutsideScreen(t *testing.T) {
+	guest := startGuest(t, "./testdata/guest", activateByEnv, "unix")
+	scale := ebiten.Monitor().DeviceScaleFactor()
+	screens := []*ebiten.Image{
+		ebiten.NewImage(int(64*scale), int(64*scale)),
+		ebiten.NewImage(int(64*scale), int(64*scale)),
+	}
+	if err := guest.SetOutsideScreen(screens[0]); err != nil {
+		t.Fatal(err)
+	}
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		close(stop)
+		<-done
+	})
+	go func() {
+		defer close(done)
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if err := guest.SetOutsideScreen(screens[i%len(screens)]); err != nil {
+				t.Error(err)
+				return
+			}
+			runtime.Gosched()
+		}
+	}()
+
+	for range 20 {
+		guest.AdvanceTicks(1)
+		guest.AdvanceFrame()
+		if !guest.WaitFrame() {
+			t.Fatalf("WaitFrame failed: %v", guest.Err())
+		}
+		if !guest.CompositeFrame() {
+			t.Fatalf("CompositeFrame failed with equal-sized screens: %v", guest.Err())
+		}
+	}
+}
+
+func TestAdvanceTicksWithoutOutsideScreenStopsSession(t *testing.T) {
+	skipIfVMUnsupported(t)
+	synctest.Test(t, func(t *testing.T) {
+		guest := newFakeGuestSession(t, func(fg *fakeGuest) {})
+		// Let the session worker reach its condition-variable wait before recording the error.
+		synctest.Wait()
+		guest.AdvanceTicks(1)
+		if guest.Err() == nil {
+			t.Fatal("AdvanceTicks without an outside screen did not report an error")
+		}
+		synctest.Wait()
+		select {
+		case <-guest.DoneForTesting():
+		default:
+			t.Error("the session worker did not stop after AdvanceTicks failed")
+		}
+	})
 }

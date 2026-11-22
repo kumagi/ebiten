@@ -16,6 +16,8 @@ package vmhost_test
 
 import (
 	"bytes"
+	"errors"
+	"image"
 	"net"
 	"os"
 	"os/exec"
@@ -25,6 +27,8 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/exp/vmhost"
+	"github.com/hajimehoshi/ebiten/v2/internal/ui"
+	"github.com/hajimehoshi/ebiten/v2/internal/vmprotocol"
 )
 
 // TestCloseShutsGuestDownCleanly asserts that a closed session lets the guest process exit by itself
@@ -122,6 +126,55 @@ func TestCloseIsNotDelayedByTheIdleTimeout(t *testing.T) {
 	case <-time.After(budget):
 		t.Fatalf("Close did not return within %v; the deadline poke was overwritten by an idle-timeout refresh", budget)
 	}
+}
+
+func TestCloseWithDeadlineError(t *testing.T) {
+	skipIfVMUnsupported(t)
+
+	for _, idleTimeout := range []time.Duration{0, time.Hour} {
+		t.Run(idleTimeout.String(), func(t *testing.T) {
+			conn := &deadlineErrorConn{silentConn: newSilentConn()}
+			defer func() {
+				_ = conn.silentConn.Close()
+			}()
+			guest, err := vmhost.NewGuestSession(conn, &vmhost.NewGuestSessionOptions{
+				IdleTimeout: idleTimeout,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := guest.SetOutsideScreen(ebiten.NewImage(320, 240)); err != nil {
+				t.Fatal(err)
+			}
+			<-conn.writing
+
+			closed := make(chan error, 1)
+			go func() {
+				closed <- guest.Close()
+			}()
+			select {
+			case err := <-closed:
+				if err != nil {
+					t.Error(err)
+				}
+			case <-time.After(time.Second):
+				t.Error("Close blocked after SetDeadline failed")
+				_ = conn.silentConn.Close()
+				_ = <-closed
+			}
+			if err := guest.Close(); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}
+
+type deadlineErrorConn struct {
+	*silentConn
+}
+
+func (c *deadlineErrorConn) SetDeadline(time.Time) error {
+	return errors.New("deadline unavailable")
 }
 
 // silentConn is a connection whose peer answers the handshake and then never speaks again, so a read on
@@ -294,4 +347,100 @@ func (silentAddr) Network() string {
 
 func (silentAddr) String() string {
 	return "silent"
+}
+
+func TestCloseWithPendingReadback(t *testing.T) {
+	sent := make(chan struct{})
+	guest := newFakeGuestSession(t, func(fg *fakeGuest) {
+		fg.sendCommands(vmprotocol.GraphicsCommand{
+			Kind:    vmprotocol.GraphicsCommandKindNewImage,
+			ImageID: 1,
+			Width:   1,
+			Height:  1,
+		}, vmprotocol.GraphicsCommand{
+			Kind:    vmprotocol.GraphicsCommandKindWritePixels,
+			ImageID: 1,
+			Regions: []image.Rectangle{image.Rect(0, 0, 1, 1)},
+			Pixels:  [][]byte{{1, 2, 3, 255}},
+		})
+		fg.send(&vmprotocol.GuestMessage{
+			Kind:        vmprotocol.GuestMessageKindQueryReadPixelsAsync,
+			ReadImageID: 1,
+			ReadRegions: []image.Rectangle{image.Rect(0, 0, 1, 1)},
+		})
+		close(sent)
+		_, _ = fg.receive()
+	})
+	setOutsideScreen(t, guest)
+	guest.AdvanceTicks(1)
+	select {
+	case <-sent:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the guest did not send its read-back request")
+	}
+	if err := guest.Close(); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestCloseWithPendingReadbackWait(t *testing.T) {
+	var id uint64
+	sent := make(chan struct{})
+	guest := newFakeGuestSession(t, func(fg *fakeGuest) {
+		if id == 0 {
+			fg.sendCommands(vmprotocol.GraphicsCommand{
+				Kind:    vmprotocol.GraphicsCommandKindNewImage,
+				ImageID: 1,
+				Width:   1,
+				Height:  1,
+			}, vmprotocol.GraphicsCommand{
+				Kind:    vmprotocol.GraphicsCommandKindWritePixels,
+				ImageID: 1,
+				Regions: []image.Rectangle{image.Rect(0, 0, 1, 1)},
+				Pixels:  [][]byte{{1, 2, 3, 255}},
+			})
+			fg.send(&vmprotocol.GuestMessage{
+				Kind:        vmprotocol.GuestMessageKindQueryReadPixelsAsync,
+				ReadImageID: 1,
+				ReadRegions: []image.Rectangle{image.Rect(0, 0, 1, 1)},
+			})
+			answer, err := fg.receive()
+			if err != nil {
+				return
+			}
+			id = answer.ReadbackID
+			if id == 0 || answer.Err != "" {
+				t.Errorf("starting read-back: %+v", answer)
+			}
+			return
+		}
+		fg.send(&vmprotocol.GuestMessage{
+			Kind:       vmprotocol.GuestMessageKindQueryWaitReadPixels,
+			ReadbackID: id,
+		})
+		close(sent)
+		_, _ = fg.receive()
+	})
+	setOutsideScreen(t, guest)
+	guest.AdvanceTicks(1)
+	if !guest.WaitTicks() {
+		t.Fatal(guest.Err())
+	}
+	guest.AdvanceTicks(1)
+	select {
+	case <-sent:
+	case <-time.After(5 * time.Second):
+		t.Fatal("guest did not send its wait request")
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- guest.Close() }()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Error(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("Close blocked on a pending read-back wait")
+		ui.Get().FlushAndPollPixelReadbacks()
+	}
 }

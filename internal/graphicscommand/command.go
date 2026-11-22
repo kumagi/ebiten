@@ -47,14 +47,14 @@ var theDrawTrianglesCommandPool = sync.Pool{
 
 // drawTrianglesCommand represents a drawing command to draw an image on another image.
 type drawTrianglesCommand struct {
-	dst         *Image
-	srcs        [graphics.ShaderSrcImageCount]*Image
-	vertices    []float32
-	blend       graphicsdriver.Blend
-	dstRegions  []graphicsdriver.DstRegion
-	shader      *Shader
-	uniforms    []uint32
-	firstCaller string
+	dst              *Image
+	srcs             [graphics.ShaderSrcImageCount]*Image
+	vertexFloatCount int
+	blend            graphicsdriver.Blend
+	dstRegions       []graphicsdriver.DstRegion
+	shader           *Shader
+	uniforms         []uint32
+	firstCaller      string
 }
 
 func (c *drawTrianglesCommand) String() string {
@@ -150,10 +150,6 @@ func (c *drawTrianglesCommand) NeedsSync() bool {
 	return false
 }
 
-func (c *drawTrianglesCommand) numVertices() int {
-	return len(c.vertices)
-}
-
 func (c *drawTrianglesCommand) numIndices() int {
 	var nindices int
 	for _, dstRegion := range c.dstRegions {
@@ -162,13 +158,9 @@ func (c *drawTrianglesCommand) numIndices() int {
 	return nindices
 }
 
-func (c *drawTrianglesCommand) setVertices(vertices []float32) {
-	c.vertices = vertices
-}
-
 // CanMergeWithDrawTrianglesCommand returns a boolean value indicating whether the other drawTrianglesCommand can be merged
 // with the drawTrianglesCommand c.
-func (c *drawTrianglesCommand) CanMergeWithDrawTrianglesCommand(dst *Image, srcs [graphics.ShaderSrcImageCount]*Image, vertices []float32, blend graphicsdriver.Blend, shader *Shader, uniforms []uint32) bool {
+func (c *drawTrianglesCommand) CanMergeWithDrawTrianglesCommand(dst *Image, srcs [graphics.ShaderSrcImageCount]*Image, blend graphicsdriver.Blend, shader *Shader, uniforms []uint32) bool {
 	if c.shader != shader {
 		return false
 	}
@@ -229,31 +221,6 @@ func (c *writePixelsCommand) Exec(commandQueue *commandQueue, graphicsDriver gra
 
 func (c *writePixelsCommand) NeedsSync() bool {
 	return false
-}
-
-type readPixelsCommand struct {
-	img  *Image
-	args []graphicsdriver.PixelsArgs
-}
-
-// Exec executes a readPixelsCommand.
-func (c *readPixelsCommand) Exec(commandQueue *commandQueue, graphicsDriver graphicsdriver.Graphics, indexOffset int) error {
-	if err := c.img.image.ReadPixels(c.args); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *readPixelsCommand) NeedsSync() bool {
-	return true
-}
-
-func (c *readPixelsCommand) String() string {
-	var args []string
-	for _, a := range c.args {
-		args = append(args, fmt.Sprintf("region: %s", a.Region.String()))
-	}
-	return fmt.Sprintf("read-pixels: image: %d, args: %v", c.img.id, strings.Join(args, ", "))
 }
 
 // disposeImageCommand represents a command to dispose an image.

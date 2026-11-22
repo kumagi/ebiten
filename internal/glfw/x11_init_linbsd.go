@@ -459,7 +459,7 @@ func createKeyTables() error {
 
 		descPtr := xkbGetMap(_glfw.platformWindow.display, 0, _XkbUseCoreKbd)
 		if descPtr == 0 {
-			return fmt.Errorf("glfw: x11: failed to allocate an XKB keyboard description: %w", OutOfMemory)
+			return fmt.Errorf("%w: x11: failed to allocate an XKB keyboard description", ErrOutOfMemory)
 		}
 		defer xkbFreeKeyboard(descPtr, 0, true)
 		defer xkbFreeNames(descPtr, _XkbKeyNamesMask, true)
@@ -474,7 +474,7 @@ func createKeyTables() error {
 
 		names := (*_XkbNamesRec)(unsafe.Pointer(desc.Names))
 		if names.Keys == 0 {
-			return fmt.Errorf("glfw: x11: failed to allocate XKB key names: %w", OutOfMemory)
+			return fmt.Errorf("%w: x11: failed to allocate XKB key names", ErrOutOfMemory)
 		}
 		keyNames := unsafe.Slice((*_XkbKeyNameRec)(unsafe.Pointer(names.Keys)), int(scancodeMax)+1)
 		keyAliases := unsafe.Slice((*_XkbKeyAliasRec)(unsafe.Pointer(names.KeyAliases)), int(names.NumKeyAliases))
@@ -691,11 +691,20 @@ func initExtensions() error {
 		purego.RegisterLibFunc(&xi.QueryDevice, handle, "XIQueryDevice")
 		purego.RegisterLibFunc(&xi.FreeDeviceInfo, handle, "XIFreeDeviceInfo")
 
+		// libXi decodes the touchpad gesture events of XI 2.4 from version 1.8, which also added
+		// XIGrabPinchGestureBegin. An older libXi would leave the events undecoded, so 2.4 is
+		// requested only with a libXi that has the function.
+		_, err := purego.Dlsym(handle, "XIGrabPinchGestureBegin")
+		libXiHasGestures := err == nil
+
 		if xQueryExtension(display, "XInputExtension", &xi.majorOpcode, &xi.eventBase, &xi.errorBase) {
-			// The server clamps the version down to what it supports, so requesting 2.1 keeps
+			// The server clamps the version down to what it supports, so requesting 2.1 or 2.4 keeps
 			// working on servers that only offer the 2.0 features (raw motion).
 			xi.major = 2
 			xi.minor = 1
+			if libXiHasGestures {
+				xi.minor = 4
+			}
 			if xi.QueryVersion(display, &xi.major, &xi.minor) == _Success {
 				xi.available = true
 				if xi.major > 2 || xi.minor >= 1 {
@@ -703,6 +712,9 @@ func initExtensions() error {
 					xi.scrollAxes = map[int32][]xiScrollAxis{}
 					xi.pendingScroll = map[int32]xiPendingScroll{}
 					refreshXIScrollAxes()
+				}
+				if libXiHasGestures && (xi.major > 2 || xi.minor >= 4) {
+					xi.gestureAvailable = true
 				}
 			}
 		}
@@ -968,7 +980,7 @@ func createHelperWindow() _XID {
 // createEmptyEventPipe creates the pipe for empty events.
 func createEmptyEventPipe() error {
 	if err := unix.Pipe2(_glfw.platformWindow.emptyEventPipe[:], unix.O_NONBLOCK|unix.O_CLOEXEC); err != nil {
-		return fmt.Errorf("glfw: x11: failed to create empty event pipe: %v: %w", err, PlatformError)
+		return fmt.Errorf("%w: x11: failed to create empty event pipe: %v", ErrPlatform, err)
 	}
 	return nil
 }
@@ -976,38 +988,75 @@ func createEmptyEventPipe() error {
 // errorHandlerCallback is the purego callback pointer for errorHandler.
 var errorHandlerCallback uintptr
 
-// errorHandler is the X error handler.
+// errorHandler is the X error handler, installed while the display is open.
+// Between grabErrorHandlerX11 and releaseErrorHandlerX11 it records the error
+// code; otherwise it queues the error, as the request that caused it has
+// already returned. Errors on other displays go to the previous handler.
 func errorHandler(display uintptr, event *_XErrorEvent) uintptr {
 	if _glfw.platformWindow.display != display {
+		if _glfw.platformWindow.errorHandler == 0 {
+			return 0
+		}
+		r, _, _ := purego.SyscallN(_glfw.platformWindow.errorHandler, display, uintptr(unsafe.Pointer(event)))
+		return r
+	}
+
+	if code := _glfw.platformWindow.errorCode; code != nil {
+		*code = int(event.ErrorCode)
 		return 0
 	}
 
-	_glfw.platformWindow.errorCode = int(event.ErrorCode)
+	_glfw.errors = append(_glfw.errors, fmt.Errorf("%w: x11: %s (request code %d, minor code %d, resource 0x%x)",
+		ErrPlatform, xErrorText(int(event.ErrorCode)), event.RequestCode, event.MinorCode, event.Resourceid))
 	return 0
 }
 
-// grabErrorHandlerX11 sets the X error handler callback.
-func grabErrorHandlerX11() {
+// installErrorHandlerX11 installs the X error handler, keeping the previous
+// one for other displays and for uninstallErrorHandlerX11.
+func installErrorHandlerX11() {
 	if errorHandlerCallback == 0 {
 		errorHandlerCallback = purego.NewCallback(errorHandler)
 	}
-	_glfw.platformWindow.errorCode = _Success
-	_glfw.platformWindow.errorHandler = xSetErrorHandler(errorHandlerCallback)
+	if prev := xSetErrorHandler(errorHandlerCallback); prev != errorHandlerCallback {
+		_glfw.platformWindow.errorHandler = prev
+	}
 }
 
-// releaseErrorHandlerX11 clears the X error handler callback.
-func releaseErrorHandlerX11() {
-	// Synchronize to make sure all commands are processed
-	xSync(_glfw.platformWindow.display, false)
+// uninstallErrorHandlerX11 restores the X error handler that
+// installErrorHandlerX11 replaced.
+func uninstallErrorHandlerX11() {
 	xSetErrorHandler(_glfw.platformWindow.errorHandler)
 	_glfw.platformWindow.errorHandler = 0
 }
 
-// inputErrorX11 returns the specified error, appending information about the
-// last X error.
-func inputErrorX11(code ErrorCode, message string) error {
+// grabErrorHandlerX11 makes the X error handler record the error code instead
+// of queuing the error. Grabs must not nest.
+func grabErrorHandlerX11() {
+	if _glfw.platformWindow.errorCode != nil {
+		panic("glfw: grabErrorHandlerX11 is called while the X error handler is already grabbed")
+	}
+	code := _Success
+	_glfw.platformWindow.errorCode = &code
+}
+
+// releaseErrorHandlerX11 makes the X error handler queue errors again, and
+// returns the most recent X error code since grabErrorHandlerX11, or _Success.
+// It must follow grabErrorHandlerX11.
+func releaseErrorHandlerX11() int {
+	if _glfw.platformWindow.errorCode == nil {
+		panic("glfw: releaseErrorHandlerX11 is called without grabErrorHandlerX11")
+	}
+	// Synchronize to make sure all commands are processed
+	xSync(_glfw.platformWindow.display, false)
+	code := *_glfw.platformWindow.errorCode
+	_glfw.platformWindow.errorCode = nil
+	return code
+}
+
+// xErrorText returns the description of the X error code.
+func xErrorText(code int) string {
 	buffer := make([]byte, 1024)
-	xGetErrorText(_glfw.platformWindow.display, int32(_glfw.platformWindow.errorCode), buffer, int32(len(buffer)))
+	xGetErrorText(_glfw.platformWindow.display, int32(code), buffer, int32(len(buffer)))
 	text := buffer[:]
 	for i, c := range buffer {
 		if c == 0 {
@@ -1015,7 +1064,13 @@ func inputErrorX11(code ErrorCode, message string) error {
 			break
 		}
 	}
-	return fmt.Errorf("glfw: %s: %s: %w", message, text, code)
+	return string(text)
+}
+
+// inputErrorX11 returns the specified error, appending information about the
+// X error code.
+func inputErrorX11(err error, message string, code int) error {
+	return fmt.Errorf("%w: %s: %s", err, message, xErrorText(code))
 }
 
 // createCursorX11 creates a native cursor object from the specified image and
@@ -1071,10 +1126,11 @@ func platformInit() error {
 	_glfw.platformWindow.display = xOpenDisplay(0)
 	if _glfw.platformWindow.display == 0 {
 		if display := os.Getenv("DISPLAY"); display != "" {
-			return fmt.Errorf("glfw: x11: failed to open display %s: %w", display, PlatformError)
+			return fmt.Errorf("%w: x11: failed to open display %s", ErrPlatform, display)
 		}
-		return fmt.Errorf("glfw: x11: the DISPLAY environment variable is missing: %w", PlatformError)
+		return fmt.Errorf("%w: x11: the DISPLAY environment variable is missing", ErrPlatform)
 	}
+	installErrorHandlerX11()
 
 	_glfw.platformWindow.screen = int(xDefaultScreen(_glfw.platformWindow.display))
 	_glfw.platformWindow.root = xRootWindow(_glfw.platformWindow.display, int32(_glfw.platformWindow.screen))
@@ -1141,6 +1197,7 @@ func platformTerminate() error {
 	if _glfw.platformWindow.display != 0 {
 		xCloseDisplay(_glfw.platformWindow.display)
 		_glfw.platformWindow.display = 0
+		uninstallErrorHandlerX11()
 	}
 
 	if _glfw.platformWindow.xcursor.handle != 0 {

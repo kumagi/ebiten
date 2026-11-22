@@ -185,7 +185,7 @@ func (r *remoteBackend) dialHost() (net.Conn, error) {
 }
 
 func (r *remoteBackend) serve(conn net.Conn) error {
-	// Assert a matching protocol version on the bare connection before wrapping it in gob codecs. The
+	// Assert a matching protocol version on the bare connection before wrapping it in the message codecs. The
 	// host is the initiator, so the guest receives first.
 	if err := vmprotocol.PerformHandshake(conn, false); err != nil {
 		return fmt.Errorf("ui: the handshake with the virtualization host failed: %w", err)
@@ -197,7 +197,13 @@ func (r *remoteBackend) serve(conn net.Conn) error {
 	// The remote driver forwards commands and read-backs to the host directly through this Host, and the
 	// UI queries host-owned values (the device scale factor) through it too. Its methods run on this same
 	// goroutine (the guest is single-threaded), so sharing enc/dec is safe.
-	host := &vmHostClient{enc: enc, dec: dec}
+	host := &vmHostClient{
+		enc: enc,
+		dec: dec,
+	}
+	defer func() {
+		host.closed = true
+	}()
 	r.graphics.SetHost(host)
 	r.vmHost = host
 
@@ -314,6 +320,10 @@ func (r *remoteBackend) serveLoop(dec *vmprotocol.Decoder, enc *vmprotocol.Encod
 			r.scrollWheel(msg.X, msg.Y)
 		case vmprotocol.HostMessageKindScroll:
 			r.scroll(msg.X, msg.Y)
+		case vmprotocol.HostMessageKindPinch:
+			r.pinch(msg.X)
+		case vmprotocol.HostMessageKindRotate:
+			r.rotate(msg.X)
 		case vmprotocol.HostMessageKindTypeRune:
 			r.typeRune(msg.Rune)
 		case vmprotocol.HostMessageKindReadAudio:
@@ -560,6 +570,20 @@ func (r *remoteBackend) scroll(x, y float64) {
 	r.inputState.ScrollDeltaY += y
 }
 
+// pinch injects a pinch gesture on a touchpad (accumulated until the next tick reads it).
+func (r *remoteBackend) pinch(delta float64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.inputState.addPinch(delta)
+}
+
+// rotate injects a rotation gesture on a touchpad (accumulated until the next tick reads it).
+func (r *remoteBackend) rotate(angle float64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.inputState.RotationDelta += angle
+}
+
 // typeRune injects a typed character.
 func (r *remoteBackend) typeRune(c rune) {
 	r.mu.Lock()
@@ -799,10 +823,6 @@ func (c *context) updateTickForVMGuest(graphicsDriver graphicsdriver.Graphics, o
 		}
 	}()
 
-	if err := c.processFuncsInFrame(ui); err != nil {
-		return err
-	}
-
 	if w, h, _ := c.layoutGame(outsideWidth, outsideHeight, screenWidth, screenHeight); w == 0 || h == 0 {
 		return nil
 	}
@@ -848,10 +868,6 @@ func (c *context) drawFrameForVMGuest(graphicsDriver graphicsdriver.Graphics, ou
 		}
 	}()
 
-	if err := c.processFuncsInFrame(ui); err != nil {
-		return err
-	}
-
 	if w, h, _ := c.layoutGame(outsideWidth, outsideHeight, screenWidth, screenHeight); w == 0 || h == 0 {
 		return nil
 	}
@@ -863,8 +879,9 @@ func (c *context) drawFrameForVMGuest(graphicsDriver graphicsdriver.Graphics, ou
 
 // vmHostClient forwards the guest's recorded graphics output to the host process over the connection.
 type vmHostClient struct {
-	enc *vmprotocol.Encoder
-	dec *vmprotocol.Decoder
+	enc    *vmprotocol.Encoder
+	dec    *vmprotocol.Decoder
+	closed bool
 }
 
 func (h *vmHostClient) SendGraphicsCommands(cmds []vmprotocol.GraphicsCommand) error {
@@ -889,19 +906,82 @@ func (h *vmHostClient) query(msg *vmprotocol.GuestMessage, want vmprotocol.HostM
 	return &answer, nil
 }
 
-func (h *vmHostClient) ReadPixels(id graphicsdriver.ImageID, regions []image.Rectangle) ([][]byte, error) {
+func (h *vmHostClient) ReadPixelsAsync(id graphicsdriver.ImageID, args []graphicsdriver.PixelsArgs) (graphicsdriver.PixelReadback, error) {
+	regions := make([]image.Rectangle, len(args))
+	for j, a := range args {
+		regions[j] = a.Region
+	}
 	answer, err := h.query(&vmprotocol.GuestMessage{
-		Kind:        vmprotocol.GuestMessageKindQueryReadPixels,
+		Kind:        vmprotocol.GuestMessageKindQueryReadPixelsAsync,
 		ReadImageID: id,
 		ReadRegions: regions,
-	}, vmprotocol.HostMessageKindAnswerReadPixels)
+	}, vmprotocol.HostMessageKindAnswerReadPixelsAsync)
 	if err != nil {
 		return nil, err
 	}
 	if answer.Err != "" {
 		return nil, errors.New(answer.Err)
 	}
-	return answer.Pixels, nil
+	return &vmPixelReadback{
+		host: h,
+		id:   answer.ReadbackID,
+		args: slices.Clone(args),
+	}, nil
+}
+
+type vmPixelReadback struct {
+	host *vmHostClient
+	id   uint64
+	args []graphicsdriver.PixelsArgs
+}
+
+func (r *vmPixelReadback) Wait() error {
+	done, err := r.readPixels(vmprotocol.GuestMessageKindQueryWaitReadPixels)
+	if err != nil {
+		return err
+	}
+	if !done {
+		return errors.New("ui: host returned an incomplete pixel read-back from Wait")
+	}
+	return nil
+}
+
+func (r *vmPixelReadback) Poll() (bool, error) {
+	return r.readPixels(vmprotocol.GuestMessageKindQueryPollReadPixels)
+}
+
+func (r *vmPixelReadback) readPixels(kind vmprotocol.GuestMessageKind) (bool, error) {
+	answer, err := r.host.query(&vmprotocol.GuestMessage{
+		Kind:       kind,
+		ReadbackID: r.id,
+	}, vmprotocol.HostMessageKindAnswerReadPixelsAsync)
+	if err != nil {
+		return false, err
+	}
+	if answer.Err != "" {
+		return false, errors.New(answer.Err)
+	}
+	if !answer.ReadbackDone {
+		return false, nil
+	}
+	for j, a := range r.args {
+		if j < len(answer.Pixels) {
+			copy(a.Pixels, answer.Pixels[j])
+		}
+	}
+	return true, nil
+}
+
+func (r *vmPixelReadback) Dispose() {
+	// Once the operation loop ends, the host no longer receives guest messages.
+	// The host releases the remaining read-backs when closing the session.
+	if !r.host.closed {
+		_ = r.host.enc.EncodeGuestMessage(&vmprotocol.GuestMessage{
+			Kind:       vmprotocol.GuestMessageKindDisposeReadPixels,
+			ReadbackID: r.id,
+		})
+	}
+	r.args = nil
 }
 
 func (h *vmHostClient) MaxImageSize() (int, error) {

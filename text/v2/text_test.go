@@ -44,6 +44,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	ebiten.SetWindowVisible(false)
 	t.MainWithRunLoop(m)
 }
 
@@ -172,6 +173,35 @@ func (f *testGoXFace) Metrics() font.Metrics {
 		XHeight:    0,
 		CapHeight:  fixed.I(testGoXFaceSize),
 		CaretSlope: image.Pt(0, 1),
+	}
+}
+
+type shortLineHeightGoXFace struct {
+	testGoXFace
+}
+
+func (f *shortLineHeightGoXFace) Metrics() font.Metrics {
+	m := f.testGoXFace.Metrics()
+	m.Height = fixed.I(1)
+	return m
+}
+
+func TestDrawWithNegativeLineGap(t *testing.T) {
+	face := text.NewGoXFace(&shortLineHeightGoXFace{})
+	dst := ebiten.NewImage(testGoXFaceSize, 2)
+	defer dst.Deallocate()
+	var op text.DrawOptions
+	op.GeoM.Translate(0, -testGoXFaceSize+2)
+	text.Draw(dst, "b", face, &op)
+
+	// The glyph is six pixels tall regardless of its recommended line spacing.
+	// Its last two rows remain inside dst, even though its origin is above it.
+	for y := range 2 {
+		for x := range testGoXFaceSize {
+			if _, _, _, a := dst.At(x, y).RGBA(); a != 0xffff {
+				t.Errorf("alpha at (%d, %d) = %d, want %d", x, y, a, 0xffff)
+			}
+		}
 	}
 }
 
@@ -767,7 +797,7 @@ func TestGlyphAdvance(t *testing.T) {
 			}
 
 			// Per-glyph contiguity: origin + advance equals the next origin.
-			for i := 0; i < len(glyphs)-1; i++ {
+			for i := range len(glyphs) - 1 {
 				gotX := glyphs[i].OriginX + glyphs[i].AdvanceX
 				gotY := glyphs[i].OriginY + glyphs[i].AdvanceY
 				wantX := glyphs[i+1].OriginX
@@ -1672,5 +1702,69 @@ func TestDrawVerticalWithoutVerticalMetrics(t *testing.T) {
 				t.Errorf("direction %v, position (%v, %v): Draw differs from unculled glyphs", direction, position.x, position.y)
 			}
 		}
+	}
+}
+
+func TestGlyphGranularityNegativeOrigins(t *testing.T) {
+	source, err := text.NewGoTextFaceSource(bytes.NewReader(goregular.TTF))
+	if err != nil {
+		t.Fatal(err)
+	}
+	font, err := opentype.Parse(goregular.TTF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	xface, err := opentype.NewFace(font, &opentype.FaceOptions{
+		Size: 16,
+		DPI:  72,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = xface.Close()
+	}()
+
+	for _, test := range []struct {
+		name string
+		face text.Face
+	}{
+		{
+			name: "GoTextFace",
+			face: &text.GoTextFace{
+				Source: source,
+				Size:   16,
+			},
+		},
+		{
+			name: "GoXFace",
+			face: text.NewGoXFace(xface),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Each glyph has a fractional advance, but the whole line has an integer advance.
+			str := strings.Repeat("i", 64)
+			advance := text.Advance(str, test.face)
+			if advance <= 0 || math.Trunc(advance) != advance {
+				t.Fatalf("line advance must be a positive integer, got %g", advance)
+			}
+			start := ebiten.NewImage(int(advance)+8, 32)
+			end := ebiten.NewImage(int(advance)+8, 32)
+			defer start.Deallocate()
+			defer end.Deallocate()
+			text.Draw(start, str, test.face, nil)
+			op := &text.DrawOptions{}
+			op.PrimaryAlign = text.AlignEnd
+			op.GeoM.Translate(advance, 0)
+			text.Draw(end, str, test.face, op)
+
+			want := make([]byte, 4*start.Bounds().Dx()*start.Bounds().Dy())
+			got := make([]byte, len(want))
+			start.ReadPixels(want)
+			end.ReadPixels(got)
+			if !bytes.Equal(got, want) {
+				t.Error("end alignment followed by an integer translation changed the glyph pixels")
+			}
+		})
 	}
 }

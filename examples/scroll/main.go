@@ -74,8 +74,8 @@ func (g *Game) updateInput() {
 // The touch which started dragging keeps being used as a pointing device until it is released, so that
 // pressing or releasing another touch does not disturb the dragging.
 func (g *Game) pointingDeviceTouchID() (ebiten.TouchID, bool) {
-	if g.dragging && g.draggingByTouch {
-		return g.dragTouchID, true
+	if g.dragging {
+		return g.dragTouchID, g.draggingByTouch
 	}
 	if len(g.touchIDs) > 0 {
 		return g.touchIDs[0], true
@@ -180,7 +180,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// Render the content. Use SubImage as a mask.
 	screenContentArea := screen.SubImage(g.contentArea).(*ebiten.Image)
 
-	for i := 0; i < g.itemCount; i++ {
+	for i := range g.itemCount {
 		itemRegion := image.Rect(0, i*g.itemHeight, g.contentArea.Dx(), (i+1)*g.itemHeight)
 		itemRegion = itemRegion.Add(image.Pt(g.contentArea.Min.X, g.contentArea.Min.Y))
 		itemRegion = itemRegion.Add(image.Pt(0, g.offsetY))

@@ -216,6 +216,8 @@ type glyphDataCacheKey struct {
 	gid        font.GID
 	variations string
 	sideways   bool
+	// sidewaysOffset is the shaping offset used for sideways rotation, which can vary with size.
+	sidewaysOffset float32
 	// size is 0 in outline mode and out.Size in bitmap mode. The outline
 	// path is ppem-independent (GlyphData reads raw outline points and
 	// variable-font axes route through SetVariations), so 0 is used for
@@ -229,11 +231,14 @@ type glyphDataCacheKey struct {
 	// interpreter is added in the future, outlines may vary per ppem
 	// and the outline case will need a non-zero size here too.
 	size fixed.Int26_6
+	// Nearby fractional sizes can share size but request different bitmap strikes.
+	xPpem, yPpem uint16
 }
 
 // glyphRenderDataCacheKey identifies the render-data bundle for one glyph.
-// Scaled segments depend on all four key fields; bitmap depends only on
-// (gid, size) but is bundled here so a single cache entry yields every
+// Scaled segments depend on the glyph, variations, orientation, and size.
+// Bitmap selection also depends on the unrounded face size, captured by bitmapState.
+// Both are bundled here so a single cache entry yields every
 // renderable form of the glyph. For fonts exercising multiple variations
 // or sideways modes at the same size, the same bitmap image may be
 // referenced from multiple entries — the image data is still shared via
@@ -242,25 +247,19 @@ type glyphDataCacheKey struct {
 // Bundling segments and bitmap together means [AppendVectorPath] retains
 // access to the outline even for glyphs whose bitmap is also populated.
 type glyphRenderDataCacheKey struct {
-	gid        font.GID
-	variations string
-	sideways   bool
-	size       fixed.Int26_6
+	gid         font.GID
+	variations  string
+	sideways    bool
+	size        fixed.Int26_6
+	bitmapState faceBitmapState
 }
 
-// glyphRenderData bundles the data needed to render one glyph. bounds
-// is computed eagerly so layout decisions (image rectangle, culling,
-// ImageBounds) don't pay for the GlyphData fetch. useBitmap is true
-// when the glyph renders from a bitmap strike; layout consults it to
-// pick the positioning convention and realize consults it to select
-// bitmap-mode glyph data.
-//
-// The actual render forms (segments, bitmap, SVG document, COLRv0
-// layers) are produced on first call to any of the accessors below,
-// which fetch glyph data via the source's glyphDataCache.
+// glyphRenderData holds a glyph's font-metric bounds and captured outline/bitmap state.
 type glyphRenderData struct {
-	bounds    fixed.Rectangle26_6
-	useBitmap bool
+	bounds           fixed.Rectangle26_6
+	useBitmap        bool
+	svgDocumentIndex int
+	hasSVG           bool
 
 	realizeOnce sync.Once
 
@@ -274,12 +273,10 @@ type glyphRenderData struct {
 	bitmapXPpem uint16
 	bitmapYPpem uint16
 
-	// Populated by realize. Accessed via segments / bitmap / svg /
-	// colrV0Layers so callers don't have to remember to drive the lazy
-	// initialization.
+	// Accessors drive lazy realization. COLRv0 layers may already be populated
+	// when format selection needs to check whether SVG is the fallback.
 	realizedSegments     []opentype.Segment
 	realizedBitmap       image.Image
-	realizedSVG          *svgGlyphData
 	realizedCOLRV0Layers []colrV0Layer
 
 	// realizedBitmapColored is true when realizedBitmap comes from a
@@ -301,27 +298,15 @@ func (r *glyphRenderData) bitmap() image.Image {
 	return r.realizedBitmap
 }
 
-// colored reports whether the glyph renders from a color form, realizing
-// the render data on first call. This doesn't rasterize the glyph image.
-// The actual image can still be grayscale when colored is true, e.g. for
-// an SVG document whose rasterization fails and falls back to the outline.
-// A COLRv0 glyph whose layers all use the text foreground color is not
-// colored.
+// colored reports whether the bitmap or COLRv0 fallback uses fixed colors.
 func (r *glyphRenderData) colored() bool {
 	r.realizeOnce.Do(r.realize)
 	if r.realizedBitmap != nil {
 		return r.realizedBitmapColored
 	}
-	return r.realizedSVG != nil || slices.ContainsFunc(r.realizedCOLRV0Layers, func(l colrV0Layer) bool {
+	return slices.ContainsFunc(r.realizedCOLRV0Layers, func(l colrV0Layer) bool {
 		return !l.foreground
 	})
-}
-
-// svg returns the OpenType SVG glyph description, realizing it on first
-// call. It returns nil when the glyph has no SVG data.
-func (r *glyphRenderData) svg() *svgGlyphData {
-	r.realizeOnce.Do(r.realize)
-	return r.realizedSVG
 }
 
 // colrV0Layers returns the COLRv0 color layers, realizing them on first
@@ -385,13 +370,7 @@ type GoTextFaceSource struct {
 	renderDataCache *cache[glyphRenderDataCacheKey, *glyphRenderData]
 	chunkPlanCache  *cache[chunkPlanKey, []chunk.Chunk]
 
-	// svgDocIndexes caches per-document indexes for OpenType SVG documents
-	// shared by multiple glyphs, keyed by the document's backing array.
-	// Uncompressed SVG documents are subslices of the font data, so the
-	// address of the first byte identifies the document; a gzipped
-	// document is decompressed into a fresh buffer per fetch and only
-	// misses the cache. Guarded by shapeMu.
-	svgDocIndexes map[*byte]*svgDocIndex
+	svgFont *svgFont
 
 	// shapeMu serializes mutations of the shared font state (g.f) during shaping
 	// and per-glyph data lookups. Lazy glyph builds happen outside of the
@@ -438,7 +417,8 @@ func toFontResource(source io.Reader) (font.Resource, error) {
 
 func newGoTextFaceSource(face *font.Face, loader *opentype.Loader) *GoTextFaceSource {
 	s := &GoTextFaceSource{
-		f: face,
+		f:       face,
+		svgFont: loadSVGFont(loader),
 	}
 	s.addr = s
 	s.metadata = metadataFromFace(face)
@@ -801,8 +781,8 @@ type faceBitmapState struct {
 //
 // The caller must hold g.shapeMu.
 func (g *GoTextFaceSource) applyFaceState(face *GoTextFace) faceBitmapState {
-	if s := face.variationsString; s != g.lastVariationsString {
-		g.f.SetVariations(face.variations)
+	if s := face.variations.key; s != g.lastVariationsString {
+		g.f.SetVariations(face.variations.values())
 		g.lastVariationsString = s
 	}
 
@@ -831,11 +811,11 @@ func (g *GoTextFaceSource) applyFaceState(face *GoTextFace) faceBitmapState {
 }
 
 // buildOutputs runs HarfBuzz shaping on text and returns the per-segment
-// outputs, including per-glyph extents.
+// outputs, including per-glyph extents when required for layout.
 //
 // The caller must hold g.shapeMu.
 func (g *GoTextFaceSource) buildOutputs(text string, face *GoTextFace) []shaping.Output {
-	_ = g.applyFaceState(face)
+	bm := g.applyFaceState(face)
 
 	g.runes = g.runes[:0]
 	for _, r := range text {
@@ -847,7 +827,7 @@ func (g *GoTextFaceSource) buildOutputs(text string, face *GoTextFace) []shaping
 		RunEnd:       len(g.runes),
 		Direction:    face.diDirection(),
 		Face:         g.f,
-		FontFeatures: face.features,
+		FontFeatures: face.features.values(),
 		Size:         float64ToFixed26_6(face.Size),
 		Script:       face.gScript(),
 		Language:     language.Language(face.Language.String()),
@@ -891,8 +871,14 @@ func (g *GoTextFaceSource) buildOutputs(text string, face *GoTextFace) []shaping
 
 	outputs := make([]shaping.Output, len(inputs))
 	for i, input := range inputs {
-		out := g.shaper.Shape(input)
-		outputs[i] = out
+		// Bitmap placement needs glyph bearings, and vertical baseline
+		// adjustment needs glyph bounds. Horizontal outlines get their
+		// bounds separately when building render data.
+		if bm.useBitmap || input.Direction.IsVertical() {
+			outputs[i] = g.shaper.Shape(input)
+		} else {
+			outputs[i] = g.shaper.ShapeNoExtents(input)
+		}
 	}
 	// Baselines must shift a whole line at once; per-output calls drift
 	// sideways runs apart in vertical writing.
@@ -970,14 +956,14 @@ func (g *GoTextFaceSource) buildGlyphs(outputs []shaping.Output, text string, fa
 	}
 	indices = append(indices, len(text))
 
-	variations := face.variationsString
+	variations := face.variations.key
 
 	// Snapshot the variations slice once; every glyphRenderData built
 	// in this call shares the same underlying copy. The user-facing
-	// face.variations may be replaced by a later SetVariation, so each
+	// face.variations may be changed by a later SetVariation, so each
 	// buildGlyphs call needs its own copy, but all glyphs within one
 	// call can safely point at the same snapshot.
-	variationsSnapshot := slices.Clone(face.variations)
+	variationsSnapshot := slices.Clone(face.variations.values())
 
 	var gs []goTextGlyph
 	for _, out := range outputs {
@@ -987,10 +973,11 @@ func (g *GoTextFaceSource) buildGlyphs(outputs []shaping.Output, text string, fa
 				g.renderDataCache = newCache[glyphRenderDataCacheKey, *glyphRenderData](512)
 			}
 			renderKey := glyphRenderDataCacheKey{
-				gid:        gl.GlyphID,
-				variations: variations,
-				sideways:   sideways,
-				size:       out.Size,
+				gid:         gl.GlyphID,
+				variations:  variations,
+				sideways:    sideways,
+				size:        out.Size,
+				bitmapState: bm,
 			}
 			render := g.renderDataCache.getOrCreate(renderKey, func() (*glyphRenderData, bool) {
 				return g.buildRenderData(gl, out.Size, sideways, variationsSnapshot, variations, bm)
@@ -1047,7 +1034,7 @@ func (g *GoTextFaceSource) buildRenderData(gl shaping.Glyph, size fixed.Int26_6,
 	// In bitmap mode it resolves through sbix or CBDT/EBDT and
 	// matches the dimensions of the bitmap that realize will decode.
 	var bounds fixed.Rectangle26_6
-	if ext, ok := g.glyphExtents(gl.GlyphID); ok {
+	if ext, ok := g.glyphExtents(gl.GlyphID, sideways); ok {
 		var yOffset float32
 		if sideways {
 			yOffset = fixed26_6ToFloat32(-gl.YOffset) / fixed26_6ToFloat32(size) * float32(g.f.Upem())
@@ -1056,7 +1043,22 @@ func (g *GoTextFaceSource) buildRenderData(gl shaping.Glyph, size fixed.Int26_6,
 		bounds = glyphExtentsToBounds(ext, scale, sideways, yOffset)
 	}
 
-	if bounds.Empty() && !useBitmap {
+	record, hasSVG := g.svgFont.documentIndex(gl.GlyphID)
+	if sideways {
+		hasSVG = false
+	}
+	var colrLayers []colrV0Layer
+	if hasSVG {
+		if d, ok := g.f.GlyphDataColor(gl.GlyphID); ok {
+			if layers, ok := d.Paint.(tables.PaintColrLayersResolved); ok {
+				colrLayers = g.appendCOLRV0Layers(nil, layers, float32(g.scale(fixed26_6ToFloat64(size))))
+				hasSVG = len(colrLayers) == 0
+			}
+		} else if _, ok := g.f.GlyphDataBitmap(gl.GlyphID); ok {
+			hasSVG = false
+		}
+	}
+	if bounds.Empty() && !useBitmap && !hasSVG {
 		return nil, false
 	}
 
@@ -1065,52 +1067,20 @@ func (g *GoTextFaceSource) buildRenderData(gl shaping.Glyph, size fixed.Int26_6,
 	// the slice header by value is safe because the caller never
 	// mutates the underlying array.
 	return &glyphRenderData{
-		bounds:      bounds,
-		useBitmap:   useBitmap,
-		source:      g,
-		gid:         gl.GlyphID,
-		size:        size,
-		sideways:    sideways,
-		yOffset:     gl.YOffset,
-		variations:  variations,
-		bitmapXPpem: bm.xPpem,
-		bitmapYPpem: bm.yPpem,
+		realizedCOLRV0Layers: colrLayers,
+		bounds:               bounds,
+		svgDocumentIndex:     record,
+		hasSVG:               hasSVG,
+		useBitmap:            useBitmap,
+		source:               g,
+		gid:                  gl.GlyphID,
+		size:                 size,
+		sideways:             sideways,
+		yOffset:              gl.YOffset,
+		variations:           variations,
+		bitmapXPpem:          bm.xPpem,
+		bitmapYPpem:          bm.yPpem,
 	}, true
-}
-
-// svgGlyphData returns the rasterization data for gid's OpenType SVG glyph:
-// the document reduced to the glyph's own description, plus the
-// resolved viewBox. It returns nil when the glyph cannot be extracted
-// from a document shared by multiple glyphs.
-//
-// The caller must hold g.shapeMu.
-func (g *GoTextFaceSource) svgGlyphData(svg font.GlyphSVG, gid font.GID) *svgGlyphData {
-	if len(svg.Source) == 0 {
-		return nil
-	}
-	key := &svg.Source[0]
-	idx, ok := g.svgDocIndexes[key]
-	if !ok {
-		idx = newSVGDocIndex(svg.Source)
-		if g.svgDocIndexes == nil {
-			g.svgDocIndexes = map[*byte]*svgDocIndex{}
-		}
-		// The cache grows by one entry per document for uncompressed
-		// SVG tables. Gzipped documents miss the cache on every fetch;
-		// the reset keeps such fonts from accumulating entries forever.
-		if len(g.svgDocIndexes) >= 512 {
-			clear(g.svgDocIndexes)
-		}
-		g.svgDocIndexes[key] = idx
-	}
-	source := idx.glyphDocument(uint32(gid))
-	if source == nil {
-		return nil
-	}
-	return &svgGlyphData{
-		source:  source,
-		viewBox: svg.ViewBox,
-	}
 }
 
 // glyphExtents returns the extents of gid. A COLRv0 color glyph
@@ -1118,12 +1088,34 @@ func (g *GoTextFaceSource) svgGlyphData(svg font.GlyphSVG, gid font.GID) *svgGly
 // base glyph's own outline, are what is rendered, and they may extend
 // beyond it. A COLRv1 color glyph resolves to its clip box, if any:
 // such glyphs typically have an empty base outline, and the clip box
-// also bounds the SVG fallback used to render them.
+// is used for the fallback outline. Sideways COLR glyphs instead use the
+// control-point bounds of their base outline. SVG artwork has independent ink bounds.
 //
 // The caller must hold g.shapeMu.
-func (g *GoTextFaceSource) glyphExtents(gid font.GID) (font.GlyphExtents, bool) {
+func (g *GoTextFaceSource) glyphExtents(gid font.GID, sideways bool) (font.GlyphExtents, bool) {
 	if g.f.COLR != nil {
 		if c, ok := g.f.GlyphDataColor(gid); ok {
+			if sideways {
+				// Sideways color glyphs use the base outline, not the color layers or bitmap strikes.
+				o, ok := g.f.GlyphDataOutline(gid)
+				if !ok || len(o.Segments) == 0 {
+					return font.GlyphExtents{}, false
+				}
+				p := o.Segments[0].Args[0]
+				x0, x1, y0, y1 := p.X, p.X, p.Y, p.Y
+				for _, s := range o.Segments {
+					for _, p := range s.ArgsSlice() {
+						x0, x1 = min(x0, p.X), max(x1, p.X)
+						y0, y1 = min(y0, p.Y), max(y1, p.Y)
+					}
+				}
+				return font.GlyphExtents{
+					XBearing: x0,
+					YBearing: y1,
+					Width:    x1 - x0,
+					Height:   y0 - y1,
+				}, true
+			}
 			if layers, ok := c.Paint.(tables.PaintColrLayersResolved); ok {
 				if ext, ok := g.colrV0LayersExtents(layers); ok {
 					return ext, true
@@ -1199,13 +1191,13 @@ func colrClipBoxExtents(clips tables.ClipList, gid font.GID) (font.GlyphExtents,
 
 // fetchGlyphData returns the glyph data for gid via the glyph data
 // cache. Cached entries are reusable across glyph instances sharing
-// (gid, variations, sideways, size). useBitmap selects the bitmap-mode
+// (gid, variations, sideways, size, ppem). useBitmap selects the bitmap-mode
 // cache key; the outline path is ppem-independent and shares one entry
 // across sizes (see glyphDataCacheKey).
 //
 // When sideways is true, the returned data is rotated: the outline
 // itself for an outline glyph, and the fallback outline carried by an
-// SVG or bitmap glyph, which is what a sideways run renders for those
+// SVG, bitmap, or COLR glyph, which is what a sideways run renders for those
 // glyphs. The rotation is applied to the cached value, so it happens
 // once per key.
 //
@@ -1225,8 +1217,23 @@ func (g *GoTextFaceSource) fetchGlyphData(gid font.GID, variationsString string,
 		sideways:   sideways,
 		size:       keySize,
 	}
+	if useBitmap {
+		key.xPpem, key.yPpem = g.lastXPpem, g.lastYPpem
+	}
+	if sideways {
+		key.sidewaysOffset = fixed26_6ToFloat32(-yOffset) / fixed26_6ToFloat32(size) * float32(g.f.Upem())
+	}
 	return g.glyphDataCache.getOrCreate(key, func() (font.GlyphData, bool) {
-		d := g.f.GlyphData(gid)
+		d := g.glyphDataWithoutSVG(gid)
+		if sideways {
+			if _, ok := d.(font.GlyphColor); ok {
+				o, ok := g.f.GlyphDataOutline(gid)
+				if !ok {
+					return nil, false
+				}
+				d = o
+			}
+		}
 		if d == nil {
 			return nil, false
 		}
@@ -1235,15 +1242,12 @@ func (g *GoTextFaceSource) fetchGlyphData(gid font.GID, variationsString string,
 			// outline of an SVG or bitmap glyph) into already-rotated
 			// bounds, so every outline that can be drawn must be rotated
 			// and offset here, not only a top-level GlyphOutline.
-			yOffsetFontUnits := fixed26_6ToFloat32(-yOffset) / fixed26_6ToFloat32(size) * float32(g.f.Upem())
 			switch d := d.(type) {
 			case font.GlyphOutline:
-				d.Sideways(yOffsetFontUnits)
-			case font.GlyphSVG:
-				d.Outline.Sideways(yOffsetFontUnits)
+				d.Sideways(key.sidewaysOffset)
 			case font.GlyphBitmap:
 				if d.Outline != nil {
-					d.Outline.Sideways(yOffsetFontUnits)
+					d.Outline.Sideways(key.sidewaysOffset)
 				}
 			}
 		}
@@ -1289,14 +1293,6 @@ func (g *GoTextFaceSource) realizeRenderData(rd *glyphRenderData) {
 	switch d := data.(type) {
 	case font.GlyphOutline:
 		rawSegs = d.Segments
-	case font.GlyphSVG:
-		rawSegs = d.Outline.Segments
-		// A sideways SVG glyph would need a rotated rasterization, which
-		// is not supported; the fallback outline, rotated by
-		// fetchGlyphData, is used instead.
-		if !rd.sideways {
-			rd.realizedSVG = g.svgGlyphData(d, rd.gid)
-		}
 	case font.GlyphBitmap:
 		if d.Outline != nil {
 			rawSegs = d.Outline.Segments
@@ -1314,18 +1310,13 @@ func (g *GoTextFaceSource) realizeRenderData(rd *glyphRenderData) {
 		// table, if any, and then to the base glyph's outline. A
 		// sideways color glyph would need a rotated rasterization,
 		// which is not supported either.
-		if layers, ok := d.Paint.(tables.PaintColrLayersResolved); ok && !rd.sideways {
+		if layers, ok := d.Paint.(tables.PaintColrLayersResolved); ok && !rd.sideways && rd.realizedCOLRV0Layers == nil {
 			scale := float32(g.scale(fixed26_6ToFloat64(rd.size)))
 			rd.realizedCOLRV0Layers = g.appendCOLRV0Layers(nil, layers, scale)
 		}
 		if len(rd.realizedCOLRV0Layers) == 0 && !rd.sideways {
-			if svg, ok := g.f.GlyphDataSVG(rd.gid); ok {
-				rd.realizedSVG = g.svgGlyphData(svg, rd.gid)
-			}
-			if rd.realizedSVG == nil {
-				if o, ok := g.f.GlyphDataOutline(rd.gid); ok {
-					rawSegs = o.Segments
-				}
+			if o, ok := g.f.GlyphDataOutline(rd.gid); ok {
+				rawSegs = o.Segments
 			}
 		}
 	}
@@ -1386,12 +1377,12 @@ func (g *GoTextFaceSource) getOrCreateGlyphImage(size float64, variationCount in
 // variationsString; size scaling happens after the lookup.
 func (g *GoTextFaceSource) metrics(face *GoTextFace) Metrics {
 	um := g.unscaledMetrics
-	if variations := face.variationsString; variations != "" {
+	if variations := face.variations.key; variations != "" {
 		um = g.metricsCache.getOrCreate(variations, func() (Metrics, bool) {
 			if g.metricsFace == nil {
 				g.metricsFace = font.NewFace(g.f.Font)
 			}
-			g.metricsFace.SetVariations(face.variations)
+			g.metricsFace.SetVariations(face.variations.values())
 			return readUnscaledMetrics(g.metricsFace), true
 		})
 	}

@@ -335,7 +335,7 @@ func (p *playerImpl) PauseAndStopReading() {
 	defer p.m.Unlock()
 
 	if p.closed {
-		p.context.setError(fmt.Errorf("audio: PauseAndStopReading for a closed player"))
+		p.context.setError(fmt.Errorf("audio: PauseAndStopReading called on a closed player"))
 		return
 	}
 
@@ -481,8 +481,8 @@ func (p *playerImpl) SetPosition(offset time.Duration) error {
 	// The audio device is not created yet. Record the position by seeking the stream so that
 	// the underlying player starts from this position once it is created.
 
-	// Seeking to the start before the stream is created needs no source access.
-	if offset == 0 && p.stream == nil {
+	// A non-seekable source has not been read before the stream is created.
+	if offset == 0 && p.stream == nil && !p.seekable {
 		p.adjustedPosition = 0
 		return nil
 	}
@@ -550,7 +550,8 @@ func bufferSizeInBytes(bufferSize time.Duration, bytesPerSample, sampleRate int)
 	if !ok || size > int64(math.MaxInt) {
 		return 0
 	}
-	size = size / int64(bytesPerSample) * int64(bytesPerSample)
+	// Oto treats zero as the default buffer size, so positive durations need at least one frame.
+	size = max(1, size/int64(bytesPerSample)) * int64(bytesPerSample)
 	return int(size)
 }
 
@@ -590,7 +591,6 @@ func (p *playerImpl) updatePosition() {
 		return
 	}
 	if !p.context.IsReady() {
-		p.adjustedPosition = 0
 		return
 	}
 
@@ -625,7 +625,9 @@ func (p *playerImpl) updatePosition() {
 	if !ok {
 		panic("audio: position is out of range")
 	}
-	p.adjustedPosition = position + int64(adjustingTime)
+	// Consumed samples can lag behind the previous interpolation after a buffer stall.
+	// Seeking resets adjustedPosition separately in afterSeek.
+	p.adjustedPosition = max(p.adjustedPosition, position+int64(adjustingTime))
 }
 
 type timeStream struct {
@@ -678,7 +680,7 @@ func (s *timeStream) Seek(offset int64, whence int) (int64, error) {
 
 	if !s.seekable {
 		// TODO: Should this return an error?
-		panic("audio: the source must be io.Seeker to seek")
+		panic("audio: source must be io.Seeker")
 	}
 	pos, err := s.r.(io.Seeker).Seek(offset, whence)
 	if err != nil {

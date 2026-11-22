@@ -139,7 +139,7 @@ func (t *textInputImpl) init() {
 		if t.imeDiscard == imeDiscarding {
 			return nil
 		}
-		t.events.end()
+		t.events.endByUser()
 		return nil
 	}))
 	t.textareaElement.Call("addEventListener", "keydown", js.FuncOf(func(this js.Value, args []js.Value) any {
@@ -353,7 +353,7 @@ func (t *textInputImpl) dismissVirtualKeyboardIfNeeded() {
 
 	// A start deferred to a user-interaction event is pending (#2898). The caret
 	// position can be 0, so test for the property's presence.
-	if !js.Global().Get("_ebitengine_textinput_x").IsUndefined() || js.Global().Get("_ebitengine_textinput_ready").Truthy() {
+	if !js.Global().Get("_ebitengine_textinput_x").IsUndefined() {
 		t.closedTicks = 0
 		return
 	}
@@ -373,6 +373,8 @@ func (t *textInputImpl) dismissVirtualKeyboardIfNeeded() {
 		return
 	}
 	t.closedTicks = 0
+	// A completed deferred start that the caller did not consume is abandoned.
+	js.Global().Get("window").Set("_ebitengine_textinput_ready", js.Undefined())
 	// The game's key listeners are on the canvas element, so it must take the focus.
 	ui.Get().FocusCanvas()
 

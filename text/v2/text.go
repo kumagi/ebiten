@@ -129,7 +129,8 @@ func granularityFactor(face Face) fixed.Int26_6 {
 }
 
 func adjustGranularity(x, factor fixed.Int26_6) fixed.Int26_6 {
-	return x / factor * factor
+	// factor is a power of two. Round down for negative origins too.
+	return x &^ (factor - 1)
 }
 
 // Glyph represents one glyph to render.
@@ -232,7 +233,7 @@ type LazyGlyph struct {
 	// should be drawn, and the rectangle's Dx and Dy give the bitmap's
 	// width and height.
 	//
-	// ImageBounds is computed from font metadata without rasterizing the
+	// ImageBounds is computed without rasterizing the
 	// glyph. ImageBounds is the zero [image.Rectangle] for glyphs that
 	// produce no image (control characters or zero-area glyphs); use
 	// ImageBounds.Empty to detect that case.

@@ -23,30 +23,30 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2/internal/atlas"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphics"
+	"github.com/hajimehoshi/ebiten/v2/internal/graphicscommand"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver"
 	"github.com/hajimehoshi/ebiten/v2/internal/mipmap"
 )
 
-// panicOnErrorOnReadingPixels indicates whether reading pixels panics on an error or not.
-// This value is set only in tests.
-var panicOnErrorOnReadingPixels bool
-
-func SetPanicOnErrorOnReadingPixelsForTesting(value bool) {
-	panicOnErrorOnReadingPixels = value
+// EbitenImageDrawer draws on the internal image underlying a public ebiten.Image.
+type EbitenImageDrawer interface {
+	// DrawOnImage draws on dst, whose region dstRegion corresponds to the ebiten image's bounds.
+	DrawOnImage(dst *Image, dstRegion image.Rectangle)
 }
 
-var imageFromEbitenImage func(ebitenImage any) (*Image, image.Rectangle)
+var drawOnEbitenImage func(ebitenImage any, drawer EbitenImageDrawer) bool
 
-// SetImageFromEbitenImageFunc sets the implementation of [ImageFromEbitenImage]. Package ebiten calls
+// SetDrawOnEbitenImageFunc sets the implementation of [DrawOnEbitenImage]. Package ebiten calls
 // this at initialization: this package cannot import ebiten, so the bridge is a function value.
-func SetImageFromEbitenImageFunc(f func(ebitenImage any) (*Image, image.Rectangle)) {
-	imageFromEbitenImage = f
+func SetDrawOnEbitenImageFunc(f func(ebitenImage any, drawer EbitenImageDrawer) bool) {
+	drawOnEbitenImage = f
 }
 
-// ImageFromEbitenImage returns the internal image and the adjusted bounds underlying a public
-// ebiten.Image, or a nil image if the ebiten image is disposed.
-func ImageFromEbitenImage(ebitenImage any) (*Image, image.Rectangle) {
-	return imageFromEbitenImage(ebitenImage)
+// DrawOnEbitenImage calls drawer's DrawOnImage with the internal image and the adjusted bounds underlying
+// a public ebiten.Image before it returns. It reports false without calling drawer if the ebiten image is
+// disposed.
+func DrawOnEbitenImage(ebitenImage any, drawer EbitenImageDrawer) bool {
+	return drawOnEbitenImage(ebitenImage, drawer)
 }
 
 // lastImageID is the last ID given to an image.
@@ -181,43 +181,16 @@ func (i *Image) WritePixels(pix []byte, region image.Rectangle) {
 	i.mipmap.WritePixels(pix, region)
 }
 
-func (i *Image) ReadPixels(pixels []byte, region image.Rectangle) {
-	// Check the error existence and avoid unnecessary calls.
-	if i.ui.error() != nil {
-		return
-	}
-
-	if err := i.ui.readPixels(i, pixels, region); err != nil {
-		if panicOnErrorOnReadingPixels {
-			panic(err)
-		}
-		i.ui.setError(err)
-	}
-}
-
-// readPixels reports whether the pixels were read.
-//
-// The caller must not hold the mutex: a failed read is retried in a frame, and the frame needs the
-// mutex to draw the image.
-func (i *Image) readPixels(pixels []byte, region image.Rectangle) (bool, error) {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-
-	return i.mipmap.ReadPixels(i.ui.graphicsDriver, pixels, region)
-}
-
-// readPixelsAsync queues a pixel read-back and returns its result channel.
-//
-// The caller must not hold the mutex, as the frame needs the mutex to draw the image.
-func (i *Image) readPixelsAsync(pixels []byte, region image.Rectangle) <-chan error {
+// readPixelsAsync queues a pixel read-back and returns its result.
+func (i *Image) readPixelsAsync(pixels []byte, region image.Rectangle) *graphicscommand.PixelReadback {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
 	return i.mipmap.ReadPixelsAsync(pixels, region)
 }
 
-// ReadPixelsAsync starts a pixel read-back and returns its result channel.
-func (i *Image) ReadPixelsAsync(pixels []byte, region image.Rectangle) <-chan error {
+// ReadPixelsAsync starts a pixel read-back and returns its result without waiting for a frame.
+func (i *Image) ReadPixelsAsync(pixels []byte, region image.Rectangle) *graphicscommand.PixelReadback {
 	// Check the error existence and avoid unnecessary calls.
 	if i.ui.error() != nil {
 		return i.ui.abortedReadPixels()
@@ -235,14 +208,6 @@ func (i *Image) DumpScreenshot(name string, blackbg bool) (string, error) {
 
 func (u *UserInterface) DumpImages(dir string) (string, error) {
 	return u.dumpImages(dir)
-}
-
-func (i *Image) clear() {
-	i.Fill(0, 0, 0, 0, image.Rect(0, 0, i.width, i.height))
-}
-
-func (i *Image) fillBlack() {
-	i.Fill(0, 0, 0, 1, image.Rect(0, 0, i.width, i.height))
 }
 
 func (i *Image) Fill(r, g, b, a float32, region image.Rectangle) {

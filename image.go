@@ -42,7 +42,7 @@ type Image struct {
 	// addr holds self to check copying.
 	// See strings.Builder for similar examples.
 	addr     *Image
-	image    *ui.Image
+	image    *bufferedImage
 	original *Image
 	bounds   image.Rectangle
 
@@ -87,6 +87,7 @@ type Image struct {
 
 	// Do not add a 'buffering' member that is resolved lazily.
 	// This tends to forget resolving the buffer easily (#2362).
+	// The pending pixel writes are kept in bufferedImage, which every use of the pixels goes through.
 }
 
 // theImagePool is a global pool of Image structs to reduce allocations.
@@ -229,19 +230,15 @@ func (i *Image) adjustPosition(x, y int) (int, int) {
 	return x, y
 }
 
-// adjustPositionF32 converts the position in the *ebiten.Image coordinate to the *ui.Image coordinate.
-func (i *Image) adjustPositionF32(x, y float32) (float32, float32) {
+// originF32 returns the position in the *ebiten.Image coordinate that maps to (0, 0) in the *ui.Image coordinate.
+func (i *Image) originF32() (float32, float32) {
 	if i.isSubImage() {
 		or := i.original.Bounds()
-		x -= float32(or.Min.X)
-		y -= float32(or.Min.Y)
-		return x, y
+		return float32(or.Min.X), float32(or.Min.Y)
 	}
 
 	r := i.Bounds()
-	x -= float32(r.Min.X)
-	y -= float32(r.Min.Y)
-	return x, y
+	return float32(r.Min.X), float32(r.Min.Y)
 }
 
 func (i *Image) adjustedBounds() image.Rectangle {
@@ -253,14 +250,15 @@ func (i *Image) adjustedBounds() image.Rectangle {
 func init() {
 	// The bridge serves module-internal packages drawing at the internal image layer (e.g. vmhost);
 	// the ui package cannot import this package.
-	ui.SetImageFromEbitenImageFunc(func(img any) (*ui.Image, image.Rectangle) {
+	ui.SetDrawOnEbitenImageFunc(func(img any, drawer ui.EbitenImageDrawer) bool {
 		i := img.(*Image)
 		i.copyCheck()
 		if i.isDisposed() {
-			return nil, image.Rectangle{}
+			return false
 		}
 		i.invokeUsageCallbacks()
-		return i.image, i.adjustedBounds()
+		i.image.drawOnUIImage(drawer, i.adjustedBounds())
+		return true
 	})
 }
 
@@ -302,6 +300,8 @@ func (i *Image) DrawImage(img *Image, options *DrawImageOptions) {
 	if img.isDisposed() {
 		panic("ebiten: the given image to DrawImage must not be disposed")
 	}
+	// TODO: Panic at v3 if img shares pixels with i, including any sub-image of the same image.
+	// In v2, a self-draw that returns early or samples a mipmap level does not panic.
 	if i.isDisposed() {
 		return
 	}
@@ -343,7 +343,7 @@ func (i *Image) DrawImage(img *Image, options *DrawImageOptions) {
 	graphics.QuadVerticesFromSrcAndMatrix(vs, float32(sx0), float32(sy0), float32(sx1), float32(sy1), a, b, c, d, tx, ty, cr, cg, cb, ca)
 	is := graphics.QuadIndices()
 
-	srcs := [graphics.ShaderSrcImageCount]*ui.Image{img.image}
+	srcs := [graphics.ShaderSrcImageCount]*bufferedImage{img.image}
 
 	useColorM := !colorm.IsIdentity()
 	shader := builtinShader(filter, builtinshader.AddressUnsafe, useColorM)
@@ -630,6 +630,8 @@ func (i *Image) DrawTriangles32(vertices []Vertex, indices []uint32, img *Image,
 	if img.isDisposed() {
 		panic("ebiten: the given image to DrawTriangles must not be disposed")
 	}
+	// TODO: Panic at v3 if img shares pixels with i, including any sub-image of the same image.
+	// In v2, a self-draw that returns early or samples a mipmap level does not panic.
 	if i.isDisposed() {
 		return
 	}
@@ -687,18 +689,17 @@ func (i *Image) DrawTriangles32(vertices []Vertex, indices []uint32, img *Image,
 	colorm, cr, cg, cb, ca := colorMToScale(options.ColorM.affineColorM())
 
 	vs := i.ensureTmpVertices(len(vertices) * graphics.VertexFloatCount)
-	dst := i
+	dox, doy := i.originF32()
+	sox, soy := img.originF32()
 	if options.ColorScaleMode == ColorScaleModeStraightAlpha {
 		// Avoid using `for i, v := range vertices` as adding `v` creates a copy from `vertices` unnecessarily on each loop (#3103).
 		for i := range vertices {
 			// Create a temporary slice to reduce boundary checks.
 			vs := vs[i*graphics.VertexFloatCount : i*graphics.VertexFloatCount+8]
-			dx, dy := dst.adjustPositionF32(vertices[i].DstX, vertices[i].DstY)
-			vs[0] = dx
-			vs[1] = dy
-			sx, sy := img.adjustPositionF32(vertices[i].SrcX, vertices[i].SrcY)
-			vs[2] = sx
-			vs[3] = sy
+			vs[0] = vertices[i].DstX - dox
+			vs[1] = vertices[i].DstY - doy
+			vs[2] = vertices[i].SrcX - sox
+			vs[3] = vertices[i].SrcY - soy
 			vs[4] = vertices[i].ColorR * vertices[i].ColorA * cr
 			vs[5] = vertices[i].ColorG * vertices[i].ColorA * cg
 			vs[6] = vertices[i].ColorB * vertices[i].ColorA * cb
@@ -709,12 +710,10 @@ func (i *Image) DrawTriangles32(vertices []Vertex, indices []uint32, img *Image,
 		for i := range vertices {
 			// Create a temporary slice to reduce boundary checks.
 			vs := vs[i*graphics.VertexFloatCount : i*graphics.VertexFloatCount+8]
-			dx, dy := dst.adjustPositionF32(vertices[i].DstX, vertices[i].DstY)
-			vs[0] = dx
-			vs[1] = dy
-			sx, sy := img.adjustPositionF32(vertices[i].SrcX, vertices[i].SrcY)
-			vs[2] = sx
-			vs[3] = sy
+			vs[0] = vertices[i].DstX - dox
+			vs[1] = vertices[i].DstY - doy
+			vs[2] = vertices[i].SrcX - sox
+			vs[3] = vertices[i].SrcY - soy
 			vs[4] = vertices[i].ColorR * cr
 			vs[5] = vertices[i].ColorG * cg
 			vs[6] = vertices[i].ColorB * cb
@@ -722,7 +721,7 @@ func (i *Image) DrawTriangles32(vertices []Vertex, indices []uint32, img *Image,
 		}
 	}
 
-	srcs := [graphics.ShaderSrcImageCount]*ui.Image{img.image}
+	srcs := [graphics.ShaderSrcImageCount]*bufferedImage{img.image}
 
 	useColorM := !colorm.IsIdentity()
 	shader := builtinShader(filter, address, useColorM)
@@ -880,6 +879,8 @@ func (i *Image) DrawTrianglesShader32(vertices []Vertex, indices []uint32, shade
 			if img.isDisposed() {
 				panic("ebiten: the given image to DrawTrianglesShader must not be disposed")
 			}
+			// TODO: Panic at v3 if img shares pixels with i, including any sub-image of the same image.
+			// In v2, a self-draw that returns early does not panic.
 		}
 	}
 
@@ -941,21 +942,19 @@ func (i *Image) DrawTrianglesShader32(vertices []Vertex, indices []uint32, shade
 	}
 
 	vs := i.ensureTmpVertices(len(vertices) * graphics.VertexFloatCount)
-	dst := i
-	src := options.Images[0]
+	dox, doy := i.originF32()
+	var sox, soy float32
+	if src := options.Images[0]; src != nil {
+		sox, soy = src.originF32()
+	}
 	// Avoid using `for i, v := range vertices` as adding `v` creates a copy from `vertices` unnecessarily on each loop (#3103).
 	for i := range vertices {
 		// Create a temporary slice to reduce boundary checks.
 		vs := vs[i*graphics.VertexFloatCount : i*graphics.VertexFloatCount+12]
-		dx, dy := dst.adjustPositionF32(vertices[i].DstX, vertices[i].DstY)
-		vs[0] = dx
-		vs[1] = dy
-		sx, sy := vertices[i].SrcX, vertices[i].SrcY
-		if src != nil {
-			sx, sy = src.adjustPositionF32(sx, sy)
-		}
-		vs[2] = sx
-		vs[3] = sy
+		vs[0] = vertices[i].DstX - dox
+		vs[1] = vertices[i].DstY - doy
+		vs[2] = vertices[i].SrcX - sox
+		vs[3] = vertices[i].SrcY - soy
 		vs[4] = vertices[i].ColorR
 		vs[5] = vertices[i].ColorG
 		vs[6] = vertices[i].ColorB
@@ -966,7 +965,7 @@ func (i *Image) DrawTrianglesShader32(vertices []Vertex, indices []uint32, shade
 		vs[11] = vertices[i].Custom3
 	}
 
-	var imgs [graphics.ShaderSrcImageCount]*ui.Image
+	var imgs [graphics.ShaderSrcImageCount]*bufferedImage
 	var imgSize image.Point
 	for i, img := range options.Images {
 		if img == nil {
@@ -1082,6 +1081,8 @@ func (i *Image) DrawRectShader(width, height int, shader *Shader, options *DrawR
 			if img.isDisposed() {
 				panic("ebiten: the given image to DrawRectShader must not be disposed")
 			}
+			// TODO: Panic at v3 if img shares pixels with i, including any sub-image of the same image.
+			// In v2, a self-draw that returns early does not panic.
 		}
 	}
 
@@ -1120,7 +1121,7 @@ func (i *Image) DrawRectShader(width, height int, shader *Shader, options *DrawR
 		blend = options.CompositeMode.blend().internalBlend()
 	}
 
-	var imgs [graphics.ShaderSrcImageCount]*ui.Image
+	var imgs [graphics.ShaderSrcImageCount]*bufferedImage
 	for i, img := range options.Images {
 		if img == nil {
 			continue
@@ -1307,6 +1308,8 @@ func (i *Image) ColorModel() color.Model {
 // the returned values can include very slight differences between some machines.
 //
 // ReadPixels can't be called before the main loop (ebiten.RunGame's updating function) starts.
+//
+// On browsers, ReadPixels can block forever if it is called in a function passed to [syscall/js.FuncOf].
 func (i *Image) ReadPixels(pixels []byte) {
 	b := i.Bounds()
 	if got, want := len(pixels), 4*b.Dx()*b.Dy(); got != want {
@@ -1320,21 +1323,20 @@ func (i *Image) ReadPixels(pixels []byte) {
 
 // ReadPixelsAsync reads the image's pixels into pixels in RGBA order with premultiplied alpha.
 // It captures drawing operations preceding the call and excludes subsequent operations.
-// The call returns without waiting for the GPU.
+// The call returns without waiting for the GPU or for the next frame.
 //
-// The returned channel is closed when the read finishes, including when the game exits.
-// On failure, an error is sent before closing; on success, no value is sent.
-// Ignoring the channel does not block completion. pixels must not be accessed or reused until
-// a receive from the channel completes. The buffer contents are unspecified on error.
+// pixels must not be accessed or reused until the returned [PixelReadback] completes.
+// The buffer contents are unspecified on error.
 // The image may be drawn to or deallocated while the read is pending.
+// Ignoring the result does not block completion or resource cleanup.
 //
-// Results progress as the game loop runs. Do not block Update or Draw waiting for a result.
-// Drivers without asynchronous read-back support read synchronously on the rendering thread.
+// Use [PixelReadback.Poll] to check completion or [PixelReadback.Wait] to wait,
+// including inside Update or Draw. Pending reads complete with an error if the game exits.
 //
 // ReadPixelsAsync works on sub-images. It panics if len(pixels) is not 4 times the bounds' width
 // times height, if the image is disposed, or if called before the game loop starts.
 // As with ReadPixels, pixel values can differ slightly between machines.
-func (i *Image) ReadPixelsAsync(pixels []byte) <-chan error {
+func (i *Image) ReadPixelsAsync(pixels []byte) *PixelReadback {
 	b := i.Bounds()
 	if got, want := len(pixels), 4*b.Dx()*b.Dy(); got != want {
 		panic(fmt.Sprintf("ebiten: len(pixels) must be %d but %d at ReadPixelsAsync", want, got))
@@ -1342,7 +1344,9 @@ func (i *Image) ReadPixelsAsync(pixels []byte) <-chan error {
 
 	i.invokeUsageCallbacks()
 
-	return i.image.ReadPixelsAsync(pixels, i.adjustedBounds())
+	return &PixelReadback{
+		result: i.image.ReadPixelsAsync(pixels, i.adjustedBounds()),
+	}
 }
 
 // At returns the color of the image at (x, y).
@@ -1357,6 +1361,8 @@ func (i *Image) ReadPixelsAsync(pixels []byte) <-chan error {
 // the returned values can include very slight differences between some machines.
 //
 // At can't be called before the main loop (ebiten.RunGame's updating function) starts.
+//
+// On browsers, At can block forever if it is called in a function passed to [syscall/js.FuncOf].
 func (i *Image) At(x, y int) color.Color {
 	r, g, b, a := i.at(x, y)
 	return color.RGBA{R: r, G: g, B: b, A: a}
@@ -1373,6 +1379,8 @@ func (i *Image) At(x, y int) color.Color {
 // since the returned values can include very slight differences between some machines.
 //
 // RGBA64At can't be called before the main loop (ebiten.RunGame's updating function) starts.
+//
+// On browsers, RGBA64At can block forever if it is called in a function passed to [syscall/js.FuncOf].
 func (i *Image) RGBA64At(x, y int) color.RGBA64 {
 	r, g, b, a := i.at(x, y)
 	return color.RGBA64{R: uint16(r) * 0x101, G: uint16(g) * 0x101, B: uint16(b) * 0x101, A: uint16(a) * 0x101}
@@ -1552,7 +1560,7 @@ func (i *Image) WritePixels(pixels []byte) {
 	i.invokeUsageCallbacks()
 
 	// Do not need to copy pixels here.
-	// * In internal/mipmap, pixels are copied when necessary.
+	// * In the pixel cache, pixels are copied when necessary.
 	// * In internal/atlas, pixels are copied to make its paddings.
 	i.image.WritePixels(pixels, i.adjustedBounds())
 }
@@ -1582,7 +1590,7 @@ func MaxImageSize() int {
 //
 // NewImage panics if RunGame already finishes.
 func NewImage(width, height int) *Image {
-	return newImage(image.Rect(0, 0, width, height), atlas.ImageTypeRegular)
+	return newImage(imageRectWithValidation(0, 0, width, height), atlas.ImageTypeRegular)
 }
 
 // NewImageOptions represents options for NewImageWithOptions.
@@ -1613,11 +1621,26 @@ type NewImageOptions struct {
 //
 // NewImageWithOptions panics if RunGame already finishes.
 func NewImageWithOptions(bounds image.Rectangle, options *NewImageOptions) *Image {
+	validateImageSize(bounds.Dx(), bounds.Dy())
 	imageType := atlas.ImageTypeRegular
 	if options != nil && options.Unmanaged {
 		imageType = atlas.ImageTypeUnmanaged
 	}
 	return newImage(bounds, imageType)
+}
+
+func validateImageSize(width, height int) {
+	if width <= 0 {
+		panic(fmt.Sprintf("ebiten: width at NewImage must be positive but %d", width))
+	}
+	if height <= 0 {
+		panic(fmt.Sprintf("ebiten: height at NewImage must be positive but %d", height))
+	}
+}
+
+func imageRectWithValidation(x0, y0, x1, y1 int) image.Rectangle {
+	validateImageSize(x1-x0, y1-y0)
+	return image.Rect(x0, y0, x1, y1)
 }
 
 func newImage(bounds image.Rectangle, imageType atlas.ImageType) *Image {
@@ -1626,15 +1649,9 @@ func newImage(bounds image.Rectangle, imageType atlas.ImageType) *Image {
 	}
 
 	width, height := bounds.Dx(), bounds.Dy()
-	if width <= 0 {
-		panic(fmt.Sprintf("ebiten: width at NewImage must be positive but %d", width))
-	}
-	if height <= 0 {
-		panic(fmt.Sprintf("ebiten: height at NewImage must be positive but %d", height))
-	}
 
 	i := &Image{}
-	i.image = ui.Get().NewImage(width, height, imageType)
+	i.image = newBufferedImage(width, height, imageType)
 	i.bounds = bounds
 	i.addr = i
 	return i
@@ -1688,12 +1705,10 @@ func NewImageFromImageWithOptions(source image.Image, options *NewImageFromImage
 		options = &NewImageFromImageOptions{}
 	}
 
-	var r image.Rectangle
-	if options.PreserveBounds {
-		r = source.Bounds()
-	} else {
-		size := source.Bounds().Size()
-		r = image.Rect(0, 0, size.X, size.Y)
+	bounds := source.Bounds()
+	r := bounds
+	if !options.PreserveBounds {
+		r = imageRectWithValidation(0, 0, bounds.Dx(), bounds.Dy())
 	}
 	i := NewImageWithOptions(r, &NewImageOptions{
 		Unmanaged: options.Unmanaged,
@@ -1704,8 +1719,7 @@ func NewImageFromImageWithOptions(source image.Image, options *NewImageFromImage
 	if source, ok := source.(*Image); ok {
 		op := &DrawImageOptions{}
 		if options.PreserveBounds {
-			b := source.Bounds()
-			op.GeoM.Translate(float64(b.Min.X), float64(b.Min.Y))
+			op.GeoM.Translate(float64(bounds.Min.X), float64(bounds.Min.Y))
 		}
 		i.DrawImage(source, op)
 		return i

@@ -1234,3 +1234,82 @@ func TestSeekEndWithUnknownLength(t *testing.T) {
 		}
 	}
 }
+
+func TestReadWithUnknownLength(t *testing.T) {
+	for idx, src := range [][]byte{test_mono_ogg, test_stereo_ogg} {
+		src := truncateLastPage(src)
+		for _, decode := range []struct {
+			name string
+			f    func(io.Reader) (*vorbis.Stream, error)
+		}{
+			{
+				name: "Int16",
+				f:    vorbis.DecodeWithoutResampling,
+			},
+			{
+				name: "Float32",
+				f:    vorbis.DecodeF32,
+			},
+			{
+				name: "Resampled",
+				f:    func(src io.Reader) (*vorbis.Stream, error) { return vorbis.DecodeWithSampleRate(32000, src) },
+			},
+		} {
+			t.Run(fmt.Sprintf("%s/source=%d", decode.name, idx), func(t *testing.T) {
+				sequential, err := decode.f(bytes.NewBuffer(src))
+				if err != nil {
+					t.Fatal(err)
+				}
+				want, err := io.ReadAll(sequential)
+				if len(want) == 0 || !errors.Is(err, io.ErrUnexpectedEOF) {
+					t.Fatalf("sequential read: got (%d bytes, %v), want decoded data and io.ErrUnexpectedEOF", len(want), err)
+				}
+				s, err := decode.f(bytes.NewReader(src))
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := io.ReadAll(s)
+				if !errors.Is(err, io.ErrUnexpectedEOF) {
+					t.Errorf("ReadAll: got %v, want io.ErrUnexpectedEOF", err)
+				}
+				if !bytes.Equal(got, want) {
+					t.Errorf("decoded data differs: got %d bytes, want %d bytes", len(got), len(want))
+				}
+			})
+		}
+	}
+}
+
+func TestResampledNonSeeker(t *testing.T) {
+	data := test_mono_ogg
+	decode := func() *vorbis.Stream {
+		t.Helper()
+		s, err := vorbis.DecodeWithSampleRate(48000, bytes.NewBuffer(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	control := decode()
+	want, err := io.ReadAll(control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := decode()
+	prefix := make([]byte, 4)
+	if _, err := io.ReadFull(s, prefix); err != nil {
+		t.Fatal(err)
+	}
+	for _, whence := range []int{io.SeekStart, io.SeekCurrent, io.SeekEnd} {
+		if _, err := s.Seek(0, whence); !errors.Is(err, errors.ErrUnsupported) {
+			t.Errorf("Seek(0, %d): got %v, want errors.ErrUnsupported", whence, err)
+		}
+	}
+	rest, err := io.ReadAll(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(append(prefix, rest...), want) {
+		t.Error("failed seeks changed the decoded stream")
+	}
+}
